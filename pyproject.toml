@@ -1,0 +1,18 @@
+[project]
+name = "sc-labbench"
+version = "0.1.0"
+description = "sc-labbench"
+readme = "README.md"
+authors = [
+    { name = "Argenis Arriojas", email = "ArriojasMaldonado001@umb.edu" },
+]
+requires-python = ">=3.12"
+dependencies = []
+
+[build-system]
+requires = ["flit_core>=3.2,<4"]
+build-backend = "flit_core.buildapi"
+
+[tool.flit.module]
+name = "sc_labbench"
+source = "src/sc_labbench"
