@@ -3,7 +3,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from sc_labbench.event._client import EventClient
+from sclab.event._client import EventClient
 
 
 class DummyButton:

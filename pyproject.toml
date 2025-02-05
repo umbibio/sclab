@@ -1,21 +1,18 @@
 [project]
-name = "sc-labbench"
+name = "sclab"
 version = "0.1.0"
-description = "sc-labbench"
+description = "sclab"
 readme = "README.md"
 authors = [
     { name = "Argenis Arriojas", email = "ArriojasMaldonado001@umb.edu" },
 ]
 requires-python = ">=3.12"
-dependencies = [
-    "ipywidgets>=8.1.5",
-    "pytest>=8.3.4",
-]
+dependencies = ["ipywidgets>=8.1.5", "pytest>=8.3.4"]
 
 [build-system]
 requires = ["flit_core>=3.2,<4"]
 build-backend = "flit_core.buildapi"
 
 [tool.flit.module]
-name = "sc_labbench"
-source = "src/sc_labbench"
+name = "sclab"
+source = "src/sclab"
