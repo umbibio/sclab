@@ -11,10 +11,11 @@ dependencies = [
     "anndata>=0.11.3",
     "ipywidgets>=8.1.5",
     "itables>=2.2.4",
-    "numpy>=2.2.2",
+    "numpy>=2.1.3",
     "pandas>=2.2.3",
     "plotly>=6.0.0",
     "pytest>=8.3.4",
+    "scanpy>=1.10.4",
     "scikit-learn>=1.6.1",
     "svgpathtools>=1.6.1",
 ]
