@@ -4,9 +4,9 @@ from uuid import UUID
 import pytest
 from ipywidgets import Output, Tab
 
-from sc_labbench.components.event._broker import EventBroker
-from sc_labbench.components.event._client import EventClient
-from sc_labbench.components.event._utils import LogOutput
+from sc_labbench.event._broker import EventBroker
+from sc_labbench.event._client import EventClient
+from sc_labbench.event._utils import LogOutput
 
 
 class TheEventClient(EventClient):
