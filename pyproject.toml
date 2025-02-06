@@ -21,11 +21,11 @@ dependencies = [
 ]
 
 [project.urls]
-Repository = "https://github.com/umbibio/sclab.git"
-Documentation = "https://github.com/umbibio/sclab/docs"
-Homepage = "https://github.com/umbibio/sclab"
+"Repository" = "https://github.com/umbibio/sclab.git"
+"Documentation" = "https://github.com/umbibio/sclab/docs"
+"Homepage" = "https://github.com/umbibio/sclab"
 "Bug Tracker" = "https://github.com/umbibio/sclab/issues"
-Changelog = "https://github.com/umbibio/sclab/blob/main/CHANGELOG.md"
+"Changelog" = "https://github.com/umbibio/sclab/blob/main/CHANGELOG.md"
 
 [build-system]
 requires = ["flit_core>=3.2,<4"]
