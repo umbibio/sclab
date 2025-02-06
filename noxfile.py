@@ -3,7 +3,7 @@ import nox
 # Use uv for faster dependency installation
 nox.options.default_venv_backend = "uv"
 
-PYTHON_VERSIONS = ["3.10", "3.11", "3.12", "3.13"]
+PYTHON_VERSIONS = ["3.10", "3.11", "3.12"]
 
 
 @nox.session(python=PYTHON_VERSIONS)

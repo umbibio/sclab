@@ -6,19 +6,19 @@ readme = "README.md"
 authors = [
     { name = "Argenis Arriojas", email = "ArriojasMaldonado001@umb.edu" },
 ]
-requires-python = ">=3.10"
+requires-python = ">=3.10,<3.13"
 dependencies = [
-    "anndata>=0.11.3",
-    "anywidget>=0.9.13",
-    "ipywidgets>=8.1.5",
-    "itables>=2.2.4",
+    "anndata",
+    "anywidget",
+    "ipywidgets",
+    "itables",
     "numpy<2.2",
-    "pandas>=2.2.3",
-    "plotly>=6.0.0",
-    "scanpy>=1.10.4",
-    "scikit-learn>=1.6.1",
-    "scikit-misc>=0.5.1",
-    "svgpathtools>=1.6.1",
+    "pandas",
+    "plotly",
+    "scanpy",
+    "scikit-learn",
+    "scikit-misc",
+    "svgpathtools",
 ]
 
 [project.urls]
