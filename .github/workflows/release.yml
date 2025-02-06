@@ -1,0 +1,53 @@
+name: Update Stable Tag and Create Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"  # Matches version tags like v0.1.3
+
+jobs:
+  test:
+    name: Run Tests
+    uses: ./.github/workflows/tests.yml
+
+  update-stable:
+    needs: test  # Require tests to pass first
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # Needed for tag operations and creating releases
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history and tags
+
+      - name: Get tag info
+        id: tag
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "Processing version tag: $TAG"
+
+      - name: Update stable tag
+        run: |
+          # Configure git
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Get the current commit of the new version tag
+          VERSION_COMMIT=$(git rev-parse ${{ steps.tag.outputs.tag }})
+
+          # Create/update stable tag
+          echo "Moving stable tag to version ${{ steps.tag.outputs.tag }} (commit: $VERSION_COMMIT)"
+          git tag -f stable $VERSION_COMMIT
+          git push origin refs/tags/stable -f
+
+      - name: Create GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          # Create a release using the GitHub CLI
+          gh release create ${{ steps.tag.outputs.tag }} \
+            --title "Release ${{ steps.tag.outputs.tag }}" \
+            --generate-notes \
+            --latest

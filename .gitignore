@@ -3,6 +3,7 @@
 
 # Some exceptions
 !.gitignore
+!.github
 !.*.toml
 !.*.yaml
 
