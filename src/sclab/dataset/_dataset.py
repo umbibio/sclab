@@ -255,9 +255,9 @@ class SCLabDataset(EventClient):
             assert value.ndim <= 2, "data array must be 1D or 2D"
 
             if not self.metadata.empty:
-                assert value.shape[0] == self._metadata.shape[0], (
-                    "data must have same length as metadata"
-                )
+                assert (
+                    value.shape[0] == self._metadata.shape[0]
+                ), "data must have same length as metadata"
                 value = pd.DataFrame(value, index=self.metadata.index)
 
             else:
@@ -266,9 +266,9 @@ class SCLabDataset(EventClient):
 
         elif isinstance(value, pd.DataFrame):
             if not self.metadata.empty:
-                assert value.index.equals(self.metadata.index), (
-                    "data must have same index as metadata"
-                )
+                assert value.index.equals(
+                    self.metadata.index
+                ), "data must have same index as metadata"
 
         else:
             raise TypeError("data must be a pandas DataFrame or numpy array")

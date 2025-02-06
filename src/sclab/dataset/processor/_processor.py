@@ -277,9 +277,9 @@ class Processor(EventClient):
         for step_group_name, steps_list in steps.items():
             for i, step in enumerate(steps_list):
                 if isinstance(step, type):
-                    assert issubclass(step, ProcessorStepBase), (
-                        f"{step} must be a subclass of {ProcessorStepBase}"
-                    )
+                    assert issubclass(
+                        step, ProcessorStepBase
+                    ), f"{step} must be a subclass of {ProcessorStepBase}"
                     steps_list[i] = step(self)
 
         steps: dict[str, list[_ProcessorStep]]
@@ -288,9 +288,9 @@ class Processor(EventClient):
         # we make sure the steps have not been previously added
         for step_group_name, steps_list in steps.items():
             for step in steps_list:
-                assert step.description not in self.steps, (
-                    f"Step {step.description} already exists"
-                )
+                assert (
+                    step.description not in self.steps
+                ), f"Step {step.description} already exists"
 
         # we add the new steps
         group_steps_dict: dict[str, _ProcessorStep]
@@ -327,9 +327,9 @@ class Processor(EventClient):
     def add_step_object(
         self, step: ProcessorStepBase, accordion: Accordion | None = None
     ):
-        assert step.description not in self.steps, (
-            f"Step {step.description} already exists"
-        )
+        assert (
+            step.description not in self.steps
+        ), f"Step {step.description} already exists"
         self.steps[step.description] = step
 
         if accordion is not None:
@@ -532,12 +532,12 @@ class Processor(EventClient):
             ]
         )
 
-        self.selection_labeling_controls_dict["create_new_key_checkbox"] = (
-            create_new_key_checkbox
-        )
-        self.selection_labeling_controls_dict["existing_metadata_key"] = (
-            existing_metadata_key
-        )
+        self.selection_labeling_controls_dict[
+            "create_new_key_checkbox"
+        ] = create_new_key_checkbox
+        self.selection_labeling_controls_dict[
+            "existing_metadata_key"
+        ] = existing_metadata_key
         self.selection_labeling_controls_dict["existing_label"] = existing_label
         self.selection_labeling_controls_dict["new_medatadata_key"] = new_medatadata_key
         self.selection_labeling_controls_dict["new_label"] = new_label
