@@ -432,6 +432,6 @@ def rotate_and_project_traces(
     X = (Rxyz(alpha, beta, gamma) @ X.T).T
     for trace in figure_data:
         marker_ids = trace.hovertext
-        if not isinstance(marker_ids, NDArray | list):
+        if not isinstance(marker_ids, np.ndarray | list):
             continue
         trace.x, trace.y = X.loc[marker_ids].values[:, :2].T

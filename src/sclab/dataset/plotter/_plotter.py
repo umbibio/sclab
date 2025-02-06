@@ -510,7 +510,7 @@ class Plotter(GridBox, EventClient):
         trace: go.Scatter | go.Scattergl | go.Scatter3d
         for trace in self.g.data:
             marker_ids = trace.hovertext
-            if not isinstance(marker_ids, NDArray | list):
+            if not isinstance(marker_ids, np.ndarray | list):
                 continue
 
             if df.index.intersection(marker_ids).empty:
