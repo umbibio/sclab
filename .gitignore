@@ -3,7 +3,8 @@
 
 # Some exceptions
 !.gitignore
-!.bumpversion.toml
+!.*.toml
+!.*.yaml
 
 # Python-generated files
 __pycache__/

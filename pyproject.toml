@@ -36,4 +36,8 @@ name = "sclab"
 source = "src/sclab"
 
 [dependency-groups]
-dev = ["bump-my-version>=0.31.1"]
+dev = [
+    "bump-my-version>=0.31.1",
+    "pre-commit>=4.1.0",
+    "ruff>=0.9.4",
+]
