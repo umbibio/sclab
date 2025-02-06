@@ -34,7 +34,7 @@ from pandas.api.types import (
 from traitlets import TraitError
 
 from ...event import EventBroker, EventClient
-from .. import SCLabDataset
+from .._dataset import SCLabDataset
 from ..plotter import Plotter
 
 logger = logging.getLogger(__name__)

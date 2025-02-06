@@ -17,7 +17,7 @@ from plotly.graph_objs.scatter3d import Marker as Marker3D
 from scipy.interpolate import make_smoothing_spline
 
 from ...event import EventBroker, EventClient
-from .. import SCLabDataset
+from .._dataset import SCLabDataset
 from ._controls import PlotterControls
 from ._utils import (
     COLOR_DISCRETE_SEQUENCE,

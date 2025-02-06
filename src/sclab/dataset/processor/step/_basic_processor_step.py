@@ -12,7 +12,7 @@ from ipywidgets.widgets.valuewidget import ValueWidget
 from ipywidgets.widgets.widget_description import DescriptionWidget
 
 from ....event import EventClient
-from .. import Processor
+from .._processor import Processor
 
 
 class BasicProcessorStep(EventClient):

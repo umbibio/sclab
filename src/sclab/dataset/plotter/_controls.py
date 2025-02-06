@@ -16,7 +16,7 @@ from ipywidgets import (
 )
 
 from ...event import EventBroker, EventClient
-from .. import SCLabDataset
+from .._dataset import SCLabDataset
 
 
 class PlotterControls(EventClient, VBox):
