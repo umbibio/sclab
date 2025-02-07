@@ -17,7 +17,8 @@ jobs:
       contents: write  # Needed for tag operations and creating releases
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0  # Fetch all history and tags
 
@@ -51,3 +52,8 @@ jobs:
             --title "Release ${{ steps.tag.outputs.tag }}" \
             --generate-notes \
             --latest
+
+  publish:
+    name: Publish To PyPI
+    needs: update-stable
+    uses: ./.github/workflows/publish.yml

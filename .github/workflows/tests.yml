@@ -14,16 +14,23 @@ jobs:
         python-version: ["3.10", "3.11", "3.12"]
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Install the latest version of uv
+        id: setup-uv
+        uses: astral-sh/setup-uv@v5
         with:
           python-version: ${{ matrix.python-version }}
-          cache: "pip"
+          enable-cache: true
+          cache-suffix: "setup-uv-${{ matrix.os }}"
+
+      - name: Cache Hit
+        if: steps.setup-uv.outputs.cache-hit == 'true'
+        run: echo "Cache was restored"
 
       - name: Install dependencies
-        run: pip install ".[test]"
+        run: uv pip install ".[test]"
 
       - name: Run tests
         run: pytest
