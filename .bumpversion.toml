@@ -31,6 +31,6 @@ replace = '__version__ = "{new_version}"'
 
 [[tool.bumpversion.files]]
 filename = "LICENSE"
-search = 'Copyright \(c\) \\d{{4}}'
-replace = 'Copyright (c) {now:%Y}'
+search = "Copyright \\(c\\) \\d{{4}}"
+replace = "Copyright (c) {now:%Y}"
 regex = true
