@@ -1,13 +1,27 @@
 name: Upload Python Package
 
 on:
-  workflow_call:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"  # Matches version tags like v0.1.3
 
 permissions:
   contents: read
 
 jobs:
+  test:
+    name: Run Tests
+    uses: ./.github/workflows/tests.yml
+
+
+  publish-release:
+    needs: test  # Require tests to pass first
+    name: Publish GitHub Release
+    uses: ./.github/workflows/release.yml
+
   deploy:
+    needs: publish-release
+    name: Deploy to PyPI
     runs-on: ubuntu-latest
     environment: pypi-release
     permissions:
