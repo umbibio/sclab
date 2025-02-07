@@ -28,3 +28,9 @@ replace = 'version = "{new_version}"'
 filename = "src/sclab/__init__.py"
 search = '__version__ = "{current_version}"'
 replace = '__version__ = "{new_version}"'
+
+[[tool.bumpversion.files]]
+filename = "LICENSE"
+search = 'Copyright \(c\) \\d{{4}}'
+replace = 'Copyright (c) {now:%Y}'
+regex = true

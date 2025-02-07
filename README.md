@@ -14,20 +14,26 @@ SCLab is an interactive single-cell analysis toolkit that provides a seamless in
 ## Installation
 
 ```bash
-pip install git+https://github.com/umbibio/sclab.git
+pip install sclab
 ```
 
 ## Quick Start
 
+Open a Jupyter Notebook and run the following:
+
 ```python
 from sclab import SCLabDashboard
 import scanpy as sc
+from IPython.display import display
 
 # Load your data
 adata = sc.read_10x_h5("your_data.h5")
 
 # Create dashboard
 dashboard = SCLabDashboard(adata, name="My Analysis")
+
+# Display dashboard
+display(dashboard)
 
 # The dashboard provides easy access to components:
 dashboard.ds  # Dataset (wrapper for AnnData)
@@ -85,7 +91,7 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the BSD 3-Clause License - see the [LICENSE](LICENSE) file for details.
 
 ## Citation
 
