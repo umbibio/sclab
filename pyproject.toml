@@ -21,7 +21,7 @@ dependencies = [
     "itables",
     "numpy<2.2",
     "pandas",
-    "plotly",
+    "plotly<6.0",
     "scanpy",
     "scikit-learn",
     "scikit-misc",

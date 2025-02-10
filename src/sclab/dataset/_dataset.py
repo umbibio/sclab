@@ -336,7 +336,7 @@ class SCLabDataset(EventClient):
         self.broker.publish("dset_selected_rows_change", value)
 
     @property
-    def selected_rows_mask(self) -> NDArray[np.bool]:
+    def selected_rows_mask(self) -> NDArray[np.bool_]:
         return self.metadata.index.isin(self.selected_rows)
 
     @property
