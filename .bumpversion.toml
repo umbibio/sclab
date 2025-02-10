@@ -38,6 +38,6 @@ regex = true
 [[tool.bumpversion.files]]
 filename = "CHANGELOG.md"
 search = "## [Unreleased]"
-replace = """[Unreleased]
+replace = """## [Unreleased]
 
 ## [{new_version}] - {now:%Y-%m-%d}"""
