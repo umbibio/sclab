@@ -22,23 +22,29 @@ pip install sclab
 Open a Jupyter Notebook and run the following:
 
 ```python
-from sclab import SCLabDashboard
-import scanpy as sc
 from IPython.display import display
+from sclab import SCLabDashboard
+from sclab.examples.processor_steps import QC, Preprocess, PCA, Neighbors, UMAP, Cluster
+import scanpy as sc
 
 # Load your data
 adata = sc.read_10x_h5("your_data.h5")
 
 # Create dashboard
 dashboard = SCLabDashboard(adata, name="My Analysis")
+# Add desired processing steps to the interface
+dashboard.pr.add_steps({"Processing": [QC, Preprocess, PCA, Neighbors, UMAP, Cluster]})
 
 # Display dashboard
 display(dashboard)
 
 # The dashboard provides easy access to components:
-dashboard.ds  # Dataset (wrapper for AnnData)
-dashboard.pl  # Plotter
-dashboard.pr  # Processor
+# dashboard.ds  # Dataset (wrapper for AnnData)
+# dashboard.pl  # Plotter
+# dashboard.pr  # Processor
+
+# the resulting AnnData object is found within the dataset object:
+# dashboard.ds.adata
 ```
 
 ## Components
@@ -98,10 +104,10 @@ This project is licensed under the BSD 3-Clause License - see the [LICENSE](LICE
 If you use SCLab in your research, please cite:
 
 ```bibtex
-@software{sclab2024,
+@software{sclab2025,
   author = {Arriojas, Argenis},
   title = {SCLab: Interactive Single-Cell Analysis Toolkit},
-  year = {2024},
+  year = {2025},
   publisher = {GitHub},
   url = {https://github.com/umbibio/sclab}
 }

@@ -7,6 +7,9 @@
 !.*.toml
 !.*.yaml
 
+# If you really want to ignore files
+..*
+
 # Python-generated files
 __pycache__/
 *.py[oc]
