@@ -2,8 +2,7 @@
 .*
 
 # Some exceptions
-!.gitignore
-!.github
+!.git*
 !.*.toml
 !.*.yaml
 
