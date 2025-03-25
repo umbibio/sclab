@@ -22,7 +22,6 @@ dependencies = [
     "numpy<2.2",
     "pandas",
     "plotly<6.0",
-    "scanpy",
     "scikit-learn",
     "scikit-misc",
     "svgpathtools",
@@ -57,3 +56,4 @@ dev = [
     "mkdocs-material>=9.6.3",
     "mkdocs-jupyter>=0.25.1",
 ]
+opt = ["scanpy"]
