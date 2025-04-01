@@ -36,6 +36,8 @@ dependencies = [
 
 [project.optional-dependencies]
 test = ["pytest>=8.3.4"]
+numba = ["scanpy>=1.10.4"]
+jupyter = ["jupyterlab>=4.3.6"]
 
 [build-system]
 requires = ["flit_core>=3.2,<4"]
@@ -55,5 +57,6 @@ dev = [
     "mkdocs>=1.6.1",
     "mkdocs-material>=9.6.3",
     "mkdocs-jupyter>=0.25.1",
+    "scanpy>=1.10.4",
+    "jupyterlab>=4.3.6",
 ]
-opt = ["scanpy"]
