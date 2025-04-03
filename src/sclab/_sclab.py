@@ -42,12 +42,14 @@ class SCLabDashboard(GridBox):
         self.main_content = Tab(
             children=[
                 self.plotter,
+                self.processor.results_panel,
                 self.dataset.obs_table,
                 self.dataset.var_table,
                 self.broker.logs_tab,
             ],
             titles=[
                 "Main graph",
+                "Results",
                 "Observations",
                 "Genes",
                 "Logs",

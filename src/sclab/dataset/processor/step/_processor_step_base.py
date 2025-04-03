@@ -8,6 +8,7 @@ from ipywidgets.widgets.widget_description import DescriptionWidget
 
 from ....event import EventClient
 from .._processor import Processor
+from .._results_panel import _Results
 
 
 class ProcessorStepBase(EventClient):
@@ -21,6 +22,7 @@ class ProcessorStepBase(EventClient):
     run_button: Button
     controls_list: list[DescriptionWidget | ValueWidget | Button]
     controls: VBox
+    results: _Results | None
 
     run_button_description = "Run"
 
@@ -31,6 +33,7 @@ class ProcessorStepBase(EventClient):
         description: str,
         fixed_params: dict[str, Any],
         variable_controls: dict[str, DescriptionWidget | ValueWidget],
+        results: _Results | None = None,
     ):
         self.parent = parent
         self.name = name
@@ -56,6 +59,9 @@ class ProcessorStepBase(EventClient):
         ]
         self.make_controls()
 
+        if results is not None:
+            self.results = results
+            parent.results_panel.add_result(self.results)
         super().__init__(parent.broker)
 
     def make_controls(self):

@@ -120,7 +120,6 @@ class SCLabDataset(EventClient):
                         },
                         "copyHtml5",
                         {"extend": "csvHtml5", "title": f"{self.name}_cells"},
-                        {"extend": "excelHtml5", "title": f"{self.name}_cells"},
                     ],
                     columnDefs=[
                         {"visible": True, "targets": [0]},
@@ -128,7 +127,7 @@ class SCLabDataset(EventClient):
                     ],
                     style="width:100%",
                     classes="display cell-border",
-                    stateSave=True,
+                    stateSave=False,
                 )
 
         def update_var_table(incoming_change: pd.DataFrame | dict, *args, **kvargs):
@@ -154,7 +153,6 @@ class SCLabDataset(EventClient):
                         },
                         "copyHtml5",
                         {"extend": "csvHtml5", "title": f"{self.name}_genes"},
-                        {"extend": "excelHtml5", "title": f"{self.name}_genes"},
                     ],
                     columnDefs=[
                         {"visible": True, "targets": [0]},
@@ -162,7 +160,7 @@ class SCLabDataset(EventClient):
                     ],
                     style="width:100%",
                     classes="display cell-border",
-                    stateSave=True,
+                    stateSave=False,
                 )
 
         update_obs_table(self.adata.obs)

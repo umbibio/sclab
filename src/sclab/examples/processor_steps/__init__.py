@@ -1,4 +1,5 @@
 from ._cluster import Cluster
+from ._differential_expression import DifferentialExpression
 from ._neighbors import Neighbors
 from ._pca import PCA
 from ._preprocess import Preprocess
@@ -12,4 +13,5 @@ __all__ = [
     "Neighbors",
     "UMAP",
     "Cluster",
+    "DifferentialExpression",
 ]
