@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- URL-based AnnData loading functionality
+- Interactive file upload UI with DataLoader component
+- Support for loading h5ad files from both URLs and uploads
+- Scanpy-compatible modules for proper file handling
+
+### Changed
+- Refactored SCLabDashboard to support multiple data loading methods
+- Made copy parameter default to False when loading AnnData objects
+
+### Fixed
+- Added missing imports for BytesIO and URL parsing
+- Improved error handling for file loading operations
+
+### Dependencies
+- Moved scanpy to optional dependencies
+- Added scanpy[leiden] for differential expression functionality
+- Added jupyterlab to dev dependency group
 
 ## [0.1.8] - 2025-02-10
 ### Fixed
