@@ -6,6 +6,8 @@ from sclab.dataset.processor.step import ProcessorStepBase
 
 class Neighbors(ProcessorStepBase):
     parent: Processor
+    name: str = "neighbors"
+    description: str = "Neighbors"
 
     def __init__(self, parent: Processor) -> None:
         try:
@@ -31,8 +33,6 @@ class Neighbors(ProcessorStepBase):
 
         super().__init__(
             parent=parent,
-            name="neighbors",
-            description="Neighbors",
             fixed_params={},
             variable_controls=variable_controls,
         )

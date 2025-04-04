@@ -6,6 +6,8 @@ from sclab.dataset.processor.step import ProcessorStepBase
 
 class Cluster(ProcessorStepBase):
     parent: Processor
+    name: str = "cluster"
+    description: str = "Cluster"
 
     def __init__(self, parent: Processor) -> None:
         try:
@@ -21,8 +23,6 @@ class Cluster(ProcessorStepBase):
 
         super().__init__(
             parent=parent,
-            name="cluster",
-            description="Cluster",
             fixed_params={},
             variable_controls=variable_controls,
         )

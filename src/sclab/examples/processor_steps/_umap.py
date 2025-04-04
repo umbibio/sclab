@@ -7,6 +7,8 @@ from sclab.dataset.processor.step import ProcessorStepBase
 
 class UMAP(ProcessorStepBase):
     parent: Processor
+    name: str = "umap"
+    description: str = "UMAP"
 
     def __init__(self, parent: Processor) -> None:
         try:
@@ -21,8 +23,6 @@ class UMAP(ProcessorStepBase):
 
         super().__init__(
             parent=parent,
-            name="umap",
-            description="UMAP",
             fixed_params={},
             variable_controls=variable_controls,
         )

@@ -6,6 +6,8 @@ from sclab.dataset.processor.step import ProcessorStepBase
 
 class QC(ProcessorStepBase):
     parent: Processor
+    name: str = "qc"
+    description: str = "QC"
 
     def __init__(self, parent: Processor) -> None:
         try:
@@ -36,8 +38,6 @@ class QC(ProcessorStepBase):
 
         super().__init__(
             parent=parent,
-            name="qc",
-            description="QC",
             fixed_params={},
             variable_controls=variable_controls,
         )

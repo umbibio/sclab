@@ -124,6 +124,8 @@ class DifferentialExpressionResults(VBox):
 class DifferentialExpression(ProcessorStepBase):
     parent: Processor
     results: DifferentialExpressionResults
+    name: str = "differential_expression"
+    description: str = "Differential Expression"
 
     def __init__(self, parent: Processor) -> None:
         try:
@@ -159,8 +161,6 @@ class DifferentialExpression(ProcessorStepBase):
         results = DifferentialExpressionResults(parent.dataset)
         super().__init__(
             parent=parent,
-            name="differential_expression",
-            description="Differential Expression",
             fixed_params={},
             variable_controls=variable_controls,
             results=results,

@@ -9,6 +9,8 @@ from sclab.dataset.processor.step import ProcessorStepBase
 
 class PCA(ProcessorStepBase):
     parent: Processor
+    name: str = "pca"
+    description: str = "PCA"
 
     def __init__(self, parent: Processor) -> None:
         try:
@@ -29,8 +31,6 @@ class PCA(ProcessorStepBase):
 
         super().__init__(
             parent=parent,
-            name="pca",
-            description="PCA",
             fixed_params={},
             variable_controls=variable_controls,
         )

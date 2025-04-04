@@ -14,8 +14,8 @@ from .._results_panel import _Results
 class ProcessorStepBase(EventClient):
     events: list[str] = None
     parent: Processor
-    name: str
-    description: str
+    name: str = None
+    description: str = None
     fixed_params: dict[str, Any]
     variable_controls: dict[str, DescriptionWidget | ValueWidget]
     output: Output
@@ -23,21 +23,21 @@ class ProcessorStepBase(EventClient):
     controls_list: list[DescriptionWidget | ValueWidget | Button]
     controls: VBox
     results: _Results | None
+    order: int = 1000
 
     run_button_description = "Run"
 
     def __init__(
         self,
         parent: Processor,
-        name: str,
-        description: str,
         fixed_params: dict[str, Any],
         variable_controls: dict[str, DescriptionWidget | ValueWidget],
         results: _Results | None = None,
     ):
+        assert self.name
+        assert self.description
+
         self.parent = parent
-        self.name = name
-        self.description = description
         self.fixed_params = fixed_params
         self.variable_controls = variable_controls
 

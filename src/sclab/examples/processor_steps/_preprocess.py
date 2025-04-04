@@ -8,6 +8,8 @@ from sclab.dataset.processor.step import ProcessorStepBase
 
 class Preprocess(ProcessorStepBase):
     parent: Processor
+    name: str = "preprocess"
+    description: str = "Preprocess"
 
     def __init__(self, parent: Processor) -> None:
         try:
@@ -50,8 +52,6 @@ class Preprocess(ProcessorStepBase):
 
         super().__init__(
             parent=parent,
-            name="preprocess",
-            description="Preprocess",
             fixed_params={},
             variable_controls=variable_controls,
         )
