@@ -33,6 +33,7 @@ from pandas.api.types import (
 )
 from traitlets import TraitError
 
+from ..._methods_registry import get_sclab_methods
 from ...event import EventBroker, EventClient
 from .._dataset import SCLabDataset
 from ..plotter import Plotter
@@ -189,6 +190,9 @@ class Processor(EventClient):
 
         super().__init__(self.broker)
         self.broker.subscribe("dset_metadata_change", self._make_selection_controls)
+
+        registered_methods = get_sclab_methods()
+        self.add_steps(registered_methods)
 
     @property
     def step_groups(self) -> dict[str, Accordion]:
