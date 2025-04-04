@@ -22,10 +22,10 @@ dependencies = [
     "numpy<2.2",
     "pandas",
     "plotly<6.0",
-    "requests>=2.32.3",
+    "requests",
     "scikit-learn",
     "svgpathtools",
-    "tqdm>=4.67.1",
+    "tqdm",
 ]
 
 [project.urls]
