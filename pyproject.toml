@@ -24,6 +24,7 @@ dependencies = [
     "plotly<6.0",
     "scikit-learn",
     "svgpathtools",
+    "tqdm>=4.67.1",
 ]
 
 [project.urls]
