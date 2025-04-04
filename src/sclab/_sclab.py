@@ -81,10 +81,12 @@ class SCLabDashboard(GridBox):
 
         self.data_loader = DataLoader(self)
 
+        GridBox.__init__(self)
         if adata is not None:
             self._load(adata, copy=copy)
         else:
-            GridBox.__init__(self, [self.data_loader], layout=self.data_loader_layout)
+            self.children = (self.data_loader,)
+            self.layout = self.data_loader_layout
 
     def _load(self, adata: AnnData, copy: bool = False):
         self.dataset = SCLabDataset(
