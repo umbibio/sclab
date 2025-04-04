@@ -1,3 +1,4 @@
+import inspect
 from io import BytesIO
 from pathlib import Path
 
@@ -13,6 +14,7 @@ from ipywidgets.widgets import (
     Output,
     Tab,
     Text,
+    ToggleButtons,
     VBox,
 )
 
@@ -145,7 +147,6 @@ class DataLoader(VBox):
 
     upload: FileUpload
     upload_info: Output
-    upload_button: Button
     upload_row: HBox
     upload_row_label: Label
 
@@ -153,6 +154,11 @@ class DataLoader(VBox):
     load_button: Button
     url_row: HBox
     url_row_label: Label
+
+    defined_adatas_dict: dict[str, AnnData]
+    defined_adatas: ToggleButtons
+    defined_adatas_row: HBox
+    defined_adatas_label: Label
 
     progress_output: Output
     continue_button: Button
@@ -163,9 +169,8 @@ class DataLoader(VBox):
         self.upload_row_label = Label("Load from file:", layout=Layout(width="120px"))
         self.upload = FileUpload(layout=Layout(width="200px"))
         self.upload_info = Output(layout=Layout(width="95%"))
-        self.upload_button = Button(description="Load", layout=Layout(width="200px"))
         self.upload_row = HBox(
-            [self.upload_row_label, self.upload, self.upload_info, self.upload_button],
+            [self.upload_row_label, self.upload, self.upload_info],
             layout=Layout(width="100%"),
         )
         self.upload.observe(self.on_upload, "value")
@@ -179,6 +184,26 @@ class DataLoader(VBox):
         )
         self.load_button.on_click(self.on_load_url)
 
+        user_f_locals = inspect.stack()[2].frame.f_locals
+        self.defined_adatas_dict = {}
+        for name, variable_type in [(k, type(v)) for k, v in user_f_locals.items()]:
+            if variable_type is AnnData:
+                self.defined_adatas_dict[name] = user_f_locals[name]
+
+        self.defined_adatas_label = Label(
+            "Defined datasets:", layout=Layout(width="120px")
+        )
+        self.defined_adatas = ToggleButtons(
+            options=list(self.defined_adatas_dict.keys()),
+            value=None,
+            layout=Layout(width="100%"),
+        )
+        self.defined_adatas_row = HBox(
+            [self.defined_adatas_label, self.defined_adatas],
+            layout=Layout(width="100%"),
+        )
+        self.defined_adatas.observe(self.on_defined_adatas_toggle, "value")
+
         self.progress_output = Output(layout=Layout(width="95%"))
         self.continue_button = Button(
             description="Continue", layout=Layout(width="100%"), button_style="success"
@@ -190,10 +215,22 @@ class DataLoader(VBox):
             [
                 self.url_row,
                 self.upload_row,
+                self.defined_adatas_row,
                 self.progress_output,
             ],
             layout=Layout(width="100%"),
         )
+
+    def on_defined_adatas_toggle(self, *args, **kwargs):
+        adata = self.defined_adatas_dict[self.defined_adatas.value]
+
+        self.progress_output.clear_output()
+        with self.progress_output:
+            print(f"Loaded {adata.shape[0]} observations and {adata.shape[1]} genes\n")
+            print(adata)
+            display(self.continue_button)
+
+        self.adata = adata
 
     def on_upload(self, *args, **kwargs):
         from .scanpy.readwrite import read_10x_h5, read_h5ad
@@ -248,3 +285,4 @@ class DataLoader(VBox):
     def on_continue(self, *args, **kwargs):
         self.dashboard._load(self.adata)
         self.adata = None
+        self.defined_adatas_dict = {}
