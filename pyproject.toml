@@ -23,7 +23,6 @@ dependencies = [
     "pandas",
     "plotly<6.0",
     "scikit-learn",
-    "scikit-misc",
     "svgpathtools",
 ]
 
@@ -36,7 +35,7 @@ dependencies = [
 
 [project.optional-dependencies]
 test = ["pytest>=8.3.4"]
-numba = ["scanpy>=1.10.4"]
+scanpy = ["scanpy[leiden,skmisc]>=1.10"]
 jupyter = ["jupyterlab>=4.3.6"]
 
 [build-system]
