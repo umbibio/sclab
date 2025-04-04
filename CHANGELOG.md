@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- Local environment variable detection in DataLoader to discover AnnData objects
+- Extensible method registry system for organizing processor steps by category
+- Decorator for registering methods with custom names and ordering
+
+### Changed
+- Moved processor step name and description to class attributes for simpler creation
+- Added order attribute to processor steps to support sorting
+
+### Fixed
+- Fixed initialization sequence in SCLabDashboard's GridBox parent class
+
+### Dependencies
+- Removed scikit-misc from core dependencies (now part of scanpy extra)
 
 ## [0.2.0] - 2025-04-03
 ### Added
