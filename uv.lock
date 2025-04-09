@@ -2571,7 +2571,7 @@ wheels = [
 
 [[package]]
 name = "sclab"
-version = "0.2.1"
+version = "0.2.3"
 source = { editable = "." }
 dependencies = [
     { name = "anndata" },
@@ -2610,6 +2610,7 @@ dev = [
     { name = "pytest" },
     { name = "ruff" },
     { name = "scanpy", extra = ["leiden"] },
+    { name = "sclab-tools" },
 ]
 
 [package.metadata]
@@ -2623,11 +2624,11 @@ requires-dist = [
     { name = "pandas" },
     { name = "plotly", specifier = "<6.0" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=8.3.4" },
-    { name = "requests", specifier = ">=2.32.3" },
+    { name = "requests" },
     { name = "scanpy", extras = ["leiden", "skmisc"], marker = "extra == 'scanpy'", specifier = ">=1.10" },
     { name = "scikit-learn" },
     { name = "svgpathtools" },
-    { name = "tqdm", specifier = ">=4.67.1" },
+    { name = "tqdm" },
 ]
 provides-extras = ["test", "scanpy", "jupyter"]
 
@@ -2643,6 +2644,48 @@ dev = [
     { name = "pytest", specifier = ">=8.3.4" },
     { name = "ruff", specifier = ">=0.9.4" },
     { name = "scanpy", extras = ["leiden"], specifier = ">=1.10.4" },
+    { name = "sclab-tools", directory = "../sclab-tools" },
+]
+
+[[package]]
+name = "sclab-tools"
+version = "0.1.0"
+source = { directory = "../sclab-tools" }
+dependencies = [
+    { name = "anndata" },
+    { name = "matplotlib" },
+    { name = "numpy" },
+    { name = "pandas" },
+    { name = "plotly" },
+    { name = "scikit-learn" },
+    { name = "sclab" },
+    { name = "tqdm" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "anndata" },
+    { name = "matplotlib" },
+    { name = "numpy", specifier = "<2.2" },
+    { name = "pandas" },
+    { name = "plotly", specifier = "<6" },
+    { name = "scikit-learn" },
+    { name = "sclab", specifier = ">=0.2.3" },
+    { name = "tqdm" },
+]
+
+[package.metadata.requires-dev]
+all = [{ name = "cellflow", directory = "../cellflow" }]
+dev = [
+    { name = "anndata2ri", specifier = ">=1.3.2" },
+    { name = "cellflow", directory = "../cellflow" },
+    { name = "ipykernel", specifier = ">=6.29.5" },
+    { name = "pytest", specifier = ">=8.3.5" },
+    { name = "rpy2", specifier = ">=3.5.17" },
+]
+r = [
+    { name = "anndata2ri", specifier = ">=1.3" },
+    { name = "rpy2", specifier = ">=3.5" },
 ]
 
 [[package]]

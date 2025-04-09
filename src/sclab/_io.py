@@ -58,12 +58,6 @@ def load_adata_from_url(
     assert is_valid_url(url), "URL is not valid"
     url_path = Path(urlparse(url).path)
 
-    if url_path.suffix == ".h5":
-        try:
-            import scanpy as sc
-        except ImportError:
-            raise ImportError("Please install scanpy: `pip install scanpy`")
-
     file_content = fetch_file(url, progress=progress)
     match url_path.suffix:
         case ".h5":

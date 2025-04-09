@@ -48,6 +48,9 @@ build-backend = "flit_core.buildapi"
 name = "sclab"
 source = "src/sclab"
 
+[tool.uv.sources]
+sclab-tools = { path = "../sclab-tools" }
+
 [dependency-groups]
 dev = [
     "bump-my-version>=0.31.1",
@@ -60,4 +63,5 @@ dev = [
     "mkdocs-jupyter>=0.25.1",
     "scanpy[leiden]>=1.10.4",
     "jupyterlab>=4.3.6",
+    "sclab-tools",
 ]
