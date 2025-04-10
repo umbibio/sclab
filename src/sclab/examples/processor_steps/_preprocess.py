@@ -129,7 +129,6 @@ class Preprocess(ProcessorStepBase):
         if normalize_total:
             new_layer += "_normt"
             sc.pp.normalize_total(adata, target_sum=1e4)
-            adata.layers[new_layer] = adata.X.copy()
 
         pbar.update(10)
         pbar.update(10)
@@ -138,7 +137,6 @@ class Preprocess(ProcessorStepBase):
             new_layer += "_log1p"
             adata.uns.pop("log1p", None)
             sc.pp.log1p(adata)
-            adata.layers[new_layer] = adata.X.copy()
         pbar.update(10)
 
         vars_to_regress = []
@@ -154,13 +152,13 @@ class Preprocess(ProcessorStepBase):
         if vars_to_regress:
             new_layer += "_regr"
             sc.pp.regress_out(adata, keys=vars_to_regress, n_jobs=1)
-            adata.layers[new_layer] = adata.X.copy()
         pbar.update(10)
 
         if scale:
             new_layer += "_scale"
             sc.pp.scale(adata, zero_center=False)
-            adata.layers[new_layer] = adata.X.copy()
+
+        adata.layers[new_layer] = adata.X.copy()
 
         pbar.update(10)
 

@@ -187,7 +187,7 @@ class DataLoader(VBox):
         user_f_locals = inspect.stack()[2].frame.f_locals
         self.defined_adatas_dict = {}
         for name, variable_type in [(k, type(v)) for k, v in user_f_locals.items()]:
-            if variable_type is AnnData:
+            if variable_type is AnnData and not name.startswith("_"):
                 self.defined_adatas_dict[name] = user_f_locals[name]
 
         self.defined_adatas_label = Label(
