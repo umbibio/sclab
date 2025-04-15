@@ -1,6 +1,7 @@
 import inspect
 from io import BytesIO
 from pathlib import Path
+import tempfile
 
 from anndata import AnnData
 from IPython.display import display
@@ -256,14 +257,20 @@ class DataLoader(VBox):
 
         match path.suffix:
             case ".h5":
-                adata = read_10x_h5(contents)
+                with tempfile.NamedTemporaryFile(suffix=".h5") as tmp:
+                    tmp.write(contents.getbuffer())
+                    tmp.flush()
+                    adata = read_10x_h5(tmp.name)
             case ".h5ad":
-                adata = read_h5ad(contents)
+                with tempfile.NamedTemporaryFile(suffix=".h5ad") as tmp:
+                    tmp.write(contents.getbuffer())
+                    tmp.flush()
+                    adata = read_h5ad(tmp.name)
             case _:
                 self.upload_info.clear_output()
                 with self.upload_info:
                     print(f"`{filename}` is not valid")
-                    print("Please upload a 10x h5 or h5ad file")
+                    print("Please upload a 10x .h5 or .h5ad file")
                 return
 
         if var_names in adata.var:
