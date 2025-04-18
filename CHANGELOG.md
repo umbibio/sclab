@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Dependencies
+- Added `matplotlib` as a core dependency
+- Added scanpy's optional dependencies for development group
+
+### Fixed
+- Upload data buttom at DataLoader
 
 ## [0.2.4] - 2025-04-10
 ### Added
