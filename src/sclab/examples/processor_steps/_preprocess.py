@@ -1,4 +1,7 @@
+import warnings
+
 import numpy as np
+from anndata import ImplicitModificationWarning
 from ipywidgets import Checkbox, Dropdown
 from tqdm.auto import tqdm
 
@@ -156,7 +159,17 @@ class Preprocess(ProcessorStepBase):
 
         if scale:
             new_layer += "_scale"
-            sc.pp.scale(adata, zero_center=False)
+            if group_by is not None:
+                for _, idx in adata.obs.groupby(group_by, observed=True).groups.items():
+                    with warnings.catch_warnings():
+                        warnings.filterwarnings(
+                            "ignore",
+                            category=ImplicitModificationWarning,
+                            message="Modifying `X` on a view results in data being overridden",
+                        )
+                        adata[idx].X = sc.pp.scale(adata[idx].X, zero_center=False)
+            else:
+                sc.pp.scale(adata, zero_center=False)
 
         adata.layers[new_layer] = adata.X.copy()
 
