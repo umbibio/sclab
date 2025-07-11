@@ -1,6 +1,6 @@
 [project]
 name = "sclab"
-version = "0.2.5"
+version = "0.3.0.dev0"
 description = "sclab"
 readme = "README.md"
 authors = [
@@ -24,6 +24,7 @@ dependencies = [
     "pandas",
     "plotly<6.0",
     "requests",
+    "ripser>=0.6.12",
     "scikit-learn",
     "svgpathtools",
     "tqdm",
@@ -65,4 +66,5 @@ dev = [
     "scanpy[harmony,leiden,scrublet,skmisc]>=1.10.4",
     "jupyterlab>=4.3.6",
     "sclab-tools",
+    "scrublet>=0.2.3",
 ]
