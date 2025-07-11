@@ -1,4 +1,4 @@
-from ipywidgets import Dropdown
+from ipywidgets import Dropdown, IntText
 
 from sclab.dataset.processor import Processor
 from sclab.dataset.processor.step import ProcessorStepBase
@@ -40,12 +40,34 @@ class Integration(ProcessorStepBase):
                 value="batch" if "batch" in cat_options else None,
                 description="GroupBy",
             ),
+            reference_batch=Dropdown(
+                description="Reference Batch",
+            ),
             flavor=Dropdown(
                 options=["harmony", "scanorama"],
                 value="harmony",
                 description="Flavor",
             ),
+            max_iters=IntText(
+                value=20,
+                description="Max iters",
+            ),
         )
+
+        def update_reference_batch(*args, **kwargs):
+            group_by = variable_controls["group_by"].value
+            options = {
+                "": None,
+                **{
+                    c: c
+                    for c in self.parent.dataset.adata.obs[group_by]
+                    .sort_values()
+                    .unique()
+                },
+            }
+            variable_controls["reference_batch"].options = options
+
+        variable_controls["group_by"].observe(update_reference_batch, names="value")
 
         super().__init__(
             parent=parent,
@@ -53,7 +75,14 @@ class Integration(ProcessorStepBase):
             variable_controls=variable_controls,
         )
 
-    def function(self, use_rep: str, group_by: str, flavor: str):
+    def function(
+        self,
+        use_rep: str,
+        group_by: str,
+        flavor: str,
+        reference_batch: str | None,
+        max_iters: int,
+    ):
         adata = self.parent.dataset.adata
 
         key_added = f"{use_rep}_{flavor}"
@@ -68,9 +97,13 @@ class Integration(ProcessorStepBase):
         with self.broker.std_output:
             match flavor:
                 case "harmony":
-                    from scanpy.external.pp import harmony_integrate
+                    from sclab.preprocess import harmony_integrate
 
-                    harmony_integrate(**kvargs)
+                    harmony_integrate(
+                        **kvargs,
+                        reference_batch=reference_batch,
+                        max_iter_harmony=max_iters,
+                    )
 
                 case "scanorama":
                     from scanpy.external.pp import scanorama_integrate
