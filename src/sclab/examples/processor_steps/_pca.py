@@ -1,4 +1,3 @@
-import numpy as np
 import pandas as pd
 import plotly.express as px
 from ipywidgets import Button, Dropdown, IntText
@@ -64,7 +63,9 @@ class PCA(ProcessorStepBase):
         counts_layer = self.parent.dataset.counts_layer
 
         if reference_batch:
-            obs_mask = adata.obs[self.parent.batch_key] == reference_batch
+            batch_key = self.parent.batch_key
+
+            obs_mask = adata.obs[batch_key] == reference_batch
             adata_ref = adata[obs_mask].copy()
             if mask_var == "highly_variable":
                 sc.pp.highly_variable_genes(
@@ -85,13 +86,12 @@ class PCA(ProcessorStepBase):
             uns_pca = adata_ref.uns["pca"]
             uns_pca["reference_batch"] = reference_batch
             PCs = adata_ref.varm["PCs"]
-            X_pca: np.ndarray = adata.X.dot(PCs)
-            X_pca = X_pca - X_pca.mean(axis=0, keepdims=True)
-            adata.obsm["X_pca"] = X_pca
+            adata.obsm["X_pca"] = adata.X.dot(PCs)
             adata.uns["pca"] = uns_pca
             adata.varm["PCs"] = PCs
         else:
             sc.pp.pca(adata, n_comps=n_comps, mask_var=mask_var, svd_solver="arpack")
+            adata.obsm["X_pca"] = adata.X.dot(adata.varm["PCs"])
 
         self.plot_variance_ratio_button.disabled = False
         self.broker.publish(
