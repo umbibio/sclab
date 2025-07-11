@@ -1,3 +1,4 @@
+import numpy as np
 from ipywidgets import Dropdown, IntText
 
 from sclab.dataset.processor import Processor
@@ -21,6 +22,7 @@ class QC(ProcessorStepBase):
                 value="counts",
                 description="Layer",
             ),
+            min_counts=IntText(value=50, description="Min. Counts"),
             min_genes=IntText(value=5, description="Min. Genes"),
             min_cells=IntText(value=0, description="Min. Cells"),
             max_rank=IntText(value=0, description="Max. Rank"),
@@ -45,8 +47,10 @@ class QC(ProcessorStepBase):
     def compute_qc_metrics(
         self,
         layer: str | None = None,
+        min_counts: int = 50,
         min_genes: int = 5,
         min_cells: int = 5,
+        max_rank: int = 0,
     ):
         import scanpy as sc
 
@@ -58,6 +62,11 @@ class QC(ProcessorStepBase):
 
         adata.layers["qc_tmp_current_X"] = adata.X
         adata.X = adata.layers[layer].copy()
+        rowsums = np.asarray(adata.X.sum(axis=1)).squeeze()
+
+        obs_idx = adata.obs_names[rowsums >= min_counts]
+        adata._inplace_subset_obs(obs_idx)
+
         sc.pp.calculate_qc_metrics(adata, percent_top=None, log1p=False, inplace=True)
 
         sc.pp.filter_cells(adata, min_genes=min_genes)
@@ -68,19 +77,26 @@ class QC(ProcessorStepBase):
         # Restore original X
         adata.X = adata.layers.pop("qc_tmp_current_X")
 
-    def function(
-        self,
-        layer: str | None = None,
-        min_genes: int = 5,
-        min_cells: int = 5,
-        max_rank: int = 0,
-    ):
-        self.compute_qc_metrics(layer, min_genes, min_cells)
-
         if max_rank > 0:
             series = self.parent.dataset.adata.obs["barcode_rank"]
             index = series.loc[series < max_rank].index
             self.parent.dataset.filter_rows(index)
+
+    def function(
+        self,
+        layer: str | None = None,
+        min_counts: int = 50,
+        min_genes: int = 5,
+        min_cells: int = 5,
+        max_rank: int = 0,
+    ):
+        self.compute_qc_metrics(
+            layer,
+            min_counts,
+            min_genes,
+            min_cells,
+            max_rank,
+        )
 
         self.broker.publish("dset_metadata_change", self.parent.dataset.metadata)
         self.broker.publish(
