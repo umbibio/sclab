@@ -365,7 +365,7 @@ class SCLabDataset(EventClient):
         if not index.isin(self.metadata.index).all():
             raise InvalidRowSubset("index contains invalid values")
 
-        self.adata = self.adata[index].copy()
+        self.adata._inplace_subset_obs(index)
 
         self.broker.publish("dset_total_rows_change", self.metadata)
 
