@@ -1,5 +1,6 @@
 from ._cluster import Cluster
 from ._differential_expression import DifferentialExpression
+from ._doublet_detection import DoubletDetection
 from ._gene_expression import GeneExpression
 from ._integration import Integration
 from ._neighbors import Neighbors
@@ -16,6 +17,7 @@ __all__ = [
     "Neighbors",
     "UMAP",
     "Cluster",
+    "DoubletDetection",
     "GeneExpression",
     "DifferentialExpression",
 ]
