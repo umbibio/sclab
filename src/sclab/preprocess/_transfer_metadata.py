@@ -7,6 +7,7 @@ from anndata import AnnData
 from numpy.typing import NDArray
 from pandas.api.types import is_bool_dtype, is_numeric_dtype
 from scipy.sparse import csr_matrix
+from scipy.special import gamma
 from tqdm.auto import tqdm
 
 
@@ -31,16 +32,23 @@ def transfer_metadata(
     dtype = series.dtype
     if isinstance(dtype, pd.CategoricalDtype) or is_bool_dtype(dtype):
         assign_value_fn = _assign_categorical
+        new_column = f"transferred_{column}"
+        new_column_err = f"transferred_{column}_proportion"
     elif is_numeric_dtype(dtype) and periodic:
         assign_value_fn = partial(_assign_numerical_periodic, vmin=vmin, vmax=vmax)
+        new_column = f"transferred_{column}"
+        new_column_err = f"transferred_{column}_error"
     elif is_numeric_dtype(dtype):
         assign_value_fn = _assign_numerical
+        new_column = f"transferred_{column}"
+        new_column_err = f"transferred_{column}_error"
     else:
         raise ValueError(f"Unsupported dtype {dtype} for column {column}")
 
     meta_values = adata.obs[column].copy()
     meta_values[adata.obs[group_key] != source_group] = np.nan
-    new_values = meta_values.copy()
+    new_values = meta_values.copy().rename(new_column)
+    new_values_err = meta_values.copy().rename(new_column_err)
 
     for i, (d, c) in tqdm(enumerate(zip(D, C)), total=D.shape[0]):
         if not pd.isna(meta_values.iloc[i]):
@@ -61,20 +69,32 @@ def transfer_metadata(
         if np.allclose(weights, 0):
             continue
 
-        new_values.iloc[i] = assign_value_fn(values, weights)
+        assigned_value, assigned_value_err = assign_value_fn(values, weights)
+        new_values.iloc[i] = assigned_value
+        new_values_err.iloc[i] = assigned_value_err
 
-    adata.obs[f"transferred_{column}"] = new_values.copy()
+    adata.obs[new_column] = new_values.copy()
+    adata.obs[new_column_err] = new_values_err.copy()
 
 
 def _assign_categorical(values: pd.Series, weights: NDArray):
-    # weighted majority
-    tally = Counter(dict(zip(values, weights))).most_common()
-    return tally[0][0]
+    # weighted majority and proportion of votes
+    v, w = Counter(dict(zip(values, weights))).most_common()[0]
+    return v, w / weights.sum()
 
 
 def _assign_numerical(values: pd.Series, weights: NDArray):
-    # weighted average
-    return np.average(values, weights=weights)
+    # weighted mean and standard error
+    sum_w: float = weights.sum()
+    sum2_w: float = weights.sum() ** 2
+    sum_w2: float = (weights**2).sum()
+    n_eff: float = sum2_w / sum_w2
+
+    mean_x: float = (values * weights).sum() / sum_w
+    var_x: float = ((values - mean_x) ** 2 * weights).sum() * sum_w / (sum2_w - sum_w2)
+    err_x: float = np.sqrt(var_x / n_eff)
+
+    return mean_x, err_x
 
 
 def _assign_numerical_periodic(
@@ -86,9 +106,15 @@ def _assign_numerical_periodic(
     offset = np.median(values)
     values = values - offset + vspan / 2
     values = values % vspan
-    assigned_value = np.average(values, weights=weights)
+    assigned_value, assigned_value_err = _assign_numerical(values, weights)
     assigned_value = assigned_value + offset - vspan / 2
     assigned_value = assigned_value % vspan
     assigned_value = assigned_value + vmin
 
-    return assigned_value
+    return assigned_value, assigned_value_err
+
+
+def _c4(n: float):
+    # correct for bias
+    nm1 = n - 1
+    return np.sqrt(2 / nm1) * gamma(n / 2) / gamma(nm1 / 2)
