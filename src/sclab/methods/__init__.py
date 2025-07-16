@@ -13,6 +13,7 @@ from ..examples.processor_steps import (
     Neighbors,
     Preprocess,
 )
+from ..gui.components import GuidedPseudotime
 
 __all__ = [
     "QC",
@@ -22,8 +23,10 @@ __all__ = [
     "Neighbors",
     "UMAP",
     "Cluster",
+    "DoubletDetection",
     "GeneExpression",
     "DifferentialExpression",
+    "GuidedPseudotime",
 ]
 
 register_sclab_method("Processing")(QC)
@@ -52,3 +55,4 @@ if any(
 
 register_sclab_method("Analysis")(GeneExpression)
 register_sclab_method("Analysis")(DifferentialExpression)
+register_sclab_method("Analysis")(GuidedPseudotime)
