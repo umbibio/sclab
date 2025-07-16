@@ -29,26 +29,25 @@ def transfer_metadata(
     new_values: pd.Series
 
     series = adata.obs[column]
-    dtype = series.dtype
-    if isinstance(dtype, pd.CategoricalDtype) or is_bool_dtype(dtype):
+    if isinstance(series.dtype, pd.CategoricalDtype) or is_bool_dtype(series.dtype):
         assign_value_fn = _assign_categorical
         new_column = f"transferred_{column}"
         new_column_err = f"transferred_{column}_proportion"
-    elif is_numeric_dtype(dtype) and periodic:
+    elif is_numeric_dtype(series.dtype) and periodic:
         assign_value_fn = partial(_assign_numerical_periodic, vmin=vmin, vmax=vmax)
         new_column = f"transferred_{column}"
         new_column_err = f"transferred_{column}_error"
-    elif is_numeric_dtype(dtype):
+    elif is_numeric_dtype(series.dtype):
         assign_value_fn = _assign_numerical
         new_column = f"transferred_{column}"
         new_column_err = f"transferred_{column}_error"
     else:
-        raise ValueError(f"Unsupported dtype {dtype} for column {column}")
+        raise ValueError(f"Unsupported dtype {series.dtype} for column {column}")
 
-    meta_values = adata.obs[column].copy()
+    meta_values = series.copy()
     meta_values[adata.obs[group_key] != source_group] = np.nan
-    new_values = meta_values.copy().rename(new_column)
-    new_values_err = meta_values.copy().rename(new_column_err)
+    new_values = pd.Series(index=series.index, dtype=series.dtype, name=new_column)
+    new_values_err = pd.Series(index=series.index, dtype=float, name=new_column_err)
 
     for i, (d, c) in tqdm(enumerate(zip(D, C)), total=D.shape[0]):
         if not pd.isna(meta_values.iloc[i]):
