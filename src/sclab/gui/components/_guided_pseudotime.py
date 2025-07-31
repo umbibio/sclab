@@ -183,7 +183,7 @@ class GuidedPseudotime(ProcessorStepBase):
             )
 
     def estimate_periodic_pseudotime_start(self, _: Button | None = None):
-        from cellflow.pseudotime._pseudotime import estimate_periodic_pseudotime_start
+        from ...tools.cellflow.pseudotime._pseudotime import estimate_periodic_pseudotime_start
 
         time_key = self.variable_controls["key_added"].value
         estimate_periodic_pseudotime_start(self.parent.dataset.adata, time_key=time_key)
@@ -193,7 +193,7 @@ class GuidedPseudotime(ProcessorStepBase):
         self.estimate_start_time_button.button_style = "success"
 
     def send_signal_plot(self, _: Button | None = None):
-        from cellflow.utils.interpolate import NDBSpline
+        from ...tools.cellflow.utils.interpolate import NDBSpline
 
         if self.plot_signal.description == "Plot Signal":
             adata = self.parent.dataset.adata
@@ -296,7 +296,7 @@ class GuidedPseudotime(ProcessorStepBase):
         key_added: str,
         **kwargs,
     ):
-        from cellflow.pseudotime._pseudotime import pseudotime
+        from ...tools.cellflow.pseudotime._pseudotime import pseudotime
 
         self.plot_signal.description = "Plot Signal"
         self.plot_signal.button_style = "info"
@@ -392,8 +392,8 @@ class GuidedPseudotime(ProcessorStepBase):
             self.broker.publish("dset_metadata_change", dataset.metadata)
 
     def _automatic_periodic_path_drawing(self, *args, **kwargs):
-        from cellflow.pseudotime._pseudotime import periodic_parameter
-        from cellflow.utils.interpolate import NDFourier
+        from ...tools.cellflow.pseudotime._pseudotime import periodic_parameter
+        from ...tools.cellflow.utils.interpolate import NDFourier
 
         data_points_array = self.parent.plotter.data_for_plot.values[:, :2]
         ordr_points_array = periodic_parameter(data_points_array) / _2PI
