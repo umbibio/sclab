@@ -1,6 +1,6 @@
 [project]
 name = "sclab"
-version = "0.3.0.dev2"
+version = "0.3.0.dev3"
 description = "sclab"
 readme = "README.md"
 authors = [
