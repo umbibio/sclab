@@ -52,6 +52,7 @@ replace = "Copyright (c) {now:%Y}"
 regex = true
 
 [[tool.bumpversion.files]]
+include_bumps = ["pre_l"]
 filename = "CHANGELOG.md"
 search = "## [Unreleased]"
 replace = """## [Unreleased]
