@@ -1,5 +1,6 @@
 from typing import Literal, NamedTuple
 
+import matplotlib.pyplot as plt
 import numpy as np
 from anndata import AnnData
 from numpy import bool_, floating
@@ -7,7 +8,8 @@ from numpy.typing import NDArray
 from scipy.integrate import cumulative_trapezoid, quad
 from tqdm.auto import tqdm
 
-from ..utils.interpolate import NDBSpline, NDFourier
+from ..utils.density_nd import density_nd
+from ..utils.interpolate import NDBSpline, NDFourier, fit_smoothing_spline
 from .timeseries import periodic_sliding_window
 
 _2PI = 2 * np.pi
@@ -271,3 +273,60 @@ def pseudotime(
     }
 
     return result
+
+
+def estimate_periodic_pseudotime_start(
+    adata: AnnData,
+    time_key: str = "pseudotime",
+    bandwidth: float = 1 / 64,
+    show_plot: bool = False,
+):
+    # TODO: Test implementation
+    pseudotime = adata.obs[time_key].values.copy()
+    t_mask = ~np.isnan(pseudotime)
+    for _ in range(2):
+        rslt = density_nd(
+            pseudotime[t_mask].reshape(-1, 1),
+            bandwidth,
+            max_grid_size=2**10 + 1,
+            periodic=True,
+            bounds=((0, 1),),
+            normalize=True,
+        )
+        bspl = fit_smoothing_spline(
+            rslt.grid[:, 0],
+            1 / rslt.density,
+            t_range=(0, 1),
+            lam=1e-5,
+            periodic=True,
+        )
+        x = np.linspace(0, 1, 10001)
+        y = bspl.derivative(0)(x)
+        yp = bspl.derivative(1)(x)
+        ypp = bspl.derivative(2)(x)
+
+        if yp[np.argmax(np.abs(yp))] < 0:
+            break
+
+        pseudotime = -pseudotime % 1
+    else:
+        print("Warning: could not check direction for the pseudotime")
+
+    idx = np.argwhere(np.sign(ypp[:-1]) < np.sign(ypp[1:])).flatten()
+    roots = (x[idx] + x[1:][idx]) / 2
+    heights = yp[idx]
+
+    max_peak_x = roots[heights.argmin()]
+
+    if show_plot:
+        plt.hist(
+            pseudotime, bins=100, density=True, fill=False, linewidth=0.5, alpha=0.5
+        )
+        plt.plot(rslt.grid[:-1, 0], rslt.density[:-1], color="k")
+        plt.plot(x, y / np.abs(y).max())
+        plt.plot(x, yp / np.abs(yp).max())
+        plt.axvline(max_peak_x, color="k", linestyle="--")
+        plt.show()
+
+    pseudotime = (pseudotime - max_peak_x) % 1
+    adata.obs[time_key] = pseudotime

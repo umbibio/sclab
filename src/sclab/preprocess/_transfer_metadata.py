@@ -1,5 +1,6 @@
 from collections import Counter
 from functools import partial
+from typing import Literal
 
 import numpy as np
 import pandas as pd
@@ -19,11 +20,24 @@ def transfer_metadata(
     periodic: bool = False,
     vmin: float = 0,
     vmax: float = 1,
+    min_neighs: int = 5,
+    weight_by: Literal["connectivity", "distance", "constant"] = "connectivity",
 ):
     D: csr_matrix = adata.obsp["distances"]
     C: csr_matrix = adata.obsp["connectivities"]
     D = D.tocsr()
-    C = C.tocsr()
+
+    match weight_by:
+        case "connectivity":
+            W = C.tocsr()
+        case "distance":
+            W = D.tocsr()
+            W.data = 1.0 / W.data
+        case "constant":
+            W = D.tocsr()
+            W.data[:] = 1.0
+        case _:
+            raise ValueError(f"Unsupported weight_by {weight_by}")
 
     meta_values: pd.Series
     new_values: pd.Series
@@ -49,21 +63,21 @@ def transfer_metadata(
     new_values = pd.Series(index=series.index, dtype=series.dtype, name=new_column)
     new_values_err = pd.Series(index=series.index, dtype=float, name=new_column_err)
 
-    for i, (d, c) in tqdm(enumerate(zip(D, C)), total=D.shape[0]):
+    for i, (d, w) in tqdm(enumerate(zip(D, W)), total=D.shape[0]):
         if not pd.isna(meta_values.iloc[i]):
             continue
 
         d = d.tocoo()
-        c = c.toarray().ravel()
+        w = w.toarray().ravel()
         neighs = d.coords[1]
 
         values: pd.Series = meta_values.iloc[neighs]
         msk = pd.notna(values)
-        if msk.sum() < 2:
+        if msk.sum() < min_neighs:
             continue
 
         values = values.loc[msk]
-        weights = c[neighs][msk]
+        weights = w[neighs][msk]
 
         if np.allclose(weights, 0):
             continue
@@ -78,8 +92,12 @@ def transfer_metadata(
 
 def _assign_categorical(values: pd.Series, weights: NDArray):
     # weighted majority and proportion of votes
-    v, w = Counter(dict(zip(values, weights))).most_common()[0]
-    return v, w / weights.sum()
+    tally = Counter()
+    for v, w in zip(values, weights):
+        tally[v] += w
+
+    winner, shares = tally.most_common()[0]
+    return winner, shares / weights.sum()
 
 
 def _assign_numerical(values: pd.Series, weights: NDArray):
