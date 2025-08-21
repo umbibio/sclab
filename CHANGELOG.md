@@ -6,14 +6,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- Density dynamics analysis module with periodic pseudotime estimation and real-time conversion
+- GuidedPseudotime GUI component with interactive path drawing and automatic periodic detection
+- Comprehensive preprocessing module with filtering, normalization, and integration utilities
+- CCA integration for batch correction with sparse and dense matrix support
+- Doublet detection using scrublet with configurable parameters
+- Automated cell type labeling using scType methodology
+- Uncertainty quantification for metadata transfer with error estimates
+- Excel export utility with advanced formatting and conditional coloring
+- Support for weighted normalization using entropy-based scaling
+- Dimension range selection for neighbor computation with dynamic PCA range updates
+- Reference batch support for harmony integration
+- Group-wise scaling in preprocessing step
+- Minimum counts filter to QC step
+- Development version support in bumpversion configuration
 
-## [0.3.0.dev3] - 2025-07-31
+### Changed
+- Enhanced bumpversion configuration with flexible pre-release format and regex-based parsing
+- Improved metadata transfer with enhanced weighting options (connectivity, distance, constant)
+- Optimized PCA projection implementation and removed redundant operations
+- Conditional method registration based on available optional dependencies
 
-## [0.3.0.dev2] - 2025-07-16
+### Fixed
+- Row filtering with in-place subset operation to maintain AnnData object instance
+- Optimized transfer_metadata implementation with better memory usage
 
-## [0.3.0.dev1] - 2025-07-16
-
-## [0.3.0.dev0] - 2025-07-11
+### Dependencies
+- Added R integration optional dependencies
+- Pinned itables version for compatibility
+- Added conditional registration for harmonypy, scanorama, and scrublet
 
 ## [0.2.5] - 2025-04-18
 ### Dependencies
