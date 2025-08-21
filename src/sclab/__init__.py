@@ -6,4 +6,4 @@ __all__ = [
     "SCLabDashboard",
 ]
 
-__version__ = "0.3.0.dev3"
+__version__ = "0.3.0"
