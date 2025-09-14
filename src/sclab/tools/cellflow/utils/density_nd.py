@@ -1,6 +1,7 @@
 from itertools import product
 from typing import Literal, NamedTuple
 
+import matplotlib.pyplot as plt
 import numpy as np
 from numpy.typing import NDArray
 from scipy.integrate import trapezoid
@@ -134,3 +135,81 @@ def fit_density_1d(
     )
 
     return rslt, bspl
+
+
+def density_result_1d(
+    rslt: DensityResult,
+    data: NDArray | None = None,
+    density_fit_lam: float = 1e-6,
+    plot_density: bool = False,
+    plot_density_fit: bool = True,
+    plot_density_fit_derivative: bool = False,
+    plot_histogram: bool = False,
+    histogram_nbins: int = 50,
+    ax: plt.Axes | None = None,
+    show: bool = True,
+):
+    if plot_density | plot_density_fit | plot_density_fit_derivative | plot_histogram:
+        pass
+    else:
+        raise ValueError("At least one of the plotting options must be True")
+
+    tmin, tmax = rslt.grid.min(), rslt.grid.max()
+    bspl = fit_smoothing_spline(
+        rslt.grid[:, 0],
+        rslt.density,
+        t_range=(tmin, tmax),
+        lam=density_fit_lam,
+        periodic=rslt.periodic,
+    )
+    if ax is None:
+        plt.figure(figsize=(10, 3))
+    else:
+        plt.sca(ax)
+
+    ax = plt.gca()
+    if plot_density:
+        ax.plot(rslt.grid.flatten(), rslt.density, color="black", linewidth=0.5)
+
+    if plot_histogram:
+        assert data is not None, "data must be provided if plot_histogram=True"
+        # we expand the time vector to make sure that the first and last point
+        # are not cut by the boundary. This also helps to avoid the problem of
+        # the first and last point having different values (should be periodic).
+        tt = np.concatenate([data - tmax, data, data + tmax])
+        bins = np.linspace(-tmax, 2 * tmax, histogram_nbins * 3 + 1)
+        dd = np.histogram(tt, bins=bins, density=True)[0]
+        # we take the middle points of the bins
+        xx = bins[:-1] + np.diff(bins) / 2
+        # we recover the original time vector and corresponding density
+        x = xx[histogram_nbins : 2 * histogram_nbins]
+        d = dd[histogram_nbins : 2 * histogram_nbins] * 3  # correct the density
+        ax.bar(x, d, width=1 / histogram_nbins, fill=False, linewidth=0.5)
+
+    x = np.linspace(tmin, tmax, 2**10 + 1)
+    if plot_density_fit:
+        plt.plot(x, bspl(x), color="blue")
+
+    ax.set_ylabel("Density", color="blue")
+    ax.set_yticks([])
+
+    ymin, ymax = plt.ylim()
+    # add a bit of padding in the y axis (about 10% of current range)
+    plt.ylim(ymin, ymax + 0.10 * (ymax - ymin))
+
+    if plot_density_fit_derivative:
+        if plot_density or histogram_nbins or plot_density_fit:
+            plt.twinx()
+        plt.plot(x, bspl.derivative()(x), color="red")
+        plt.hlines(0, tmin, tmax, linestyles="dashed", linewidth=0.5, color="black")
+        plt.ylabel("Derivative", color="red")
+        plt.gca().set_yticks([])
+
+        # add padding in the y axis to make zero be in the middle
+        ymax = np.abs(plt.ylim()).max() * 1.05
+        plt.ylim(-ymax, ymax)
+
+    if show:
+        plt.show()
+    else:
+        return plt.gca()

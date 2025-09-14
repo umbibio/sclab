@@ -19,7 +19,7 @@ def cca(
     svd_solver: Literal["full", "partial", "randomized"] = "partial",
     normalize: bool = False,
     random_state=42,
-):
+) -> tuple[NDArray, NDArray, NDArray]:
     """
     CCA-style integration for two single-cell matrices with unequal numbers of cells.
 

@@ -4,6 +4,38 @@ from anndata import AnnData
 from ._cca import cca
 
 
+def cca_integrate(
+    adata: AnnData,
+    key: str,
+    *,
+    basis: str = "X",
+    adjusted_basis: str | None = None,
+    reference_batch: str | list[str] | None = None,
+    mask_var: str | None = None,
+    n_components: int = 30,
+    svd_solver: str = "partial",
+    normalize: bool = False,
+    random_state: int | None = None,
+):
+    n_groups = adata.obs[key].nunique()
+    if n_groups == 2:
+        cca_integrate_pair(
+            adata,
+            key,
+            adata.obs[key].unique()[0],
+            adata.obs[key].unique()[1],
+            basis=basis,
+            adjusted_basis=adjusted_basis,
+            mask_var=mask_var,
+            n_components=n_components,
+            svd_solver=svd_solver,
+            normalize=normalize,
+            random_state=random_state,
+        )
+    else:
+        raise NotImplementedError
+
+
 def cca_integrate_pair(
     adata: AnnData,
     key: str,
@@ -13,7 +45,7 @@ def cca_integrate_pair(
     basis: str | None = None,
     adjusted_basis: str | None = None,
     mask_var: str | None = None,
-    n_components: int = 50,
+    n_components: int = 30,
     svd_solver: str = "partial",
     normalize: bool = False,
     random_state: int | None = None,

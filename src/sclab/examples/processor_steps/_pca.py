@@ -1,6 +1,6 @@
 import pandas as pd
 import plotly.express as px
-from ipywidgets import Button, Dropdown, IntText
+from ipywidgets import Button, Checkbox, Dropdown, IntText
 
 from sclab.dataset.processor import Processor
 from sclab.dataset.processor.step import ProcessorStepBase
@@ -26,6 +26,7 @@ class PCA(ProcessorStepBase):
             n_comps=IntText(value=30, description="N comps."),
             mask_var=Dropdown(options=mask_var_options, description="Genes mask"),
             **parent.make_selectbatch_drowpdown(description="Reference Batch"),
+            zero_center=Checkbox(value=False, description="Zero center"),
         )
 
         super().__init__(
@@ -56,6 +57,7 @@ class PCA(ProcessorStepBase):
         n_comps: int = 30,
         mask_var: str | None = None,
         reference_batch: str | None = None,
+        zero_center: bool = False,
     ):
         import scanpy as sc
 
@@ -92,6 +94,9 @@ class PCA(ProcessorStepBase):
         else:
             sc.pp.pca(adata, n_comps=n_comps, mask_var=mask_var, svd_solver="arpack")
             adata.obsm["X_pca"] = adata.X.dot(adata.varm["PCs"])
+
+        if zero_center:
+            adata.obsm["X_pca"] -= adata.obsm["X_pca"].mean(axis=0, keepdims=True)
 
         self.plot_variance_ratio_button.disabled = False
         self.broker.publish(

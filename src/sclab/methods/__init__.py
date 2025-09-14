@@ -13,7 +13,7 @@ from ..examples.processor_steps import (
     Neighbors,
     Preprocess,
 )
-from ..gui.components import GuidedPseudotime
+from ..gui.components import GuidedPseudotime, TransferMetadata
 
 __all__ = [
     "QC",
@@ -32,17 +32,9 @@ __all__ = [
 register_sclab_method("Processing")(QC)
 register_sclab_method("Processing")(Preprocess)
 register_sclab_method("Processing")(PCA)
-
-if any(
-    [
-        find_spec("harmonypy"),
-        find_spec("scanorama"),
-    ]
-):
-    register_sclab_method("Processing")(Integration)
-
-
+register_sclab_method("Processing")(Integration)
 register_sclab_method("Processing")(Neighbors)
+register_sclab_method("Processing")(TransferMetadata)
 register_sclab_method("Processing")(UMAP)
 register_sclab_method("Processing")(Cluster)
 

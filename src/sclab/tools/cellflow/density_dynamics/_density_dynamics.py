@@ -89,9 +89,9 @@ def density(
     )
 
     if plot_density | plot_density_fit | plot_density_fit_derivative | plot_histogram:
-        from ..utils import plot
+        from ..utils.density_nd import density_result_1d
 
-        plot.density_result_1d(
+        density_result_1d(
             rslt,
             data=times[~np.isnan(times)],
             density_fit_lam=lam,
@@ -207,9 +207,9 @@ def density_dynamics(
     )
 
     if plot_density | plot_density_fit | plot_density_fit_derivative | plot_histogram:
-        from ..utils import plot
+        from ..utils.density_nd import density_result_1d
 
-        ax = plot.density_result_1d(
+        ax = density_result_1d(
             rslt,
             data=times[~np.isnan(times)],
             density_fit_lam=lam,

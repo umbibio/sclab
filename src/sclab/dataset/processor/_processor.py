@@ -1025,22 +1025,37 @@ class Processor(EventClient):
                 else:
                     control.value = current_value
 
-    def dset_anndata_layers_change_callback(self, layers):
-        options = {layer: layer for layer in layers}
+    def dset_anndata_layers_change_callback(self, *args, **kwargs):
+        layer_options = {key: key for key in self.dataset.adata.layers.keys()}
+        obsm_options = {key: key for key in self.dataset.adata.obsm.keys()}
+
         for control in self.all_controls_list:
             if not isinstance(control, Dropdown):
                 continue
             description: str = control.description
+
             if description.lower().strip(" :.") == "layer":
                 current_value = control.value
-                control.options = options
+                control.options = layer_options
+                if current_value not in control.options:
+                    control.value = None
+                else:
+                    control.value = current_value
+
+            if description.lower().strip(" :.") == "use rep":
+                current_value = control.value
+                control.options = {**layer_options, **obsm_options}
                 if current_value not in control.options:
                     control.value = None
                 else:
                     control.value = current_value
 
     def dset_data_dict_change_callback(self, *args, **kwargs):
-        options = {v: v for v in self.dataset.adata.obsm.keys()}
+        options = [
+            *self.dataset.adata.layers.keys(),
+            *self.dataset.adata.obsm.keys(),
+        ]
+        options = {v: v for v in options}
         for control in self.all_controls_list:
             if not isinstance(control, Dropdown):
                 continue

@@ -10,20 +10,6 @@ class Integration(ProcessorStepBase):
     description: str = "Integration"
 
     def __init__(self, parent: Processor) -> None:
-        try:
-            from scanpy.external.pp import harmony_integrate  # noqa
-        except ImportError:
-            try:
-                from scanpy.external.pp import scanorama_integrate  # noqa
-            except ImportError:
-                raise ImportError(
-                    "Integration requires scanorama or harmony to be installed.\n"
-                    "\nInstall with one of:\n"
-                    "\npip install harmony"
-                    "\npip install scanorama"
-                    "\n"
-                )
-
         cat_metadata = parent.dataset._metadata.select_dtypes(
             include=["object", "category"]
         )
@@ -44,8 +30,8 @@ class Integration(ProcessorStepBase):
                 description="Reference Batch",
             ),
             flavor=Dropdown(
-                options=["harmony", "scanorama"],
-                value="harmony",
+                options=["cca", "harmony", "scanorama"],
+                value="cca",
                 description="Flavor",
             ),
             max_iters=IntText(
@@ -96,6 +82,14 @@ class Integration(ProcessorStepBase):
         self.broker.std_output.clear_output(wait=False)
         with self.broker.std_output:
             match flavor:
+                case "cca":
+                    from sclab.preprocess import cca_integrate
+
+                    cca_integrate(
+                        **kvargs,
+                        reference_batch=reference_batch,
+                    )
+
                 case "harmony":
                     from sclab.preprocess import harmony_integrate
 

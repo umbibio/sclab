@@ -17,8 +17,8 @@ Nat Biotechnol 41, 604-606 (2023). https://doi.org/10.1038/s41587-023-01733-8
 
 from collections.abc import Sequence
 
-from anndata import AnnData
 import numpy as np
+from anndata import AnnData
 
 from ._harmony import run_harmony
 
@@ -28,11 +28,14 @@ def harmony_integrate(
     key: str | Sequence[str],
     *,
     basis: str = "X_pca",
-    adjusted_basis: str = "X_pca_harmony",
+    adjusted_basis: str | None = None,
     reference_batch: str | list[str] | None = None,
     **kwargs,
 ):
     """Use harmonypy :cite:p:`Korsunsky2019` to integrate different experiments."""
+
+    if adjusted_basis is None:
+        adjusted_basis = f"{basis}_harmony"
 
     if isinstance(reference_batch, str):
         reference_batch = [reference_batch]

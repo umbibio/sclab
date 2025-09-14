@@ -171,7 +171,11 @@ class DataLoader(VBox):
         self.upload = FileUpload(layout=Layout(width="200px"))
         self.upload_info = Output(layout=Layout(width="95%"))
         self.upload_row = HBox(
-            [self.upload_row_label, self.upload, self.upload_info],
+            [
+                self.upload_row_label,
+                self.upload,
+                self.upload_info,
+            ],
             layout=Layout(width="100%"),
         )
         self.upload.observe(self.on_upload, "value")
@@ -214,8 +218,8 @@ class DataLoader(VBox):
         VBox.__init__(
             self,
             [
-                self.url_row,
-                self.upload_row,
+                # self.url_row,
+                # self.upload_row,
                 self.defined_adatas_row,
                 self.progress_output,
             ],
