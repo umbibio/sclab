@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2025-09-14
+### Added
+- TransferMetadata GUI component with dynamic controls for metadata transfer operations
+- CCA integration wrapper function for multi-batch data integration workflows
+- Zero-centering option to PCA step with improved variance handling
+- Density plotting utilities with histogram and derivative visualization support
+
+### Changed
+- Enhanced processor layer/obsm dropdown handling for better data selection across layers and obsm keys
+- Updated integration step to include CCA as default method option
+- Improved PCA step with conditional zero-centering and enhanced projection handling
+- Enhanced density dynamics plotting with integrated visualization functions
+
+### Fixed
+- Import dependencies in density dynamics module
+- Processor control updates for layer and obsm key synchronization
+
+### Removed
+- Temporarily disabled URL and upload components in DataLoader interface
+- Removed conditional registration requirements for integration methods
+
 ## [0.3.0] - 2025-08-21
 ### Added
 - Density dynamics analysis module with periodic pseudotime estimation and real-time conversion
