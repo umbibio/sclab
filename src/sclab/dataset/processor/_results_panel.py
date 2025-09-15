@@ -1,14 +1,24 @@
-from ipywidgets import GridBox, Layout, Stack, ToggleButtons, link
+from ipywidgets import Box, Dropdown, Layout, Stack, VBox, link
 
 from sclab.event import EventBroker, EventClient
+
+# Create a layout with a bottom border to act as the horizontal line
+hr_layout = Layout(
+    border="1px solid black",  # 1px width, solid style, black color
+    margin="10px 0",  # Add margin for spacing above and below
+    width="100%",  # Extend the line across the full width
+)
+
+# Create a Box widget with the styled layout
+hr = Box(layout=hr_layout)
 
 
 class _Results:
     namespace: str
 
 
-class ResultsPanel(GridBox, EventClient):
-    available_results: ToggleButtons
+class ResultsPanel(VBox, EventClient):
+    available_results: Dropdown
     results_stack: Stack
 
     events: list[str] = [
@@ -22,7 +32,7 @@ class ResultsPanel(GridBox, EventClient):
     ):
         EventClient.__init__(self, broker)
 
-        self.available_results = ToggleButtons(options={})
+        self.available_results = Dropdown(options={}, description="Category")
         self.results_stack = Stack([])
 
         link(
@@ -30,15 +40,19 @@ class ResultsPanel(GridBox, EventClient):
             (self.results_stack, "selected_index"),
         )
 
-        GridBox.__init__(
+        VBox.__init__(
             self,
-            [self.available_results, self.results_stack],
-            layout=Layout(
-                width="100%",
-                grid_template_columns="150px auto",
-                grid_template_areas=""" "available-results selected-results_stack" """,
-                border="0px solid black",
-            ),
+            [
+                self.available_results,
+                hr,
+                self.results_stack,
+            ],
+            # layout=Layout(
+            #     width="100%",
+            #     grid_template_columns="150px auto",
+            #     grid_template_areas=""" "available-results selected-results_stack" """,
+            #     border="0px solid black",
+            # ),
         )
 
     def add_result(self, results: _Results):

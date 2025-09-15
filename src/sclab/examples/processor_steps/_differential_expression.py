@@ -25,7 +25,7 @@ class DifferentialExpressionResults(VBox):
 
     def __init__(self, dataset: SCLabDataset):
         self.dataset = dataset
-        self.result_selector = Dropdown()
+        self.result_selector = Dropdown(description="Analysis Name")
         self.group_selector = ToggleButtons()
         self.table_output = Output()
 
@@ -198,6 +198,7 @@ class DifferentialExpression(ProcessorStepBase):
             reference=reference,
             layer=layer,
             key_added=key_added,
+            pts=True,
         )
 
         self.results.sync_results_list(focus_result=key_added)

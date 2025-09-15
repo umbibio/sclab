@@ -1,7 +1,6 @@
 import inspect
 from io import BytesIO
 from pathlib import Path
-import tempfile
 
 from anndata import AnnData
 from IPython.display import display
@@ -238,6 +237,8 @@ class DataLoader(VBox):
         self.adata = adata
 
     def on_upload(self, *args, **kwargs):
+        import tempfile
+
         from .scanpy.readwrite import read_10x_h5, read_h5ad
 
         files = self.upload.value
