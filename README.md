@@ -24,7 +24,6 @@ Open a Jupyter Notebook and run the following:
 ```python
 from IPython.display import display
 from sclab import SCLabDashboard
-from sclab.examples.processor_steps import QC, Preprocess, PCA, Neighbors, UMAP, Cluster
 import scanpy as sc
 
 # Load your data
@@ -32,8 +31,6 @@ adata = sc.read_10x_h5("your_data.h5")
 
 # Create dashboard
 dashboard = SCLabDashboard(adata, name="My Analysis")
-# Add desired processing steps to the interface
-dashboard.pr.add_steps({"Processing": [QC, Preprocess, PCA, Neighbors, UMAP, Cluster]})
 
 # Display dashboard
 display(dashboard)
@@ -43,8 +40,10 @@ display(dashboard)
 # dashboard.pl  # Plotter
 # dashboard.pr  # Processor
 
-# the resulting AnnData object is found within the dataset object:
+# the active AnnData object is found within the dataset object:
 # dashboard.ds.adata
+
+# by default, the dashboard will update the loaded AnnData object in-place
 ```
 
 ## Components
@@ -53,6 +52,7 @@ display(dashboard)
 
 The main interface that integrates all components with a tabbed layout:
 - Main graph for visualizations
+- Results panel
 - Observations table
 - Genes table
 - Event logs
