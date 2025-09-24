@@ -9,6 +9,7 @@ def normalize_weighted(
     adata: AnnData,
     target_scale: float | None = None,
     batch_key: str | None = None,
+    q: float = 0.99,
 ) -> None:
     if batch_key is not None:
         for _, idx in adata.obs.groupby(batch_key, observed=True).groups.items():
@@ -21,6 +22,8 @@ def normalize_weighted(
                 normalize_weighted(adata[idx], target_scale, None)
 
         return
+
+    target_scale = None
 
     X: csr_matrix
     Y: csr_matrix
@@ -38,6 +41,7 @@ def normalize_weighted(
     Y.eliminate_zeros()
     Y.data = -Y.data * np.log(Y.data)
     entropy = Y.sum(axis=0)
+    entropy[:, entropy.A1 < np.quantile(entropy.A1, q)] *= 0.0
 
     Z = X.multiply(entropy)
     Z = Z.tocsr()
@@ -48,7 +52,7 @@ def normalize_weighted(
             "ignore", category=RuntimeWarning, message="divide by zero"
         )
         scale = Z.sum(axis=1)
-        Z = Z.multiply(1 / scale)
+        Z = X.multiply(1 / scale)
     Z = Z.tocsr()
 
     if target_scale is None:
