@@ -16,7 +16,7 @@ def cca(
     X: NDArray | csr_matrix | csc_matrix,
     Y: NDArray | csr_matrix | csc_matrix,
     n_components=None,
-    svd_solver: Literal["full", "partial", "randomized"] = "partial",
+    svd_solver: Literal["full", "partial", "randomized"] = "randomized",
     normalize: bool = False,
     random_state=42,
 ) -> tuple[NDArray, NDArray, NDArray]:

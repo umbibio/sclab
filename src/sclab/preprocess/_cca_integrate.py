@@ -13,7 +13,7 @@ def cca_integrate(
     reference_batch: str | list[str] | None = None,
     mask_var: str | None = None,
     n_components: int = 30,
-    svd_solver: str = "partial",
+    svd_solver: str = "randomized",
     normalize: bool = False,
     random_state: int | None = None,
 ):
@@ -46,7 +46,7 @@ def cca_integrate_pair(
     adjusted_basis: str | None = None,
     mask_var: str | None = None,
     n_components: int = 30,
-    svd_solver: str = "partial",
+    svd_solver: str = "randomized",
     normalize: bool = False,
     random_state: int | None = None,
 ):
