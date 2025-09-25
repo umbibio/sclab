@@ -1,15 +1,21 @@
 import logging
+import os
 from typing import Literal
 
 import numpy as np
+from joblib import Parallel, delayed
 from numpy import matrix
 from numpy.typing import NDArray
 from scipy.linalg import svd
 from scipy.sparse import csc_matrix, csr_matrix, issparse
+from scipy.sparse import vstack as sparse_vstack
 from scipy.sparse.linalg import svds
 from sklearn.utils.extmath import randomized_svd
 
 logger = logging.getLogger(__name__)
+
+
+N_CPUS = os.cpu_count()
 
 
 def cca(
@@ -19,6 +25,7 @@ def cca(
     svd_solver: Literal["full", "partial", "randomized"] = "randomized",
     normalize: bool = False,
     random_state=42,
+    n_jobs: int = N_CPUS,
 ) -> tuple[NDArray, NDArray, NDArray]:
     """
     CCA-style integration for two single-cell matrices with unequal numbers of cells.
@@ -50,7 +57,7 @@ def cca(
     k = n_components or min(n1, n2)
 
     if issparse(X):
-        C = _cross_covariance_sparse(X, Y)
+        C = _cross_covariance_sparse(X, Y, n_jobs=n_jobs)
     else:
         C = _cross_covariance_dense(X, Y)
 
@@ -103,7 +110,7 @@ def _svd_decomposition(
     return Uc, s, Vct
 
 
-def _cross_covariance_sparse(X: csr_matrix, Y: csr_matrix) -> NDArray:
+def _cross_covariance_sparse(X: csr_matrix, Y: csr_matrix, n_jobs=N_CPUS) -> NDArray:
     _, p1 = X.shape
     _, p2 = Y.shape
     if p1 != p2:
@@ -118,7 +125,7 @@ def _cross_covariance_sparse(X: csr_matrix, Y: csr_matrix) -> NDArray:
     mux: matrix = X.mean(axis=0)
     muy: matrix = Y.mean(axis=0)
 
-    XYt: csr_matrix = X.dot(Y.T)
+    XYt: csr_matrix = _spmm_parallel(X, Y.T, n_jobs=n_jobs)
     Xmuyt: matrix = X.dot(muy.T)
     muxYt: matrix = Y.dot(mux.T).T
     muxmuyt: float = (mux @ muy.T)[0, 0]
@@ -152,3 +159,18 @@ def _dense_scale(A: NDArray) -> NDArray:
     A = np.asarray(A)
     eps = np.finfo(A.dtype).eps
     return A / (A.std(axis=0, ddof=1, keepdims=True) + eps)
+
+
+def _spmm_chunk(A_csr, X, start, stop):
+    return A_csr[start:stop, :] @ X
+
+
+def _spmm_parallel(A_csr: csr_matrix, X_csc: csc_matrix, n_jobs=N_CPUS):
+    n = A_csr.shape[0]
+
+    bounds = np.linspace(0, n, n_jobs + 1, dtype=int)
+    Ys = Parallel(n_jobs=n_jobs, prefer="processes")(
+        delayed(_spmm_chunk)(A_csr, X_csc, bounds[i], bounds[i + 1])
+        for i in range(n_jobs)
+    )
+    return sparse_vstack(Ys)  # result is sparse if X is sparse, dense otherwise
