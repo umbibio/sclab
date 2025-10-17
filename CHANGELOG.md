@@ -6,6 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- Standalone `preprocess()` function for complete preprocessing workflow with configurable normalization methods
+- Standalone `pca()` function with reference batch support and zero-centering option
+- Standalone `qc()` function for quality control with barcode ranking
+- Limma-voom differential expression analysis via `pseudobulk_limma()` as alternative to edgeR
+- Support for nth root selection in periodic pseudotime start estimation
+- Quantile parameter (q) to `normalize_weighted()` method for entropy-based gene filtering
+
+### Changed
+- Enable normalization by default in CCA integration for better batch correction
+- CCA integration now uses `svd_solver="randomized"` by default for improved performance
+- Reduce default replicas per group from 10 to 5 and disable bootstrap sampling by default in pseudobulk methods
+- Refactor edgeR model fitting with improved design matrix handling
+- Add explicit matrix copying in transfer_metadata to prevent unintended modifications
+- Improve error messages for missing R dependencies
+
+### Fixed
+- Model fitting workflow in edgeR to ensure proper design matrix construction before filtering
+- Column name handling in limma design matrices with `make.names()` for R compatibility
+
+### Performance
+- Implement parallel sparse matrix multiplication using joblib for improved CCA performance
+- Add configurable n_jobs parameter with CPU count detection for optimal parallelization
+- Introduce chunked processing for large sparse matrices to reduce memory usage
 
 ## [0.3.2] - 2025-09-15
 ### Added
