@@ -280,6 +280,7 @@ def estimate_periodic_pseudotime_start(
     time_key: str = "pseudotime",
     bandwidth: float = 1 / 64,
     show_plot: bool = False,
+    nth_root: int = 1,
 ):
     # TODO: Test implementation
     pseudotime = adata.obs[time_key].values.copy()
@@ -316,7 +317,10 @@ def estimate_periodic_pseudotime_start(
     roots = (x[idx] + x[1:][idx]) / 2
     heights = yp[idx]
 
-    max_peak_x = roots[heights.argmin()]
+    roots = roots[heights.argsort()]
+    heights = heights[heights.argsort()]
+
+    max_peak_x = roots[nth_root - 1]
 
     if show_plot:
         plt.hist(

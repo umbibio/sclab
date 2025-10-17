@@ -14,7 +14,7 @@ def cca_integrate(
     mask_var: str | None = None,
     n_components: int = 30,
     svd_solver: str = "randomized",
-    normalize: bool = False,
+    normalize: bool = True,
     random_state: int | None = None,
 ):
     n_groups = adata.obs[key].nunique()
@@ -47,7 +47,7 @@ def cca_integrate_pair(
     mask_var: str | None = None,
     n_components: int = 30,
     svd_solver: str = "randomized",
-    normalize: bool = False,
+    normalize: bool = True,
     random_state: int | None = None,
 ):
     if basis is None:

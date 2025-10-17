@@ -23,18 +23,19 @@ def transfer_metadata(
     min_neighs: int = 5,
     weight_by: Literal["connectivity", "distance", "constant"] = "connectivity",
 ):
-    D: csr_matrix = adata.obsp["distances"]
-    C: csr_matrix = adata.obsp["connectivities"]
+    D: csr_matrix = adata.obsp["distances"].copy()
+    C: csr_matrix = adata.obsp["connectivities"].copy()
     D = D.tocsr()
+    W: csr_matrix
 
     match weight_by:
         case "connectivity":
-            W = C.tocsr()
+            W = C.tocsr().copy()
         case "distance":
-            W = D.tocsr()
+            W = D.tocsr().copy()
             W.data = 1.0 / W.data
         case "constant":
-            W = D.tocsr()
+            W = D.tocsr().copy()
             W.data[:] = 1.0
         case _:
             raise ValueError(f"Unsupported weight_by {weight_by}")

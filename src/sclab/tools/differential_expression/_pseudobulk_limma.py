@@ -4,7 +4,7 @@ from anndata import AnnData
 from ._pseudobulk_helpers import aggregate_and_filter
 
 
-def pseudobulk_edger(
+def pseudobulk_limma(
     adata_: AnnData,
     group_key: str,
     condition_group: str | list[str] | None = None,
@@ -19,65 +19,6 @@ def pseudobulk_edger(
     aggregate: bool = True,
     verbosity: int = 0,
 ) -> dict[str, pd.DataFrame]:
-    """
-    Fits a model using edgeR and computes top tags for a given condition vs
-    reference group.
-
-    Parameters
-    ----------
-    adata_ : AnnData
-        Annotated data matrix.
-    group_key : str
-        Key in AnnData object to use to group cells.
-    condition_group : str | list[str] | None, optional
-        Condition group to compare to reference group. If None, each group will be
-        contrasted to the corresponding reference group.
-    reference_group : str | None, optional
-        Reference group to compare condition group(s) to. If None, the condition group
-        is compared to the rest of the cells.
-    cell_identity_key : str | None, optional
-        If provided, separate contrasts will be computed for each identity. Defaults to None.
-    layer : str | None, optional
-        Layer in AnnData object to use. EdgeR requires raw counts. Defaults to None.
-    replicas_per_group : int, optional
-        Number of replicas to create for each group. Defaults to 10.
-    min_cells_per_group : int, optional
-        Minimum number of cells required for a group to be included. Defaults to 30.
-    bootstrap_sampling : bool, optional
-        Whether to use bootstrap sampling to create replicas. Defaults to True.
-    use_cells : dict[str, list[str]] | None, optional
-        If not None, only use the specified cells. Defaults to None. Dictionary key
-        is a categorical variable in the obs dataframe and the dictionary value is a
-        list of categories to include.
-    aggregate : bool, optional
-        Whether to aggregate cells before fitting the model. EdgeR requires a small
-        number of samples, so if adata_ is a single-cell experiment, the cells should
-        be aggregated. Defaults to True.
-    verbosity : int, optional
-        Verbosity level. Defaults to 0.
-
-    Returns
-    -------
-    dict[str, pd.DataFrame]
-        Dictionary of dataframes, one for each contrast, with the following columns:
-
-        * gene_ids : str
-            Gene IDs.
-        * logFC : float
-            Log2 fold change.
-        * logCPM : float
-            Log2 CPM.
-        * F: float
-            F-statistic.
-        * PValue : float
-            p-value.
-        * FDR : float
-            False discovery rate.
-        * pct_expr_cnd : float
-            Percentage of cells in condition group expressing the gene.
-        * pct_expr_ref : float
-            Percentage of cells in reference group expressing the gene.
-    """
     _try_imports()
     import anndata2ri  # noqa: F401
     import rpy2.robjects as robjects
@@ -104,7 +45,7 @@ def pseudobulk_edger(
     with localconverter(anndata2ri.converter):
         R.assign("aggr_adata", aggr_adata)
 
-    # defines the R function for fitting the model with edgeR
+    # defines the R function for fitting the model with limma
     R(_fit_model_r_script)
 
     if condition_group is None:
@@ -134,9 +75,9 @@ def pseudobulk_edger(
 
         try:
             R(f"""
-                outs <- fit_edger_model(aggr_adata, "{gk}", "{cell_identity_key}", "{batch_key}", verbosity = {verbosity})
+                outs <- fit_limma_model(aggr_adata, "{gk}", "{cell_identity_key}", verbosity = {verbosity})
                 fit <- outs$fit
-                y <- outs$y
+                v <- outs$v
             """)
 
         except RRuntimeError as e:
@@ -187,9 +128,10 @@ def pseudobulk_edger(
             if verbosity > 0:
                 print(f"Computing contrast: {contrast_key}... ({contrast})")
 
-            R(f"myContrast <- makeContrasts('{contrast}', levels = y$design)")
-            R("qlf <- glmQLFTest(fit, contrast=myContrast)")
-            R("tt <- topTags(qlf, n = Inf)$table")
+            R(f"myContrast <- makeContrasts('{contrast}', levels = v$design)")
+            R("fit2 <- contrasts.fit(fit, myContrast)")
+            R("fit2 <- eBayes(fit2)")
+            R("tt <- topTable(fit2, n = Inf)")
             tt: pd.DataFrame = pandas2ri.rpy2py(R("tt"))
             tt.index.name = "gene_ids"
 
@@ -211,10 +153,11 @@ def pseudobulk_edger(
 _fit_model_r_script = """
 suppressPackageStartupMessages({
     library(edgeR)
+    library(limma)
     library(MAST)
 })
 
-fit_edger_model <- function(adata_, group_key, cell_identity_key = "None", batch_key = "None", verbosity = 0){
+fit_limma_model <- function(adata_, group_key, cell_identity_key = "None", batch_key = "None", verbosity = 0){
 
     if (verbosity > 0){
         cat("Group key:", group_key, "\n")
@@ -232,25 +175,27 @@ fit_edger_model <- function(adata_, group_key, cell_identity_key = "None", batch
         cat("Group(s):", group, "\n")
     }
 
-    replica <- colData(adata_)$replica
+    group   <- factor(group)
+    replica <- factor(colData(adata_)$replica)
 
     # create a design matrix
     if (batch_key == "None"){
         design <- model.matrix(~ 0 + group + replica)
     } else {
-        batch <- colData(adata_)[[batch_key]]
+        batch  <- factor(colData(adata_)[[batch_key]])
         design <- model.matrix(~ 0 + group + replica + batch)
     }
+    colnames(design) <- make.names(colnames(design))
 
     # create an edgeR object with counts and grouping factor
-    y <- DGEList(assay(adata_, "X"), group = colData(adata_)[[group_key]])
+    y <- DGEList(assay(adata_, "X"), group = group)
 
     # filter out genes with low counts
     if (verbosity > 1){
         cat("Dimensions before subsetting:", dim(y), "\n")
     }
 
-    keep <- filterByExpr(y)
+    keep <- filterByExpr(y, design = design)
     y <- y[keep, , keep.lib.sizes=FALSE]
     if (verbosity > 1){
         cat("Dimensions after subsetting:", dim(y), "\n")
@@ -259,12 +204,16 @@ fit_edger_model <- function(adata_, group_key, cell_identity_key = "None", batch
     # normalize
     y <- calcNormFactors(y)
 
-    # estimate dispersion
-    y <- estimateDisp(y, design = design)
-    # fit the model
-    fit <- glmQLFit(y, design)
-
-    return(list("fit"=fit, "design"=design, "y"=y))
+    # Apply voom transformation to prepare for linear modeling
+    v <- voom(y, design, plot = verbosity > 1)
+    
+    # Fit the linear model
+    fit <- lmFit(v, design)
+    ne <- limma::nonEstimable(design)
+    if (!is.null(ne) && verbosity > 0) cat("Non-estimable:", ne, "\n")
+    fit <- eBayes(fit)
+    
+    return(list("fit"=fit, "design"=design, "v"=v))
 }
 """
 
@@ -281,12 +230,13 @@ def _try_imports():
         from rpy2.robjects.conversion import localconverter  # noqa: F401
 
         importr("edgeR")
+        importr("limma")
         importr("MAST")
         importr("SingleCellExperiment")
 
     except ModuleNotFoundError:
         message = (
-            "edger_pseudobulk requires rpy2 and anndata2ri to be installed.\n"
+            "pseudobulk_limma requires rpy2 and anndata2ri to be installed.\n"
             "please install with one of the following:\n"
             "$ pip install rpy2 anndata2ri\n"
             "or\n"
@@ -297,10 +247,10 @@ def _try_imports():
 
     except PackageNotInstalledError:
         message = (
-            "edger_pseudobulk requires the following R packages to be installed: edgeR, MAST, and SingleCellExperiment.\n"
+            "pseudobulk_limma requires the following R packages to be installed: limma, edgeR, MAST, and SingleCellExperiment.\n"
             "> \n"
             "> if (!require('BiocManager', quietly = TRUE)) install.packages('BiocManager');\n"
-            "> BiocManager::install(c('edgeR', 'MAST', 'SingleCellExperiment'));\n"
+            "> BiocManager::install(c('limma', 'edgeR', 'MAST', 'SingleCellExperiment'));\n"
             "> \n"
         )
         print(message)
