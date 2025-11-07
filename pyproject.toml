@@ -26,6 +26,7 @@ dependencies = [
     "requests",
     "ripser>=0.6.12",
     "scikit-learn",
+    "scipy<1.16",
     "svgpathtools",
     "tqdm",
 ]
