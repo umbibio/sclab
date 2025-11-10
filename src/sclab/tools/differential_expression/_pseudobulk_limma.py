@@ -205,14 +205,14 @@ fit_limma_model <- function(adata_, group_key, cell_identity_key = "None", batch
     y <- calcNormFactors(y)
 
     # Apply voom transformation to prepare for linear modeling
-    v <- voom(y, design, plot = verbosity > 1)
-    
-    # Fit the linear model
+    v <- voom(y, design = design)
+
+    # fit the linear model
     fit <- lmFit(v, design)
     ne <- limma::nonEstimable(design)
     if (!is.null(ne) && verbosity > 0) cat("Non-estimable:", ne, "\n")
     fit <- eBayes(fit)
-    
+
     return(list("fit"=fit, "design"=design, "v"=v))
 }
 """

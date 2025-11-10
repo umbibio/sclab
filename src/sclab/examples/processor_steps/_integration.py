@@ -63,13 +63,16 @@ class Integration(ProcessorStepBase):
 
     def function(
         self,
-        use_rep: str,
+        use_rep: str | None,
         group_by: str,
         flavor: str,
         reference_batch: str | None,
         max_iters: int,
     ):
         adata = self.parent.dataset.adata
+
+        if use_rep is None:
+            use_rep = "X"
 
         key_added = f"{use_rep}_{flavor}"
         kvargs = {

@@ -232,25 +232,27 @@ fit_edger_model <- function(adata_, group_key, cell_identity_key = "None", batch
         cat("Group(s):", group, "\n")
     }
 
-    replica <- colData(adata_)$replica
+    group   <- factor(group)
+    replica <- factor(colData(adata_)$replica)
 
     # create a design matrix
     if (batch_key == "None"){
         design <- model.matrix(~ 0 + group + replica)
     } else {
-        batch <- colData(adata_)[[batch_key]]
+        batch  <- factor(colData(adata_)[[batch_key]])
         design <- model.matrix(~ 0 + group + replica + batch)
     }
+    colnames(design) <- make.names(colnames(design))
 
     # create an edgeR object with counts and grouping factor
-    y <- DGEList(assay(adata_, "X"), group = colData(adata_)[[group_key]])
+    y <- DGEList(assay(adata_, "X"), group = group)
 
     # filter out genes with low counts
     if (verbosity > 1){
         cat("Dimensions before subsetting:", dim(y), "\n")
     }
 
-    keep <- filterByExpr(y)
+    keep <- filterByExpr(y, design = design)
     y <- y[keep, , keep.lib.sizes=FALSE]
     if (verbosity > 1){
         cat("Dimensions after subsetting:", dim(y), "\n")

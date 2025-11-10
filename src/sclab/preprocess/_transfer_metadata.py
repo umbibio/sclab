@@ -1,6 +1,6 @@
 from collections import Counter
 from functools import partial
-from typing import Literal
+from typing import Callable, Literal
 
 import numpy as np
 import pandas as pd
@@ -23,46 +23,79 @@ def transfer_metadata(
     min_neighs: int = 5,
     weight_by: Literal["connectivity", "distance", "constant"] = "connectivity",
 ):
-    D: csr_matrix = adata.obsp["distances"].copy()
-    C: csr_matrix = adata.obsp["connectivities"].copy()
-    D = D.tocsr()
-    W: csr_matrix
+    new_values, new_values_err = _propagate_metadata(
+        adata,
+        column=column,
+        periodic=periodic,
+        vmin=vmin,
+        vmax=vmax,
+        min_neighs=min_neighs,
+        weight_by=weight_by,
+        mask=adata.obs[group_key] != source_group,
+    )
 
-    match weight_by:
-        case "connectivity":
-            W = C.tocsr().copy()
-        case "distance":
-            W = D.tocsr().copy()
-            W.data = 1.0 / W.data
-        case "constant":
-            W = D.tocsr().copy()
-            W.data[:] = 1.0
-        case _:
-            raise ValueError(f"Unsupported weight_by {weight_by}")
+    adata.obs[f"transferred_{new_values.name}"] = new_values
+    adata.obs[f"transferred_{new_values_err.name}"] = new_values_err
 
-    meta_values: pd.Series
-    new_values: pd.Series
 
+def propagate_metadata(
+    adata: AnnData,
+    column: str,
+    periodic: bool = False,
+    vmin: float = 0,
+    vmax: float = 1,
+    min_neighs: int = 5,
+    weight_by: Literal["connectivity", "distance", "constant"] = "connectivity",
+):
+    new_values, new_values_err = _propagate_metadata(
+        adata,
+        column=column,
+        periodic=periodic,
+        vmin=vmin,
+        vmax=vmax,
+        min_neighs=min_neighs,
+        weight_by=weight_by,
+    )
+
+    mask = adata.obs[column].isna()
+    adata.obs.loc[mask, column] = new_values.loc[mask]
+    adata.obs.loc[mask, new_values_err.name] = new_values_err.loc[mask]
+
+
+def _propagate_metadata(
+    adata: AnnData,
+    column: str,
+    periodic: bool = False,
+    vmin: float = 0,
+    vmax: float = 1,
+    min_neighs: int = 5,
+    weight_by: Literal["connectivity", "distance", "constant"] = "connectivity",
+    mask: np.ndarray | pd.Series | None = None,
+) -> tuple[pd.Series, pd.Series]:
+    D, W = _get_neighbors_and_weights(adata, weight_by=weight_by)
+
+    assign_value_fn: Callable
     series = adata.obs[column]
     if isinstance(series.dtype, pd.CategoricalDtype) or is_bool_dtype(series.dtype):
         assign_value_fn = _assign_categorical
-        new_column = f"transferred_{column}"
-        new_column_err = f"transferred_{column}_proportion"
     elif is_numeric_dtype(series.dtype) and periodic:
         assign_value_fn = partial(_assign_numerical_periodic, vmin=vmin, vmax=vmax)
-        new_column = f"transferred_{column}"
-        new_column_err = f"transferred_{column}_error"
     elif is_numeric_dtype(series.dtype):
         assign_value_fn = _assign_numerical
-        new_column = f"transferred_{column}"
-        new_column_err = f"transferred_{column}_error"
     else:
         raise ValueError(f"Unsupported dtype {series.dtype} for column {column}")
 
-    meta_values = series.copy()
-    meta_values[adata.obs[group_key] != source_group] = np.nan
-    new_values = pd.Series(index=series.index, dtype=series.dtype, name=new_column)
-    new_values_err = pd.Series(index=series.index, dtype=float, name=new_column_err)
+    if isinstance(series.dtype, pd.CategoricalDtype) or is_bool_dtype(series.dtype):
+        column_err = f"{column}_proportion"
+    else:
+        column_err = f"{column}_error"
+
+    meta_values: pd.Series = series.copy()
+    if mask is not None:
+        meta_values[mask] = pd.NA
+
+    new_values = pd.Series(index=series.index, dtype=series.dtype, name=column)
+    new_values_err = pd.Series(index=series.index, dtype=float, name=column_err)
 
     for i, (d, w) in tqdm(enumerate(zip(D, W)), total=D.shape[0]):
         if not pd.isna(meta_values.iloc[i]):
@@ -87,8 +120,33 @@ def transfer_metadata(
         new_values.iloc[i] = assigned_value
         new_values_err.iloc[i] = assigned_value_err
 
-    adata.obs[new_column] = new_values.copy()
-    adata.obs[new_column_err] = new_values_err.copy()
+    new_values = pd.concat([new_values, meta_values], axis=1).bfill(axis=1).iloc[:, 0]
+
+    return new_values, new_values_err
+
+
+def _get_neighbors_and_weights(
+    adata: AnnData,
+    weight_by: Literal["connectivity", "distance", "constant"] = "connectivity",
+):
+    D: csr_matrix = adata.obsp["distances"].copy()
+    C: csr_matrix = adata.obsp["connectivities"].copy()
+    D = D.tocsr()
+    W: csr_matrix
+
+    match weight_by:
+        case "connectivity":
+            W = C.tocsr().copy()
+        case "distance":
+            W = D.tocsr().copy()
+            W.data = 1.0 / W.data
+        case "constant":
+            W = D.tocsr().copy()
+            W.data[:] = 1.0
+        case _:
+            raise ValueError(f"Unsupported weight_by {weight_by}")
+
+    return D, W
 
 
 def _assign_categorical(values: pd.Series, weights: NDArray):

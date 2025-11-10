@@ -106,25 +106,41 @@ class Preprocess(ProcessorStepBase):
         )
         pbar.update(10)
 
-        sc.pp.highly_variable_genes(
-            adata,
-            layer=f"{layer}_log1p",
-            flavor="seurat",
-            batch_key=group_by,
-        )
-        hvg_seurat = adata.var["highly_variable"]
-        sc.pp.highly_variable_genes(
-            adata,
-            layer=layer,
-            flavor="seurat_v3_paper",
-            batch_key=group_by,
-            n_top_genes=hvg_seurat.sum(),
-        )
-        hvg_seurat_v3 = adata.var["highly_variable"]
+        if group_by is not None:
+            adata.var["highly_variable"] = False
+            for name, idx in adata.obs.groupby(group_by, observed=True).groups.items():
+                hvg_seurat = sc.pp.highly_variable_genes(
+                    adata[idx],
+                    layer=f"{layer}_log1p",
+                    flavor="seurat",
+                    inplace=False,
+                )["highly_variable"]
 
-        adata.var["highly_variable"] = hvg_seurat | hvg_seurat_v3
-        adata.var["highly_variable_seurat"] = hvg_seurat
-        adata.var["highly_variable_seurat_v3"] = hvg_seurat_v3
+                hvg_seurat_v3 = sc.pp.highly_variable_genes(
+                    adata[idx],
+                    layer=layer,
+                    flavor="seurat_v3_paper",
+                    n_top_genes=hvg_seurat.sum(),
+                    inplace=False,
+                )["highly_variable"]
+
+                adata.var[f"highly_variable_{name}"] = hvg_seurat | hvg_seurat_v3
+                adata.var["highly_variable"] |= adata.var[f"highly_variable_{name}"]
+
+        else:
+            sc.pp.highly_variable_genes(adata, layer=f"{layer}_log1p", flavor="seurat")
+            hvg_seurat = adata.var["highly_variable"]
+
+            sc.pp.highly_variable_genes(
+                adata,
+                layer=layer,
+                flavor="seurat_v3_paper",
+                n_top_genes=hvg_seurat.sum(),
+            )
+            hvg_seurat_v3 = adata.var["highly_variable"]
+
+            adata.var["highly_variable"] = hvg_seurat | hvg_seurat_v3
+
         pbar.update(10)
         pbar.update(10)
 

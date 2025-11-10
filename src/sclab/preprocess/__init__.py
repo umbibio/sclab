@@ -6,7 +6,7 @@ from ._pca import pca
 from ._preprocess import preprocess
 from ._qc import qc
 from ._subset import subset_obs, subset_var
-from ._transfer_metadata import transfer_metadata
+from ._transfer_metadata import propagate_metadata, transfer_metadata
 from ._transform import pool_neighbors
 
 __all__ = [
@@ -18,6 +18,7 @@ __all__ = [
     "pca",
     "pool_neighbors",
     "preprocess",
+    "propagate_metadata",
     "qc",
     "subset_obs",
     "subset_var",
