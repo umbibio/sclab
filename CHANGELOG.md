@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- Reference-based PCA (`rpca()`) with multiple reference batch support and variance filtering
+- `propagate_metadata()` function for filling missing metadata values using neighbor information
+- Periodic gene detection utilities using power spectrum analysis and periodogram computation
+- ALRA imputation implementation with R integration and scale correction
+- Configurable statistics and dummy variable creation in `aggregate_and_filter()`
+- Utility modules for embedding and imputation tools
+
+### Changed
+- Refactor `transfer_metadata()` to use shared `_propagate_metadata()` helper function
+- Improve metadata transfer with proper missing value handling using backfill strategy
+- Enhance pseudobulk helper functions with `make_stats` and `make_dummies` parameters
+- Update edgeR and limma model fitting to use factor types and `make.names()` for R compatibility
+- Allow `None` values for `use_rep` parameter in integration step with automatic fallback to "X"
+
+### Fixed
+- Group-wise highly variable gene detection now properly handles batch-specific analysis without batch_key parameter
+- Design matrix construction in edgeR/limma with proper factor conversion before filtering
+- Column naming in R design matrices for better compatibility across R versions
 
 ## [0.3.3] - 2025-10-17
 ### Added
