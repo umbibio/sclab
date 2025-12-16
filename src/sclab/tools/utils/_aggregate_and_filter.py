@@ -149,6 +149,7 @@ def _get_groups_to_drop(
 
     if len(groups_to_drop) > 0:
         print("Dropping the following samples:")
+        print(groups_to_drop)
 
     groups_to_drop = groups_to_drop + [
         (g,) for g in groups_to_drop if not isinstance(g, tuple)
@@ -236,6 +237,9 @@ def _including(group: tuple | str, groups_to_drop: list[str]) -> bool:
 
         case (gid,) | gid:
             ...
+
+    if group in groups_to_drop:
+        return False
 
     if gid in groups_to_drop:
         return False
