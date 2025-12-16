@@ -1,7 +1,15 @@
 import pandas as pd
 from anndata import AnnData
 
-from ._pseudobulk_helpers import aggregate_and_filter
+from ..utils import aggregate_and_filter
+
+
+def limma_is_available() -> bool:
+    try:
+        _try_imports()
+    except ImportError:
+        return False
+    return True
 
 
 def pseudobulk_limma(
