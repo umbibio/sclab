@@ -165,14 +165,35 @@ def _prepare_categorical_column(adata: AnnData, column: str) -> None:
 
 def _create_var_dataframe(
     adata: AnnData,
-    layer: str,
+    layer: str | None,
     grouping_keys: list[str],
     groups_to_drop: list[str],
 ):
     columns = _get_var_dataframe_columns(adata, grouping_keys, groups_to_drop)
     var_dataframe = pd.DataFrame(index=adata.var_names, columns=columns, dtype=float)
 
+    # 1. Get the full matrix (Sparse or Dense) ONCE
+    # We pass dense=False to preserve memory efficiency
+    X_global = _get_layer(adata, layer, dense=False)
+
+    # 2. Compute Global Statistics (to optimize "Rest" calculations)
+    # Instead of subsetting the "Rest" cells (which is huge) every time,
+    # we calculate Global - Group = Rest.
+
+    if issparse(X_global):
+        # Efficient sparse summing. returns np.matrix or np.array depending on scipy version
+        global_tot = np.array(X_global.sum(axis=0)).flatten()
+        # Count > 0 efficiently for sparse matrices
+        global_num = np.array((X_global > 0).sum(axis=0)).flatten()
+    else:
+        global_tot = np.array(X_global.sum(axis=0)).flatten()
+        global_num = np.count_nonzero(X_global > 0, axis=0)
+
+    total_cells = X_global.shape[0]
+
+    # 3. Iterate through groups
     groups = adata.obs.groupby(grouping_keys, observed=True).groups
+
     for group, idx in groups.items():
         if not isinstance(group, tuple):
             group = (group,)
@@ -183,18 +204,44 @@ def _create_var_dataframe(
         sample_id = "_".join(group)
         rest_id = f"not{sample_id}"
 
-        adata_subset = adata[idx]
-        rest_subset = adata[~adata.obs_names.isin(idx)]
+        # Get integer indices for the current group to slice the raw matrix
+        # (idx contains the string index names from adata.obs)
+        group_indices = adata.obs.index.get_indexer(idx)
+        n_subset = len(group_indices)
+        n_rest = total_cells - n_subset
 
-        X = _get_layer(adata_subset, layer, dense=True)
-        Y = _get_layer(rest_subset, layer, dense=True)
+        # Slice the group (much smaller/faster than slicing the "rest")
+        X_subset = X_global[group_indices]
 
-        var_dataframe[f"pct_expr_{sample_id}"] = (X > 0).mean(axis=0)
-        var_dataframe[f"pct_expr_{rest_id}"] = (Y > 0).mean(axis=0)
-        var_dataframe[f"num_expr_{sample_id}"] = (X > 0).sum(axis=0)
-        var_dataframe[f"num_expr_{rest_id}"] = (Y > 0).sum(axis=0)
-        var_dataframe[f"tot_expr_{sample_id}"] = X.sum(axis=0)
-        var_dataframe[f"tot_expr_{rest_id}"] = Y.sum(axis=0)
+        # Compute Group Statistics
+        if issparse(X_subset):
+            subset_tot = np.array(X_subset.sum(axis=0)).flatten()
+            subset_num = np.array((X_subset > 0).sum(axis=0)).flatten()
+        else:
+            subset_tot = np.array(X_subset.sum(axis=0)).flatten()
+            subset_num = np.count_nonzero(X_subset > 0, axis=0)
+
+        # Compute "Rest" Statistics via subtraction
+        rest_tot = global_tot - subset_tot
+        rest_num = global_num - subset_num
+
+        # 4. Fill DataFrame
+        # Handle division by zero if n_subset or n_rest is 0 (though unlikely with filtering)
+        if n_subset > 0:
+            var_dataframe[f"pct_expr_{sample_id}"] = subset_num / n_subset
+        else:
+            var_dataframe[f"pct_expr_{sample_id}"] = 0.0
+
+        if n_rest > 0:
+            var_dataframe[f"pct_expr_{rest_id}"] = rest_num / n_rest
+        else:
+            var_dataframe[f"pct_expr_{rest_id}"] = 0.0
+
+        var_dataframe[f"num_expr_{sample_id}"] = subset_num
+        var_dataframe[f"num_expr_{rest_id}"] = rest_num
+
+        var_dataframe[f"tot_expr_{sample_id}"] = subset_tot
+        var_dataframe[f"tot_expr_{rest_id}"] = rest_tot
 
     return var_dataframe
 
