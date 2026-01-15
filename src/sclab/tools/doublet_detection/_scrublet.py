@@ -6,6 +6,10 @@ from anndata import AnnData
 from numpy import ndarray
 
 
+def scrublet_is_available() -> bool:
+    return find_spec("scrublet") is not None
+
+
 def scrublet(
     adata: AnnData,
     layer: str = "X",
