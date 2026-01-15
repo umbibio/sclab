@@ -5,6 +5,7 @@ from anndata import ImplicitModificationWarning
 from ipywidgets import Checkbox, Dropdown
 from tqdm.auto import tqdm
 
+import sclab.preprocess
 from sclab.dataset.processor import Processor
 from sclab.dataset.processor.step import ProcessorStepBase
 
@@ -38,7 +39,11 @@ class Preprocess(ProcessorStepBase):
             ),
             regress_total_counts=Checkbox(description="Regr. out total counts"),
             regress_n_genes=Checkbox(description="Regr. out n genes"),
-            normalize_total=Checkbox(value=True, description="Normalize total"),
+            normalization_method=Dropdown(
+                options=("No normalization", "Library size", "Weighted library size"),
+                value="Library size",
+                description="Norm. method",
+            ),
             log1p=Checkbox(value=True, description="Log1p"),
             scale=Checkbox(value=True, description="Scale"),
         )
@@ -65,7 +70,7 @@ class Preprocess(ProcessorStepBase):
         group_by: str | None = None,
         regress_total_counts: bool = False,
         regress_n_genes: bool = False,
-        normalize_total: bool = False,
+        normalization_method: str = "No normalization",
         log1p: bool = True,
         scale: bool = True,
     ):
@@ -145,9 +150,14 @@ class Preprocess(ProcessorStepBase):
         pbar.update(10)
 
         new_layer = layer
-        if normalize_total:
+        if normalization_method == "Library size":
             new_layer += "_normt"
             sc.pp.normalize_total(adata, target_sum=1e4)
+        elif normalization_method == "Weighted library size":
+            new_layer += "_normw"
+            sclab.preprocess.normalize_weighted(
+                adata, target_scale=1e4, batch_key=group_by
+            )
 
         pbar.update(10)
         pbar.update(10)
