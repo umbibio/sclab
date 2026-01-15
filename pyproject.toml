@@ -17,6 +17,7 @@ classifiers = [
 dependencies = [
     "anndata",
     "anywidget",
+    "bbknn>=1.6.0",
     "ipywidgets",
     "itables<2.4",
     "matplotlib",
@@ -69,4 +70,6 @@ dev = [
     "jupyterlab>=4.3.6",
     "sclab-tools",
     "scrublet>=0.2.3",
+    "doubletdetection>=4.3.0.post1",
+    "sclab[jupyter,r,scanpy]",
 ]
