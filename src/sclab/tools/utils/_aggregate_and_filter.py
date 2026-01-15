@@ -148,7 +148,7 @@ def _get_groups_to_drop(
     groups_to_drop = group_sizes[group_sizes < min_cells_per_group].index.to_list()
 
     if len(groups_to_drop) > 0:
-        print("Dropping the following samples:")
+        print("Dropping the following groups:")
         print(groups_to_drop)
 
     groups_to_drop = groups_to_drop + [
