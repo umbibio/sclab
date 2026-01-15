@@ -5,7 +5,7 @@ import numpy as np
 from anndata import AnnData
 from numpy import bool_, floating
 from numpy.typing import NDArray
-from scipy.integrate import cumulative_trapezoid, quad
+from scipy.integrate import cumulative_trapezoid
 from tqdm.auto import tqdm
 
 from ..utils.density_nd import density_nd
@@ -186,9 +186,9 @@ def _pseudotime(
     def speed(t):
         return np.linalg.norm(F(t, d=1), axis=-1)
 
-    # arclen returns a scalar
-    def arclen(t):
-        return quad(speed, tmin, t, limit=500, epsrel=1.49e-6)[0]
+    # # arclen returns a scalar
+    # def arclen(t):
+    #     return quad(speed, tmin, t, limit=500, epsrel=1.49e-6)[0]
 
     # we will use cumulative_trapezoid to calculate the integral
     # we should make sure that we have enough points to get a good approximation
@@ -200,9 +200,8 @@ def _pseudotime(
     o = np.argsort(x)
     oo = np.argsort(o)
     x = np.insert(x[o], 0, tmin)
-    pseudotime: NDArray[floating] = cumulative_trapezoid(speed(x), x=x)[oo][
-        :-n
-    ] / arclen(tmax)
+    integral = cumulative_trapezoid(speed(x), x=x)
+    pseudotime: NDArray[floating] = integral[oo][:-n] / integral.max()
 
     return PseudotimeResult(
         pseudotime,
@@ -228,7 +227,7 @@ def pseudotime(
     largest_harmonic: int = 5,
     roughness: float | None = None,
     key_added="pseudotime",
-) -> None:
+) -> PseudotimeResult:
     X = adata.obsm[use_rep].copy().astype(float)
     X_path = np.zeros_like(X)
     X_path_derivative = np.zeros_like(X)
