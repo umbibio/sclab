@@ -1,3 +1,4 @@
+import hashlib
 from io import BytesIO
 from pathlib import Path
 from urllib.parse import urlparse
@@ -101,3 +102,11 @@ def is_valid_url(url: str) -> bool:
 
     result = urlparse(url)
     return all([result.scheme, result.netloc])
+
+
+def get_file_hash(file_path, algorithm="sha256") -> str:
+    """Compute the hash of a file using hashlib.file_digest (Python 3.11+)."""
+    with open(file_path, "rb") as f:
+        digest = hashlib.file_digest(f, algorithm)
+
+    return digest.hexdigest()
