@@ -24,8 +24,11 @@ def _alra_on_ndarray(
     data_alra : NDArray
         Imputed data.
     """
+    # import anndata2ri
     import rpy2.robjects as robjects
     import rpy2.robjects.numpy2ri
+
+    # from rpy2.robjects.conversion import localconverter
     from rpy2.robjects.packages import importr
 
     rpy2.robjects.numpy2ri.activate()
@@ -34,6 +37,12 @@ def _alra_on_ndarray(
 
     if issparse(data):
         data = np.ascontiguousarray(data.todense("C"), dtype=np.float32)
+
+    # with localconverter(anndata2ri.converter):
+    #     # convert to R object
+    #     r_X = R.matrix(data, nrow=data.shape[0], ncol=data.shape[1])
+    #     # run ALRA
+    #     r_res = alra.alra(r_X, 0, 10, 0.001)
 
     # convert to R object
     r_X = R.matrix(data, nrow=data.shape[0], ncol=data.shape[1])
