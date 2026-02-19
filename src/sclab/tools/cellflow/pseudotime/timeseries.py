@@ -1,16 +1,18 @@
-from typing import TYPE_CHECKING, Callable, NamedTuple, Sequence
+import logging
+from typing import Callable, NamedTuple, Sequence
 
 import numpy as np
+import pandas as pd
 from numpy.lib.stride_tricks import sliding_window_view
 from numpy.typing import NDArray
+from scipy.optimize import minimize_scalar
 from scipy.signal import find_peaks
 from scipy.sparse import csr_matrix, issparse
 from tqdm.auto import tqdm
 
 from ..utils.interpolate import NDBSpline
 
-if TYPE_CHECKING:
-    from typing import Sequence
+logger = logging.getLogger(__name__)
 
 
 def periodic_sliding_window(
@@ -229,10 +231,274 @@ def piecewise_scaling(
     return times_pws
 
 
+def rescale_pseudotime(
+    times: Sequence | NDArray,
+    transitions: Sequence | NDArray,
+    durations: Sequence | NDArray,
+    t_range: tuple[float, float] | None = None,
+    periodic: bool = False,
+) -> NDArray:
+    """Rescale pseudotime to real-time based on known durations.
+
+    Parameters
+    ----------
+    times
+        Pseudotime values to rescale.
+    transitions
+        Transition points between categories.
+    durations
+        Durations of each category.
+    t_range
+        Range of pseudotime (e.g., (0, 1)). If None, inferred from times.
+    periodic
+        Whether the trajectory is periodic.
+
+    Returns
+    -------
+    Rescaled real-time values.
+    """
+    t = np.asarray(times).copy()
+    trans = np.sort(np.asarray(transitions))
+    durs = np.asarray(durations)
+
+    if t_range is None:
+        tmin, tmax = np.nanmin(t), np.nanmax(t)
+        inferred_tmax = True
+    else:
+        tmin, tmax = t_range
+        inferred_tmax = False
+
+    if periodic:
+        if inferred_tmax:
+            raise ValueError("tmax must be specified (via t_range) for periodic scaling.")
+        if len(durs) != len(trans):
+            raise ValueError(
+                f"Number of durations must be {len(trans)} for periodic scaling "
+                f"(one for each interval defined by N transitions)."
+            )
+
+        # For periodic, we start the scale at trans[-1]
+        # Shift all times so trans[-1] is at 0
+        shift = trans[-1]
+        t_s = (t - shift) % tmax
+        trans_s = (trans - shift) % tmax
+        # trans_s will be [trans[0]-shift, trans[1]-shift, ..., 0]
+        # Sorted it looks like: [0, t0, t1, ..., t_{n-2}]
+        trans_s = np.sort(trans_s)
+
+        rescaled = np.full_like(t, np.nan)
+        current_time = 0.0
+
+        # Intervals are [trans_s[i], trans_s[i+1]]
+        # The first interval [0, trans_s[1]] corresponds to durs[0]
+        # Wait, if we shift by trans[-1], the last interval was [trans[-1], trans[0]] wrapping around.
+        # Let's be more precise. If trans = [0.2, 0.5, 0.8]
+        # Interval 0: [0.8, 0.2] -> duration 0
+        # Interval 1: [0.2, 0.5] -> duration 1
+        # Interval 2: [0.5, 0.8] -> duration 2
+
+        # Shift by trans[last] (0.8):
+        # 0.8 -> 0
+        # 0.2 -> 0.4
+        # 0.5 -> 0.7
+        # trans_s = [0, 0.4, 0.7]
+
+        for i in range(len(trans_s)):
+            t_start = trans_s[i]
+            t_end = trans_s[i + 1] if i + 1 < len(trans_s) else tmax
+            duration = durs[i]
+
+            mask = (t_s >= t_start) & (t_s < t_end)
+            rescaled[mask] = (t_s[mask] - t_start) / (t_end - t_start) * duration + current_time
+            current_time += duration
+
+        return rescaled
+
+    else:
+        if len(durs) != len(trans) + 1:
+            raise ValueError(
+                f"Number of durations must be {len(trans) + 1} for sequential scaling "
+                f"(one for each of the N+1 intervals defined by N transitions)."
+            )
+
+        rescaled = np.full_like(t, np.nan)
+        current_time = 0.0
+
+        # Boundary points for intervals
+        boundaries = [tmin] + list(trans) + [tmax]
+
+        for i in range(len(boundaries) - 1):
+            t_start = boundaries[i]
+            t_end = boundaries[i + 1]
+            duration = durs[i]
+
+            mask = (t >= t_start) & (t <= t_end)
+            if t_end > t_start:
+                rescaled[mask] = (t[mask] - t_start) / (t_end - t_start) * duration + current_time
+            else:
+                rescaled[mask] = current_time
+            current_time += duration
+
+        return rescaled
+
+
 def find_category_transitions(
     times: Sequence,
     labels: Sequence,
     categories: Sequence,
     periodic: bool = False,
     tmax: float | None = None,
-): ...
+) -> NDArray:
+    """Find transition points between categories in pseudotime.
+
+    Parameters
+    ----------
+    times
+        Pseudotime values for each sample.
+    labels
+        Category labels for each sample.
+    categories
+        Ordered list of categories defining the trajectory.
+    periodic
+        Whether the trajectory is periodic.
+    tmax
+        Maximum pseudotime value. Required if periodic=True.
+
+    Returns
+    -------
+    Array of transition points.
+    """
+    if periodic and tmax is None:
+        raise ValueError("tmax must be specified for periodic trajectories.")
+
+    t = np.asarray(times).copy()
+    labels = np.asarray(labels)
+    categories = np.asarray(categories)
+
+    # Use 1.0 as default tmax if not provided for non-periodic
+    if tmax is None:
+        tmax = np.nanmax(t)
+
+    transitions = []
+
+    # Number of transitions to find
+    n_transitions = len(categories) if periodic else len(categories) - 1
+
+    for i in range(n_transitions):
+        cat1 = categories[i]
+        cat2 = categories[(i + 1) % len(categories)]
+
+        mask1 = labels == cat1
+        mask2 = labels == cat2
+
+        if not np.any(mask1) or not np.any(mask2):
+            logger.warning(f"Category {cat1} or {cat2} has no samples. Skipping.")
+            transitions.append(np.nan)
+            continue
+
+        t1 = t[mask1]
+        t2 = t[mask2]
+
+        if periodic:
+
+            def loss(x, t1_shifted, t2_shifted):
+                return np.abs(np.quantile(t2_shifted, x) - np.quantile(t1_shifted, 1 - x))
+
+            # Shift time so that the transition is away from the boundary.
+            # We use the midpoint between the medians of cat1 and cat2.
+            m1 = np.quantile(t1, 0.5)
+            m2 = np.quantile(t2, 0.5)
+
+            # Periodic distance
+            d = (m2 - m1) % tmax
+            # Midpoint in periodic space
+            mid = (m1 + d / 2) % tmax
+            shift = mid - tmax / 2
+
+            t1_s = (t1 - shift) % tmax
+            t2_s = (t2 - shift) % tmax
+
+            res = minimize_scalar(
+                loss, bounds=(0, 0.5), method="bounded", args=(t1_s, t2_s)
+            )
+            ti = (np.quantile(t1_s, 1 - res.x) + np.quantile(t2_s, res.x)) / 2
+            ti = (ti + shift) % tmax
+        else:
+            # Sequential case
+            if np.nanmax(t1) <= np.nanmin(t2):
+                ti = (np.nanmax(t1) + np.nanmin(t2)) / 2
+            else:
+
+                def loss(x):
+                    return np.abs(np.quantile(t2, x) - np.quantile(t1, 1 - x))
+
+                res = minimize_scalar(loss, bounds=(0, 0.5), method="bounded")
+                ti = (np.quantile(t1, 1 - res.x) + np.quantile(t2, res.x)) / 2
+
+        transitions.append(ti)
+
+    return np.asarray(transitions)
+
+
+def piecewise_rescale(
+    adata: "AnnData",
+    time_key: str,
+    groupby: str,
+    durations: list[float] | dict[str, float],
+    new_key: str = "real_time",
+    periodic: bool = False,
+    t_range: tuple[float, float] | None = None,
+) -> None:
+    """Rescale pseudotime to real-time using piecewise linear mapping.
+
+    Parameters
+    ----------
+    adata
+        Annotated data matrix.
+    time_key
+        Key in `adata.obs` for pseudotime.
+    groupby
+        Key in `adata.obs` for categorical labels used to define intervals.
+    durations
+        Durations for each interval. If a list, must match number of intervals.
+        If a dictionary, must map category labels to durations.
+    new_key
+        Key in `adata.obs` to store the rescaled real-time values.
+    periodic
+        Whether the trajectory is periodic.
+    t_range
+        Range of pseudotime. If None, inferred from `adata.obs[time_key]`.
+    """
+    times = adata.obs[time_key].values
+    labels = adata.obs[groupby]
+
+    if not isinstance(labels.dtype, pd.CategoricalDtype):
+        raise TypeError(f"Column '{groupby}' must be categorical.")
+
+    categories = labels.cat.categories
+
+    # Convert durations to a list in the order of categories
+    if isinstance(durations, dict):
+        durs_list = [durations[cat] for cat in categories]
+    else:
+        durs_list = durations
+
+    # Estimate transition points
+    transitions = find_category_transitions(
+        times=times,
+        labels=labels.values,
+        categories=categories,
+        periodic=periodic,
+        tmax=t_range[1] if t_range else None,
+    )
+
+    # Perform rescaling
+    real_times = rescale_pseudotime(
+        times=times,
+        transitions=transitions,
+        durations=durs_list,
+        t_range=t_range,
+        periodic=periodic,
+    )
+
+    adata.obs[new_key] = real_times

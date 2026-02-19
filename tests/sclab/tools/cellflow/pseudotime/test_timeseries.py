@@ -21,13 +21,17 @@ def test_find_category_transitions():
 
                 x = rng.uniform(0, tmax, size=10000)
 
-                mu = np.arange(0, tmax + 0.001 * tmax, step)[:, None]
+                # Use n means, one for each category
+                mu = (np.arange(n) * step)[:, None]
                 ps = norm.pdf(x, loc=mu, scale=step / 4)
+                if periodic:
+                    # add wrapping contribution
+                    ps += norm.pdf(x, loc=mu + tmax, scale=step / 4)
+                    ps += norm.pdf(x, loc=mu - tmax, scale=step / 4)
+
                 ps /= ps.sum(axis=0, keepdims=True)
 
-                labels = np.array([rng.choice(mu.shape[0], p=p) for p in ps.T]) % (
-                    mu.shape[0] - periodic
-                )
+                labels = np.array([rng.choice(n, p=p) for p in ps.T])
                 labels = categories[labels]
 
                 if periodic:
@@ -37,7 +41,10 @@ def test_find_category_transitions():
 
                 for offset in offsets:
                     pseudotime = (x - offset) % tmax
-                    ground_truth = np.sort((mu[:-1].ravel() - offset + step / 2) % tmax)
+                    ground_truth = np.sort((mu.ravel() + step / 2 - offset) % tmax)
+                    if not periodic:
+                        # Non-periodic case has n-1 transitions between n categories
+                        ground_truth = ground_truth[:-1]
 
                     estimated_transitions = find_category_transitions(
                         times=pseudotime,
