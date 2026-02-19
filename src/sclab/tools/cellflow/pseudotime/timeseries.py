@@ -1,4 +1,4 @@
-from typing import Callable, NamedTuple
+from typing import TYPE_CHECKING, Callable, NamedTuple, Sequence
 
 import numpy as np
 from numpy.lib.stride_tricks import sliding_window_view
@@ -8,6 +8,9 @@ from scipy.sparse import csr_matrix, issparse
 from tqdm.auto import tqdm
 
 from ..utils.interpolate import NDBSpline
+
+if TYPE_CHECKING:
+    from typing import Sequence
 
 
 def periodic_sliding_window(
@@ -224,3 +227,12 @@ def piecewise_scaling(
     times_pws[mask] = (times[mask] - end) / (tmax - end) * (tmax - new_end) + new_end
 
     return times_pws
+
+
+def find_category_transitions(
+    times: Sequence,
+    labels: Sequence,
+    categories: Sequence,
+    periodic: bool = False,
+    tmax: float | None = None,
+): ...
