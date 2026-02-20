@@ -22,9 +22,12 @@ Implement a robust mechanism to transform pseudotime values (typically $0$ to $1
 - **Output**: NumPy array of rescaled real-time values.
 
 ### 3. AnnData Wrapper (`piecewise_rescale`)
-- **Input**: `adata` object, `time_key`, `groupby` (categorical column), `durations`, and `periodic`.
+- **Input**: `adata` object, `time_key`, `groupby` (categorical column), `groups` (explicit list of labels), `durations`, and `periodic`.
 - **Logic**: 
-    - Extract values, call the functional methods, and store the result in `adata.obs`.
+    - Validate that `groups` is provided; do not infer from `adata.obs[groupby]`.
+    - Filter cells to only those belonging to `groups`.
+    - Extract values, call the functional methods, and store the result in `adata.obs`. 
+    - Cells not in `groups` should be assigned `NaN` in the output column.
     - Allow users to pass explicit transitions or trigger the estimation.
 
 ## Non-Functional Requirements
