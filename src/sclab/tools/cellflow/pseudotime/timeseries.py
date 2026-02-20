@@ -3,6 +3,7 @@ from typing import Callable, NamedTuple, Sequence
 
 import numpy as np
 import pandas as pd
+from anndata import AnnData
 from numpy.lib.stride_tricks import sliding_window_view
 from numpy.typing import NDArray
 from scipy.optimize import minimize_scalar
@@ -270,7 +271,9 @@ def rescale_pseudotime(
 
     if periodic:
         if inferred_tmax:
-            raise ValueError("tmax must be specified (via t_range) for periodic scaling.")
+            raise ValueError(
+                "tmax must be specified (via t_range) for periodic scaling."
+            )
         if len(durs) != len(trans):
             raise ValueError(
                 f"Number of durations must be {len(trans)} for periodic scaling "
@@ -309,7 +312,9 @@ def rescale_pseudotime(
             duration = durs[i]
 
             mask = (t_s >= t_start) & (t_s < t_end)
-            rescaled[mask] = (t_s[mask] - t_start) / (t_end - t_start) * duration + current_time
+            rescaled[mask] = (t_s[mask] - t_start) / (
+                t_end - t_start
+            ) * duration + current_time
             current_time += duration
 
         return rescaled
@@ -334,7 +339,9 @@ def rescale_pseudotime(
 
             mask = (t >= t_start) & (t <= t_end)
             if t_end > t_start:
-                rescaled[mask] = (t[mask] - t_start) / (t_end - t_start) * duration + current_time
+                rescaled[mask] = (t[mask] - t_start) / (
+                    t_end - t_start
+                ) * duration + current_time
             else:
                 rescaled[mask] = current_time
             current_time += duration
@@ -402,7 +409,9 @@ def find_category_transitions(
         if periodic:
 
             def loss(x, t1_shifted, t2_shifted):
-                return np.abs(np.quantile(t2_shifted, x) - np.quantile(t1_shifted, 1 - x))
+                return np.abs(
+                    np.quantile(t2_shifted, x) - np.quantile(t1_shifted, 1 - x)
+                )
 
             # Shift time so that the transition is away from the boundary.
             # We use the midpoint between the medians of cat1 and cat2.
@@ -441,9 +450,10 @@ def find_category_transitions(
 
 
 def piecewise_rescale(
-    adata: "AnnData",
+    adata: AnnData,
     time_key: str,
     groupby: str,
+    groups: Sequence[str],
     durations: list[float] | dict[str, float],
     new_key: str = "real_time",
     periodic: bool = False,
@@ -459,8 +469,12 @@ def piecewise_rescale(
         Key in `adata.obs` for pseudotime.
     groupby
         Key in `adata.obs` for categorical labels used to define intervals.
+    groups
+        Ordered list of category labels to include in the scaling. Cells belonging to
+        other categories will be assigned NaN.
     durations
-        Durations for each interval. If a list, must match number of intervals.
+        Durations for each interval defined by `groups`. If a list, must match
+        number of intervals (len(groups)).
         If a dictionary, must map category labels to durations.
     new_key
         Key in `adata.obs` to store the rescaled real-time values.
@@ -475,30 +489,41 @@ def piecewise_rescale(
     if not isinstance(labels.dtype, pd.CategoricalDtype):
         raise TypeError(f"Column '{groupby}' must be categorical.")
 
-    categories = labels.cat.categories
+    # Filter cells belonging to the specified groups
+    mask = labels.isin(groups)
 
-    # Convert durations to a list in the order of categories
+    # Subset data
+    times_subset = times[mask]
+    labels_subset = labels[mask]
+
+    # Convert durations to a list in the order of `groups`
     if isinstance(durations, dict):
-        durs_list = [durations[cat] for cat in categories]
+        durs_list = [durations[cat] for cat in groups]
     else:
         durs_list = durations
 
-    # Estimate transition points
+    # Estimate transition points using ONLY the subsetted data and specified order
     transitions = find_category_transitions(
-        times=times,
-        labels=labels.values,
-        categories=categories,
+        times=times_subset,
+        labels=labels_subset.values,
+        categories=groups,
         periodic=periodic,
         tmax=t_range[1] if t_range else None,
     )
 
-    # Perform rescaling
-    real_times = rescale_pseudotime(
-        times=times,
+    # Perform rescaling on the subset
+    rescaled_subset = rescale_pseudotime(
+        times=times_subset,
         transitions=transitions,
         durations=durs_list,
         t_range=t_range,
         periodic=periodic,
     )
+
+    # Initialize result array with NaNs
+    real_times = np.full(times.shape, np.nan)
+
+    # Assign computed values to the correct indices
+    real_times[mask] = rescaled_subset
 
     adata.obs[new_key] = real_times
