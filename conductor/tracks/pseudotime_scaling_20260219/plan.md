@@ -36,3 +36,15 @@ Expose the functionality through a user-friendly AnnData-aware API.
     - [x] Implement logic to handle `adata` inputs and `obs` column management.
     - [x] Wire up estimation and rescaling steps into a single workflow.
 - [x] Task: Conductor - User Manual Verification 'Phase 3: AnnData Integration' (Protocol in workflow.md)
+
+## Phase 4: Fix AnnData Integration [checkpoint: 098d7b1]
+AnnData wrapper method requires explicit category ordering and handle subsets.
+
+- [x] Task: Review/Update Tests for AnnData Wrapper [312a814]
+    - [x] Update integration tests in `tests/sclab/tools/cellflow/pseudotime/test_rescaling.py` to cover subsetting (only some categories present in input).
+    - [x] Verify `adata.obs` updates correctly with `NaN` for excluded cells.
+- [x] Task: Refactor `piecewise_rescale` in `src/sclab/tools/cellflow/pseudotime/timeseries.py` [312a814]
+    - [x] Add `groups` (renamed from `groupby` categories) as a required parameter.
+    - [x] Implement cell subsetting logic based on `groups`.
+    - [x] Wire up estimation and rescaling steps with the subsetted data.
+- [x] Task: Conductor - User Manual Verification 'Phase 4: Fix AnnData Integration' (Protocol in workflow.md)
