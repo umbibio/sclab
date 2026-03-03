@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ALRA imputation implementation with R integration and scale correction
 - Configurable statistics and dummy variable creation in `aggregate_and_filter()`
 - Utility modules for embedding and imputation tools
+- Expression dynamics analysis (`expression_dynamics()`) for computing gene turnover over pseudotime
+- Per-cell metrics: number of activated/repressed genes and transcriptional flux
+- Per-gene timing summaries: peak activation/repression and acceleration/deceleration onset
+- Support for gene masking, custom layers, and periodic pseudotime trajectories
 
 ### Changed
 - Refactor `transfer_metadata()` to use shared `_propagate_metadata()` helper function
