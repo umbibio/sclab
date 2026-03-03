@@ -1,8 +1,7 @@
-import warnings
 from typing import Literal
 
 import numpy as np
-from anndata import AnnData, ImplicitModificationWarning
+from anndata import AnnData
 from tqdm.auto import tqdm
 
 
@@ -135,14 +134,13 @@ def preprocess(
         if scale:
             new_layer += "_scale"
             if group_by is not None:
-                for _, idx in adata.obs.groupby(group_by, observed=True).groups.items():
-                    with warnings.catch_warnings():
-                        warnings.filterwarnings(
-                            "ignore",
-                            category=ImplicitModificationWarning,
-                            message="Modifying `X` on a view results in data being overridden",
-                        )
-                        adata[idx].X = sc.pp.scale(adata[idx].X, zero_center=False)
+                group_col = adata.obs[group_by].astype("str").fillna("_unassigned")
+                for _, idx in group_col.groupby(
+                    group_col, observed=True
+                ).groups.items():
+                    mask = adata.obs.index.isin(idx)
+                    scaled = sc.pp.scale(adata[mask].X, zero_center=False)
+                    adata.X[mask, :] = scaled
             else:
                 sc.pp.scale(adata, zero_center=False)
 
