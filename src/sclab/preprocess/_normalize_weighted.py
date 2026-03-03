@@ -9,7 +9,7 @@ def normalize_weighted(
     adata: AnnData,
     target_scale: float | None = None,
     batch_key: str | None = None,
-    q: float = 0.99,
+    # q: float = 0.99,
 ) -> None:
     if batch_key is not None:
         for _, idx in adata.obs.groupby(batch_key, observed=True).groups.items():
@@ -41,7 +41,7 @@ def normalize_weighted(
     Y.eliminate_zeros()
     Y.data = -Y.data * np.log(Y.data)
     entropy = Y.sum(axis=0)
-    entropy[:, entropy.A1 < np.quantile(entropy.A1, q)] *= 0.0
+    # entropy[:, entropy.A1 < np.quantile(entropy.A1, q)] *= 0.0
 
     Z = X.multiply(entropy)
     Z = Z.tocsr()

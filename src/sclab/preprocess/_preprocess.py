@@ -17,7 +17,6 @@ def preprocess(
     regress_n_genes: bool = False,
     normalization_method: Literal["library", "weighted", "none"] = "library",
     target_scale: float = 1e4,
-    weighted_norm_quantile: float = 0.9,
     log1p: bool = True,
     scale: bool = True,
 ):
@@ -107,7 +106,6 @@ def preprocess(
                 adata,
                 target_scale=target_scale,
                 batch_key=group_by,
-                q=weighted_norm_quantile,
             )
 
         pbar.update(10)

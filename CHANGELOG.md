@@ -20,11 +20,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Enhance pseudobulk helper functions with `make_stats` and `make_dummies` parameters
 - Update edgeR and limma model fitting to use factor types and `make.names()` for R compatibility
 - Allow `None` values for `use_rep` parameter in integration step with automatic fallback to "X"
+- Weighted normalization now uses all genes in entropy-based scaling instead of quantile filtering for improved robustness and stability
 
 ### Fixed
 - Group-wise highly variable gene detection now properly handles batch-specific analysis without batch_key parameter
 - Design matrix construction in edgeR/limma with proper factor conversion before filtering
 - Column naming in R design matrices for better compatibility across R versions
+- Removed quantile filtering from weighted normalization to prevent zero scaling factors and infinite values
+- Weighted normalization now uses all genes in entropy-based scaling for improved stability
 
 ## [0.3.3] - 2025-10-17
 ### Added
