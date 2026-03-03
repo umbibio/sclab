@@ -12,10 +12,35 @@ from tqdm.auto import tqdm
 
 from .smoothen import choose_grid_size, count_data_in_intervals, smoothen_data
 
-try:
-    from scipy.interpolate._dierckx import evaluate_spline
-except ImportError:
-    from scipy.interpolate._bspl import evaluate_spline
+
+def _get_evaluate_spline():
+    """Import and wrap evaluate_spline to normalize across scipy versions."""
+    try:
+        from scipy.interpolate._dierckx import evaluate_spline as _eval
+
+    except ImportError:
+        from scipy.interpolate._bspl import evaluate_spline as _eval
+
+    # Probe the calling convention with a minimal spline
+    _t = np.array([0.0, 0.0, 1.0, 1.0], dtype=np.float64)
+    _c = np.array([[0.0], [0.0]], dtype=np.float64, order="C")
+    _x = np.array([0.5], dtype=np.float64)
+    _out = np.empty((1, 1), dtype=np.float64, order="C")
+
+    try:
+        _eval(_t, _c, 1, _x, 0, False, _out)
+        return _eval
+
+    except TypeError:
+
+        def wrapper(t, c, k, x, d, extrapolate, out):
+            result = _eval(t, c, k, x, d, extrapolate)
+            np.copyto(out, result)
+
+        return wrapper
+
+
+evaluate_spline = _get_evaluate_spline()
 
 
 logger = logging.getLogger(__name__)

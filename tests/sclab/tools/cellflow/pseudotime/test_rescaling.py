@@ -103,7 +103,8 @@ def test_piecewise_rescale_adata():
             {
                 "pseudotime": times,
                 "phase": pd.Categorical(labels, categories=["A", "B", "C"]),
-            }
+            },
+            index=[f"cell_{i}" for i in range(n_obs)],
         ),
     )
 
@@ -142,7 +143,8 @@ def test_piecewise_rescale_subsetting():
             {
                 "pseudotime": times,
                 "phase": pd.Categorical(labels, categories=["A", "B", "C"]),
-            }
+            },
+            index=[f"cell_{i}" for i in range(n_obs)],
         ),
     )
 
@@ -183,7 +185,8 @@ def test_piecewise_rescale_reordering():
             {
                 "pseudotime": times,
                 "phase": pd.Categorical(labels, categories=["A", "B", "C"]),
-            }
+            },
+            index=[f"cell_{i}" for i in range(n_obs)],
         ),
     )
 
