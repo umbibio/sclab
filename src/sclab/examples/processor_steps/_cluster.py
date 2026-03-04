@@ -32,6 +32,12 @@ class Cluster(ProcessorStepBase):
 
         dataset = self.parent.dataset
         adata = self.parent.dataset.adata
-        sc.tl.leiden(adata, resolution=resolution)
+        sc.tl.leiden(
+            adata,
+            resolution=resolution,
+            flavor="igraph",
+            n_iterations=2,
+            directed=False,
+        )
 
         self.broker.publish("dset_metadata_change", dataset.metadata, "leiden")

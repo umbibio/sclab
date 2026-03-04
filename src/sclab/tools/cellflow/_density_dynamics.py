@@ -10,8 +10,8 @@ from scipy.integrate import cumulative_trapezoid
 from scipy.interpolate import BSpline, interp1d
 from scipy.signal import find_peaks
 
-from ..utils.density_nd import fit_density_1d
-from ..utils.times import guess_trange
+from .utils.density_nd import fit_density_1d
+from .utils.times import guess_trange
 
 logger = logging.getLogger(__name__)
 

@@ -12,29 +12,21 @@ class EventBroker:
     _disabled_events: list[str]
     std_output: Output
 
-    def register_client(self, client: "EventClient"):
-        ...
+    def register_client(self, client: "EventClient"): ...
 
-    def unregister_client(self, client: "EventClient"):
-        ...
+    def unregister_client(self, client: "EventClient"): ...
 
-    def update_subscriptions(self):
-        ...
+    def update_subscriptions(self): ...
 
-    def subscribe(self, event: str, callback: callable):
-        ...
+    def subscribe(self, event: str, callback: callable): ...
 
-    def unsubscribe(self, event: str, callback: callable):
-        ...
+    def unsubscribe(self, event: str, callback: callable): ...
 
-    def publish(self, event: str, *args, **kwargs):
-        ...
+    def publish(self, event: str, *args, **kwargs): ...
 
-    def disable_event(self, event: str):
-        ...
+    def disable_event(self, event: str): ...
 
-    def enable_event(self, event: str):
-        ...
+    def enable_event(self, event: str): ...
 
 
 class EventClient:
@@ -43,17 +35,18 @@ class EventClient:
     broker: "EventBroker"
     events: list[str]
 
-    def __init__(self, broker: "EventBroker"):
+    def __init__(self, broker: EventBroker | None = None):
         self.uuid = uuid4().hex
         self.subscriptions = {}
-        broker.register_client(self)
-        broker.update_subscriptions()
+        if broker is not None:
+            broker.register_client(self)
+            broker.update_subscriptions()
 
     def button_click_event_publisher(self, control_prefix: str, control_name: str):
         event_str = f"{control_prefix}_{control_name}_click"
-        assert (
-            event_str in self.events
-        ), f"Event {event_str} not in {self.__class__.__name__}.events list."
+        assert event_str in self.events, (
+            f"Event {event_str} not in {self.__class__.__name__}.events list."
+        )
 
         def publisher(_: Button):
             self.broker.publish(event_str)
@@ -64,9 +57,9 @@ class EventClient:
         self, control_prefix: str, control_name: str
     ):
         event_str = f"{control_prefix}_{control_name}_change"
-        assert (
-            event_str in self.events
-        ), f"Event {event_str} not in {self.__class__.__name__}.events list."
+        assert event_str in self.events, (
+            f"Event {event_str} not in {self.__class__.__name__}.events list."
+        )
 
         def publisher(event: dict):
             if event["type"] != "change":

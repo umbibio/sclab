@@ -6,6 +6,7 @@ from ipywidgets import Button, Dropdown, FloatLogSlider, FloatSlider, HBox, Text
 from numpy import floating
 from numpy.typing import NDArray
 from plotly.subplots import make_subplots
+
 from sclab.dataset.processor import Processor
 from sclab.dataset.processor.step import ProcessorStepBase
 
@@ -183,7 +184,9 @@ class GuidedPseudotime(ProcessorStepBase):
             )
 
     def estimate_periodic_pseudotime_start(self, _: Button | None = None):
-        from ...tools.cellflow.pseudotime._pseudotime import estimate_periodic_pseudotime_start
+        from ...tools.cellflow._pseudotime._pseudotime import (
+            estimate_periodic_pseudotime_start,
+        )
 
         time_key = self.variable_controls["key_added"].value
         estimate_periodic_pseudotime_start(self.parent.dataset.adata, time_key=time_key)
@@ -296,7 +299,7 @@ class GuidedPseudotime(ProcessorStepBase):
         key_added: str,
         **kwargs,
     ):
-        from ...tools.cellflow.pseudotime._pseudotime import pseudotime
+        from ...tools.cellflow import pseudotime
 
         self.plot_signal.description = "Plot Signal"
         self.plot_signal.button_style = "info"
@@ -392,7 +395,7 @@ class GuidedPseudotime(ProcessorStepBase):
             self.broker.publish("dset_metadata_change", dataset.metadata)
 
     def _automatic_periodic_path_drawing(self, *args, **kwargs):
-        from ...tools.cellflow.pseudotime._pseudotime import periodic_parameter
+        from ...tools.cellflow.pseudotime_tools import periodic_parameter
         from ...tools.cellflow.utils.interpolate import NDFourier
 
         data_points_array = self.parent.plotter.data_for_plot.values[:, :2]

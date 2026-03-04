@@ -26,6 +26,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Allow `None` values for `use_rep` parameter in integration step with automatic fallback to "X"
 - Weighted normalization now uses all genes in entropy-based scaling instead of quantile filtering for improved robustness and stability
 - Improve group-wise scaling implementation to avoid AnnData implicit modification warnings and future breaking changes
+- Reorganize cellflow module structure with cleaner separation of pseudotime, density dynamics, and expression dynamics
+- Improve Leiden clustering with igraph flavor, 2 iterations, and undirected graphs for better cluster quality
+- Update EventClient to support optional broker initialization for more flexible usage patterns
+- Use BoundedIntText for minimum neighbors parameter to enforce valid input constraints
+- Renamed module: sclab.tools.cellflow.pseudotime -> sclab.tools.cellflow._pseudotime
+    - Renamed submodules
+    - Moved helper functions to sclab.tools.cellflow.pseudotime_tools
 
 ### Fixed
 - Group-wise highly variable gene detection now properly handles batch-specific analysis without batch_key parameter
@@ -33,6 +40,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Column naming in R design matrices for better compatibility across R versions
 - Removed quantile filtering from weighted normalization to prevent zero scaling factors and infinite values
 - Weighted normalization now uses all genes in entropy-based scaling for improved stability
+- Replace deprecated `tableId` parameter with `table_id` in itables.show() calls
+- Update Output widgets to use Layout instead of deprecated style parameter
+- Fix import paths throughout codebase for reorganized cellflow module structure
 
 ## [0.3.3] - 2025-10-17
 ### Added

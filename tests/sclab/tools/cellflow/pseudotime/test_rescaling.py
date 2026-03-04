@@ -3,7 +3,7 @@ import pandas as pd
 import pytest
 from anndata import AnnData
 
-from sclab.tools.cellflow.pseudotime.timeseries import (
+from sclab.tools.cellflow._pseudotime._timeseries import (
     piecewise_rescale,
     rescale_pseudotime,
 )

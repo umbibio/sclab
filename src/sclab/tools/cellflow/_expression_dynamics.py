@@ -3,7 +3,7 @@ from anndata import AnnData
 from pandas.api.types import is_bool_dtype
 from scipy.sparse import issparse
 
-from ..utils.interpolate import NDBSpline
+from .utils.interpolate import NDBSpline
 
 
 def expression_dynamics(

@@ -65,8 +65,8 @@ class SCLabDataset(EventClient):
 
         self.load_adata(adata, copy=copy)
 
-        self.obs_table_output = Output(style={"width": "98%"})
-        self.var_table_output = Output(style={"width": "98%"})
+        self.obs_table_output = Output(layout=Layout(width="98%"))
+        self.var_table_output = Output(layout=Layout(width="98%"))
 
         self.obs_table = GridBox(
             [
@@ -109,7 +109,7 @@ class SCLabDataset(EventClient):
             with self.obs_table_output:
                 itables.show(
                     df.reset_index(),
-                    tableId=f"singlecell_dataset_obs_itable_{self.uuid}",
+                    table_id=f"singlecell_dataset_obs_itable_{self.uuid}",
                     layout={"top1": "searchBuilder"},
                     buttons=[
                         "pageLength",
@@ -142,7 +142,7 @@ class SCLabDataset(EventClient):
             with self.var_table_output:
                 itables.show(
                     df.reset_index(),
-                    tableId=f"singlecell_dataset_var_itable_{self.uuid}",
+                    table_id=f"singlecell_dataset_var_itable_{self.uuid}",
                     layout={"top1": "searchBuilder"},
                     buttons=[
                         "pageLength",

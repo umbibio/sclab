@@ -3,7 +3,7 @@ import string
 import numpy as np
 from scipy.stats import norm
 
-from sclab.tools.cellflow.pseudotime.timeseries import find_category_transitions
+from sclab.tools.cellflow._pseudotime._timeseries import find_category_transitions
 
 
 def test_find_category_transitions():

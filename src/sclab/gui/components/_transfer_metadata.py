@@ -1,12 +1,7 @@
 from typing import Literal
 
 import numpy as np
-from ipywidgets import (
-    Checkbox,
-    Dropdown,
-    FloatText,
-    IntText,
-)
+from ipywidgets import BoundedIntText, Checkbox, Dropdown, FloatText
 from pandas.api.types import is_numeric_dtype
 
 from sclab.dataset.processor import Processor
@@ -53,7 +48,7 @@ class TransferMetadata(ProcessorStepBase):
                 description="Vmax",
                 continuous_update=False,
             ),
-            min_neighs=IntText(
+            min_neighs=BoundedIntText(
                 value=5,
                 min=3,
                 description="Min Neighs",
