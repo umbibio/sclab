@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Per-cell metrics: number of activated/repressed genes and transcriptional flux
 - Per-gene timing summaries: peak activation/repression and acceleration/deceleration onset
 - Support for gene masking, custom layers, and periodic pseudotime trajectories
+- Comprehensive test suite covering import validation for all major modules
+- Functional tests for preprocessing workflows including group-wise operations and normalization methods
+- Pseudotime computation tests for periodic and non-periodic trajectories
+- End-to-end integration test for complete analysis workflow (QC → preprocessing → PCA → pseudotime → neighbors → clustering → UMAP)
+- Test utility for generating synthetic single-cell data with circular trajectories
 
 ### Changed
 - Refactor `transfer_metadata()` to use shared `_propagate_metadata()` helper function
