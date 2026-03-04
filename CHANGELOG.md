@@ -57,6 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Limma-voom differential expression analysis via `pseudobulk_limma()` as alternative to edgeR
 - Support for nth root selection in periodic pseudotime start estimation
 - Quantile parameter (q) to `normalize_weighted()` method for entropy-based gene filtering
+- Comprehensive nox test matrix covering Python 3.10-3.14 and multiple versions of numpy, scipy, anndata, and traitlets
 
 ### Changed
 - Enable normalization by default in CCA integration for better batch correction
