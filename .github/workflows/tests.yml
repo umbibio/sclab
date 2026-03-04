@@ -11,7 +11,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        python-version: ["3.10", "3.11", "3.12"]
+        python-version: ["3.11", "3.12", "3.13"]
 
     steps:
       - name: Checkout
@@ -25,12 +25,8 @@ jobs:
           enable-cache: true
           cache-suffix: "setup-uv-${{ matrix.os }}"
 
-      - name: Cache Hit
-        if: steps.setup-uv.outputs.cache-hit == 'true'
-        run: echo "Cache was restored"
-
       - name: Install dependencies
-        run: uv pip install ".[test]"
+        run: uv pip install ".[test,scanpy]"
 
       - name: Run tests
-        run: pytest
+        run: pytest -v --tb=short
