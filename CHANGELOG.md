@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pseudotime computation tests for periodic and non-periodic trajectories
 - End-to-end integration test for complete analysis workflow (QC → preprocessing → PCA → pseudotime → neighbors → clustering → UMAP)
 - Test utility for generating synthetic single-cell data with circular trajectories
+- Support for DoubletDetection and scDblFinder methods in addition to Scrublet
+- Dynamic detection and registration of available doublet detection methods
+- Dense matrix support for entropy-weighted normalization
+- Tests for weighted normalization across sparse, dense, and batch modes
 
 ### Changed
 - Refactor `transfer_metadata()` to use shared `_propagate_metadata()` helper function
@@ -38,6 +42,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Renamed module: sclab.tools.cellflow.pseudotime -> sclab.tools.cellflow._pseudotime
     - Renamed submodules
     - Moved helper functions to sclab.tools.cellflow.pseudotime_tools
+- Refactor `normalize_weighted()` to handle both sparse and dense matrices with separate code paths
+- Improve batch-wise normalization to avoid zero division errors and AnnData implicit modification warnings
+- Refactor test utility `simple_loop_adata()` into composable helper functions for better maintainability
 
 ### Fixed
 - Group-wise highly variable gene detection now properly handles batch-specific analysis without batch_key parameter
@@ -48,6 +55,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Replace deprecated `tableId` parameter with `table_id` in itables.show() calls
 - Update Output widgets to use Layout instead of deprecated style parameter
 - Fix import paths throughout codebase for reorganized cellflow module structure
+- Zero division handling in entropy-weighted normalization
+- Batch-wise operations to use index-based masking instead of view slicing
 
 ### Documentation
 - Add comprehensive NumPy-style docstrings across all public APIs

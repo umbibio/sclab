@@ -2,40 +2,26 @@ import numpy as np
 import pandas as pd
 
 
-def simple_loop_adata(n_obs: int = 600):
-    from anndata import AnnData
-    from scipy.sparse import csr_matrix
-
-    rng = np.random.default_rng(42)
-
-    def f(x, t0, r0, t1, r1):
-        out = 1 / (1 + np.exp(-(x - t0) * r0)) - 1 / (1 + np.exp(-(x - t1) * r1))
-        out += 1 / (1 + np.exp(-(x - t0 + (np.pi * 2)) * r0)) - 1 / (
-            1 + np.exp(-(x - t1 + (np.pi * 2)) * r1)
+def _sigmoid_wave(x, t0, r0, t1, r1):
+    """Compute a periodic sigmoid-based wave with 2π wrapping."""
+    result = np.zeros_like(x, dtype=float)
+    for shift in [0, 2 * np.pi, -2 * np.pi]:
+        result += 1 / (1 + np.exp(-(x - t0 + shift) * r0)) - 1 / (
+            1 + np.exp(-(x - t1 + shift) * r1)
         )
-        out += 1 / (1 + np.exp(-(x - t0 - (np.pi * 2)) * r0)) - 1 / (
-            1 + np.exp(-(x - t1 - (np.pi * 2)) * r1)
-        )
-        return out
+    return result
 
-    # TODO: simulate batches by changing sparsity
-    # sparsities = [0.9, 0.99, 0.999]
-    # n_batches = len(sparsities)
-    sparsity = 0.99
-    n = n_obs
-    m = n_vars = 200
-    # obs time order
-    # t = rng.uniform(0, np.pi*2, size=n_obs)
 
-    # generate a density profile using a stochastic model
-    checkpoint_strenght = 0.3
-    n_phases, n_stages_per_phase = 4, 5
+def _sample_cell_times(
+    rng, n_obs, n_phases=4, n_stages_per_phase=5, checkpoint_strength=0.3
+):
+    """Sample observation times from a cell-cycle-like density profile."""
     rates = np.array(
         [
             2
             ** (
                 i // n_stages_per_phase
-                - checkpoint_strenght
+                - checkpoint_strength
                 * (i % n_stages_per_phase > (n_stages_per_phase - 3))
             )
             for i in range(n_phases * n_stages_per_phase)
@@ -46,51 +32,85 @@ def simple_loop_adata(n_obs: int = 600):
     density /= density.sum()
 
     bins = np.linspace(0, 2 * np.pi, rates.size + 1)[:-1]
-    t = rng.choice(bins, p=density, size=n)
-    offset = rng.uniform(high=2 * np.pi / rates.size, size=n)
-    t = t + offset
+    t = rng.choice(bins, p=density, size=n_obs)
+    offset = rng.uniform(high=2 * np.pi / rates.size, size=n_obs)
+    return t + offset
 
-    # var risetime
-    # tt = (np.cos(np.linspace(0, np.pi, n_vars)) + 1) * np.pi
-    tt = rng.uniform(0, np.pi * 2, size=n_vars)
-    rng.shuffle(tt)
 
-    X = np.array([f(t, t0, 10, t0 + 1, 10) for t0 in tt]).T
-    # X[X < 0.05] = 0.
-    X = rng.poisson(X * 100, size=X.shape)
+def _generate_expression_matrix(rng, t, n_vars, sparsity=0.99):
+    """Build a sparse count matrix from sigmoid waves with Poisson sampling."""
+    from scipy.sparse import csr_matrix
 
-    X.flat[rng.integers(X.size, size=int(X.size * sparsity))] = 0.0
-    X = csr_matrix(X)
+    gene_onsets = rng.uniform(0, 2 * np.pi, size=n_vars)
+    rng.shuffle(gene_onsets)
 
-    s = 0.02
-    x = np.sin(t + rng.normal(0.0, s, n)) + rng.normal(0.0, s, n)
-    y = np.cos(t + rng.normal(0.0, s, n)) + rng.normal(0.0, s, n)
+    X = np.array([_sigmoid_wave(t, t0, 10, t0 + 1, 10) for t0 in gene_onsets]).T
+    X = rng.poisson(X * 100, size=X.shape).astype(float)
+
+    # Apply dropout sparsity
+    zero_idx = rng.integers(X.size, size=int(X.size * sparsity))
+    X.flat[zero_idx] = 0.0
+
+    return csr_matrix(X), gene_onsets
+
+
+def _build_obsm(rng, t, noise_scale=0.02):
+    """Create noisy circular embeddings at multiple harmonic frequencies."""
+    s = noise_scale
+    n = t.size
+    x = np.sin(t + rng.normal(0, s, n)) + rng.normal(0, s, n)
+    y = np.cos(t + rng.normal(0, s, n)) + rng.normal(0, s, n)
 
     obsm = {}
     for m in [2, 4, 6, 8]:
-        z = np.sin((t + rng.normal(0.0, s, n)) * m) / m + rng.normal(0.0, s, n)
-        if m == 2:
-            Y = np.array([x, y]).T
-        else:
-            Y = np.array([x, y, z]).T
-
+        z = np.sin((t + rng.normal(0, s, n)) * m) / m + rng.normal(0, s, n)
+        Y = np.column_stack([x, y]) if m == 2 else np.column_stack([x, y, z])
         obsm[f"Y_array{m}"] = Y
 
+    return obsm
+
+
+def _build_obs(rng, t):
+    """Construct the observation DataFrame with quadrant labels and metadata."""
     obs = pd.DataFrame(index=t)
     obs["quadrant"] = pd.NA
     obs["time"] = t
     obs["poisson"] = rng.poisson(5, t.size)
-    obs.loc[obs.index >= 0, "quadrant"] = "I"
-    obs.loc[obs.index >= np.pi / 2, "quadrant"] = "II"
-    obs.loc[obs.index >= np.pi, "quadrant"] = "III"
-    obs.loc[obs.index >= 3 * np.pi / 2, "quadrant"] = "IV"
-    obs.loc[obs.sample(frac=0.5).index, "quadrant"] = pd.NA
+
+    # Assign quadrant based on angular position
+    boundaries = [(0, "I"), (np.pi / 2, "II"), (np.pi, "III"), (3 * np.pi / 2, "IV")]
+    for threshold, label in boundaries:
+        obs.loc[obs.index >= threshold, "quadrant"] = label
+
+    # Randomly mask half the quadrant labels
+    obs.loc[obs.sample(frac=0.5, random_state=rng).index, "quadrant"] = pd.NA
     obs["quadrant"] = obs["quadrant"].astype(
         pd.CategoricalDtype(["I", "II", "III", "IV"], ordered=True)
     )
     obs.index = obs.index.astype(str)
+    return obs
 
-    var = pd.DataFrame(index=tt)
-    var.index = pd.Index(np.arange(1, tt.size + 1), dtype=int).map("var_{:04d}".format)
 
-    return AnnData(X, obs=obs, obsm=obsm, var=var)
+def _build_var(gene_onsets):
+    """Construct the variable DataFrame with formatted gene names."""
+    var = pd.DataFrame(index=gene_onsets)
+    var.index = pd.Index(np.arange(1, gene_onsets.size + 1), dtype=int).map(
+        "var_{:04d}".format
+    )
+    return var
+
+
+def simple_loop_adata(n_obs: int = 600, n_vars: int = 200):
+    from anndata import AnnData
+
+    rng = np.random.default_rng(42)
+
+    t = _sample_cell_times(rng, n_obs)
+    X, gene_onsets = _generate_expression_matrix(rng, t, n_vars)
+    obsm = _build_obsm(rng, t)
+    obs = _build_obs(rng, t)
+    var = _build_var(gene_onsets)
+
+    adata = AnnData(X, obs=obs, obsm=obsm, var=var)
+
+    return adata

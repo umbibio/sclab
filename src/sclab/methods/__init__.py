@@ -1,5 +1,3 @@
-from importlib.util import find_spec
-
 from .._methods_registry import register_sclab_method
 from ..examples.processor_steps import (
     PCA,
@@ -14,6 +12,7 @@ from ..examples.processor_steps import (
     Preprocess,
 )
 from ..gui.components import GuidedPseudotime, TransferMetadata
+from ..tools.doublet_detection import any_doublet_detection_available
 
 __all__ = [
     "QC",
@@ -38,11 +37,7 @@ register_sclab_method("Processing")(TransferMetadata)
 register_sclab_method("Processing")(UMAP)
 register_sclab_method("Processing")(Cluster)
 
-if any(
-    [
-        find_spec("scrublet"),
-    ]
-):
+if any_doublet_detection_available():
     register_sclab_method("Processing")(DoubletDetection)
 
 register_sclab_method("Analysis")(GeneExpression)

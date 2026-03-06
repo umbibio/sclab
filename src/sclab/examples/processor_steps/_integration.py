@@ -5,6 +5,22 @@ from sclab.dataset.processor.step import ProcessorStepBase
 
 
 class Integration(ProcessorStepBase):
+    """Batch integration step for multi-sample single-cell data.
+
+    Corrects batch effects in a cell embedding by applying one of three
+    integration algorithms: CCA (canonical correlation analysis), Harmony,
+    or Scanorama. The corrected embedding is stored under a new
+    ``obsm`` key named ``{use_rep}_{flavor}`` and selected in the plotter.
+
+    Available flavors:
+
+    - ``"cca"`` — canonical correlation analysis via
+      :func:`~sclab.preprocess.cca_integrate`.
+    - ``"harmony"`` — Harmony via :func:`~sclab.preprocess.harmony_integrate`.
+    - ``"scanorama"`` — Scanorama via
+      :func:`scanpy.external.pp.scanorama_integrate`.
+    """
+
     parent: Processor
     name: str = "integration"
     description: str = "Integration"
