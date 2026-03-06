@@ -26,7 +26,6 @@ dependencies = [
     "pandas",
     "plotly<6.0",
     "requests",
-    "ripser>=0.6.12",
     "scikit-learn",
     "scipy",
     "svgpathtools",
@@ -54,9 +53,6 @@ build-backend = "flit_core.buildapi"
 name = "sclab"
 source = "src/sclab"
 
-[tool.uv.sources]
-sclab-tools = { path = "../sclab-tools" }
-
 [dependency-groups]
 docs = [
     "mkdocs>=1.6.1",
@@ -72,9 +68,9 @@ dev = [
     "pytest>=8.3.4",
     "scanpy[harmony,leiden,scrublet,skmisc]>=1.10.4",
     "jupyterlab>=4.3.6",
-    "sclab-tools",
     "scrublet>=0.2.3",
     "doubletdetection>=4.3.0.post1",
     "sclab[jupyter,r,scanpy]",
-    {include-group = "docs"},
+    "ripser>=0.6.12",
+    { include-group = "docs" },
 ]
