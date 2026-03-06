@@ -17,6 +17,13 @@ from sclab.dataset.processor.step import ProcessorStepBase
 
 
 class DifferentialExpressionResults(VBox):
+    """Results panel for displaying differential expression tables.
+
+    Renders a sortable, filterable DataTable for each DE analysis stored in
+    ``adata.uns``. Provides dropdowns to select the analysis run and the
+    comparison group to display.
+    """
+
     dataset: SCLabDataset
     result_selector: Dropdown
     group_selector: ToggleButtons
@@ -122,6 +129,19 @@ class DifferentialExpressionResults(VBox):
 
 
 class DifferentialExpression(ProcessorStepBase):
+    """Differential gene expression analysis step.
+
+    Runs :func:`scanpy.tl.rank_genes_groups` to score genes for each
+    selected group relative to a reference group. Results are stored in
+    ``adata.uns`` and immediately displayed in a dedicated
+    :class:`DifferentialExpressionResults` panel.
+
+    Multiple analyses can be run with different names and parameters; each
+    is stored separately and accessible from the results dropdown.
+
+    Requires ``scanpy`` to be installed.
+    """
+
     parent: Processor
     results: DifferentialExpressionResults
     name: str = "differential_expression"

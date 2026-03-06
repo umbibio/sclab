@@ -26,6 +26,47 @@ from .event import EventBroker
 
 
 class SCLabDashboard(GridBox):
+    """Interactive single-cell RNA-seq analysis dashboard for Jupyter notebooks.
+
+    Integrates data loading, preprocessing, clustering, visualization, and
+    analysis into a single tabbed widget. Built on top of AnnData/Scanpy with
+    an event-driven architecture for reactive updates between components.
+
+    Parameters
+    ----------
+    adata_or_filepath_or_url : AnnData or str or None, optional
+        Input data as an AnnData object, a file path (.h5, .h5ad, or 10x MTX
+        folder), or a URL to a remote .h5 or .h5ad file. If None, a data
+        loader widget is displayed instead.
+    name : str, optional
+        Display name for the dashboard. Default is "SCLab Dashboard".
+    counts_layer : str, optional
+        Name of the layer to use (and create if absent) for raw counts.
+        Default is "counts".
+    batch_key : str or None, optional
+        Key in ``adata.obs`` identifying batches/samples for batch-aware
+        steps such as Integration and Neighbors. Default is None.
+    copy : bool, optional
+        If True, work on a copy of the input AnnData. Default is False.
+
+    Attributes
+    ----------
+    ds : SCLabDataset
+        Shorthand property for the dataset component.
+    pl : Plotter
+        Shorthand property for the plotter component.
+    pr : Processor
+        Shorthand property for the processor component.
+
+    Examples
+    --------
+    >>> import scanpy as sc
+    >>> from sclab import SCLabDashboard
+    >>> adata = sc.datasets.pbmc68k_reduced()
+    >>> dashboard = SCLabDashboard(adata, name="PBMC Analysis")
+    >>> display(dashboard)
+    """
+
     broker: EventBroker
     dataset: SCLabDataset
     plotter: Plotter

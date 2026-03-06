@@ -23,6 +23,49 @@ def transfer_metadata(
     min_neighs: int = 5,
     weight_by: Literal["connectivity", "distance", "constant"] = "connectivity",
 ):
+    """Transfer a metadata column from a source group to the rest of the cells.
+
+    Uses the k-nearest-neighbor graph (``adata.obsp["connectivities"]`` and
+    ``adata.obsp["distances"]``) to propagate values from labeled cells
+    (``source_group``) to unlabeled cells. Results are stored as new columns
+    with the ``transferred_`` prefix.
+
+    Parameters
+    ----------
+    adata : AnnData
+        Annotated data matrix with a computed neighbor graph. Modified
+        in-place.
+    group_key : str
+        Column in ``adata.obs`` identifying the groups (e.g. ``"batch"``).
+    source_group : str
+        Value in ``adata.obs[group_key]`` whose cells serve as the labeled
+        source. Cells in all other groups receive transferred values.
+    column : str
+        Column in ``adata.obs`` containing the values to transfer (numeric,
+        categorical, or boolean).
+    periodic : bool, optional
+        If True, treat ``column`` as a periodic variable (e.g. cell-cycle
+        phase in [vmin, vmax]). Default is False.
+    vmin : float, optional
+        Minimum value for periodic wrapping. Default is 0.
+    vmax : float, optional
+        Maximum value for periodic wrapping. Default is 1.
+    min_neighs : int, optional
+        Minimum number of labeled neighbors required to assign a value.
+        Cells with fewer labeled neighbors are left as NaN. Default is 5.
+    weight_by : {"connectivity", "distance", "constant"}, optional
+        How to weight neighbors when aggregating values. ``"connectivity"``
+        uses the connectivity matrix; ``"distance"`` uses inverse distances;
+        ``"constant"`` gives equal weight to all neighbors. Default is
+        ``"connectivity"``.
+
+    Returns
+    -------
+    None
+        Adds ``transferred_{column}`` and ``transferred_{column}_error``
+        (or ``transferred_{column}_proportion`` for categorical columns)
+        to ``adata.obs``.
+    """
     new_values, new_values_err = _propagate_metadata(
         adata,
         column=column,
@@ -47,6 +90,39 @@ def propagate_metadata(
     min_neighs: int = 5,
     weight_by: Literal["connectivity", "distance", "constant"] = "connectivity",
 ):
+    """Fill missing values in a metadata column by propagation through the neighbor graph.
+
+    Cells that already have a value in ``column`` are used as anchors; NaN
+    cells receive an estimated value from their labeled neighbors. Useful
+    for imputing partially annotated metadata (e.g. pseudotime or cell-type
+    labels) based on the k-NN graph structure.
+
+    Parameters
+    ----------
+    adata : AnnData
+        Annotated data matrix with a computed neighbor graph. Modified
+        in-place.
+    column : str
+        Column in ``adata.obs`` with partial values (NaNs to be filled).
+    periodic : bool, optional
+        If True, treat the variable as periodic (circular). Default is False.
+    vmin : float, optional
+        Minimum value for periodic wrapping. Default is 0.
+    vmax : float, optional
+        Maximum value for periodic wrapping. Default is 1.
+    min_neighs : int, optional
+        Minimum number of labeled neighbors required to assign a value.
+        Default is 5.
+    weight_by : {"connectivity", "distance", "constant"}, optional
+        Neighbor weighting scheme. Default is ``"connectivity"``.
+
+    Returns
+    -------
+    None
+        Fills NaN entries in ``adata.obs[column]`` in-place and adds an
+        error/proportion column (``{column}_error`` or
+        ``{column}_proportion``).
+    """
     new_values, new_values_err = _propagate_metadata(
         adata,
         column=column,

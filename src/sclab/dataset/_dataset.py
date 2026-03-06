@@ -15,6 +15,41 @@ itables.options.maxBytes = "50MB"
 
 
 class SCLabDataset(EventClient):
+    """Wrapper around AnnData with interactive tables and event-driven updates.
+
+    Manages observation and variable metadata, row selection, and data
+    representations (``obsm`` entries). Publishes events via the
+    :class:`~sclab.event.EventBroker` whenever the data or selection changes
+    so that the :class:`~sclab.dataset.plotter.Plotter` and
+    :class:`~sclab.dataset.processor.Processor` can react automatically.
+
+    Parameters
+    ----------
+    adata : AnnData
+        Annotated data matrix to wrap.
+    name : str, optional
+        Display name used in exported table filenames. Default is
+        ``"SCLabDataset"``.
+    counts_layer : str, optional
+        Name of the raw counts layer. If the layer does not exist it is
+        created from ``adata.X``. Default is ``"counts"``.
+    copy : bool, optional
+        If True, work on a copy of ``adata``. Default is True.
+    broker : EventBroker or None, optional
+        Shared event broker. A new one is created if None. Default is None.
+
+    Attributes
+    ----------
+    adata : AnnData
+        The underlying annotated data matrix.
+    obs_table : GridBox
+        Interactive ipywidget displaying ``adata.obs``.
+    var_table : GridBox
+        Interactive ipywidget displaying ``adata.var``.
+    selected_rows : pd.Index
+        Index of currently selected observations.
+    """
+
     adata: AnnData
     name: str
     _data_dict: dict[str, pd.DataFrame]

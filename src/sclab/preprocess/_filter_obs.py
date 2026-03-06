@@ -12,6 +12,34 @@ def filter_obs(
     max_counts: int | None = None,
     max_cells: int | None = None,
 ) -> None:
+    """Filter observations (cells) based on count and gene-detection thresholds.
+
+    All filtering criteria are applied simultaneously; cells that fail any
+    active criterion are removed. Only criteria that are not None are
+    applied.
+
+    Parameters
+    ----------
+    adata : AnnData
+        Annotated data matrix. Modified in-place.
+    layer : str or None, optional
+        Layer to use for count computations. Uses ``adata.X`` if None.
+        Default is None.
+    min_counts : int or None, optional
+        Minimum total counts per cell. Cells with fewer counts are removed.
+    min_genes : int or None, optional
+        Minimum number of genes detected (count > 0) per cell.
+    max_counts : int or None, optional
+        Maximum total counts per cell. Cells with more counts are removed.
+    max_cells : int or None, optional
+        Maximum number of cells to retain, keeping those with the highest
+        total counts (i.e. keep the top *max_cells* cells by total counts).
+
+    Returns
+    -------
+    None
+        Modifies ``adata`` in-place by subsetting observations.
+    """
     if layer is not None:
         X = adata.layers[layer]
     else:

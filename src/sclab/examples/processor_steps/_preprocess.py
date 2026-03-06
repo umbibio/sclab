@@ -11,6 +11,17 @@ from sclab.dataset.processor.step import ProcessorStepBase
 
 
 class Preprocess(ProcessorStepBase):
+    """Normalization and scaling step for single-cell RNA-seq data.
+
+    Applies a configurable preprocessing pipeline: optional per-group HVG
+    selection, normalization (library size, entropy-weighted, or none),
+    log1p transformation, optional covariate regression, and per-group
+    scaling. The processed matrix is stored in a new named layer and the
+    plotter is updated to show ``n_genes_by_counts`` vs ``total_counts``.
+
+    Requires ``scanpy`` to be installed.
+    """
+
     parent: Processor
     name: str = "preprocess"
     description: str = "Preprocess"

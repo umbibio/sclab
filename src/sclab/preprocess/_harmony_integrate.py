@@ -32,7 +32,42 @@ def harmony_integrate(
     reference_batch: str | list[str] | None = None,
     **kwargs,
 ):
-    """Use harmonypy :cite:p:`Korsunsky2019` to integrate different experiments."""
+    """Integrate batch embeddings using Harmony.
+
+    Runs the Harmony algorithm on a cell embedding (default ``X_pca``) to
+    remove batch effects. The corrected embedding is stored in a new
+    ``obsm`` key.
+
+    Parameters
+    ----------
+    adata : AnnData
+        Annotated data matrix. Modified in-place.
+    key : str or sequence of str
+        Column(s) in ``adata.obs`` identifying batches to correct for.
+    basis : str, optional
+        Key in ``adata.obsm`` containing the input embedding. Default is
+        ``"X_pca"``.
+    adjusted_basis : str or None, optional
+        Key in ``adata.obsm`` where the corrected embedding is stored. If
+        None, defaults to ``"{basis}_harmony"``. Default is None.
+    reference_batch : str or list of str or None, optional
+        Batch value(s) to use as reference. Reference cells are kept fixed
+        during Harmony correction. Default is None.
+    **kwargs
+        Additional keyword arguments forwarded to
+        :func:`~sclab.preprocess._harmony.run_harmony`.
+
+    Returns
+    -------
+    None
+        Stores the corrected embedding in ``adata.obsm[adjusted_basis]``.
+
+    References
+    ----------
+    Korsunsky et al. (2019). Fast, sensitive and accurate integration of
+    single-cell data with Harmony. *Nature Methods*, 16, 1289–1296.
+    https://doi.org/10.1038/s41592-019-0619-0
+    """
 
     if adjusted_basis is None:
         adjusted_basis = f"{basis}_harmony"

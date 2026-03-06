@@ -13,6 +13,33 @@ _2PI = 2 * np.pi
 
 
 class PseudotimeResult(NamedTuple):
+    """Named tuple holding the output of :func:`_compute_pseudotime`.
+
+    Attributes
+    ----------
+    pseudotime : NDArray[floating]
+        Arc-length pseudotime for each cell, normalised to ``[0, 1]``.
+    residues : NDArray[floating]
+        Euclidean distance from each cell to its closest point on the
+        fitted curve, shape ``(n_cells,)``.
+    phi : NDArray[floating]
+        Raw curve parameter (closest-point projection) for each cell,
+        expressed in the original ``t_range`` units.
+    F : NDFourier or NDBSpline
+        Fitted N-dimensional curve (full dimensionality, before SNR masking).
+    SNR : NDArray[floating]
+        Per-dimension signal-to-noise ratio, normalised to ``[0, 1]``.
+    snr_mask : NDArray[bool_]
+        Boolean mask selecting dimensions that passed the ``min_snr``
+        threshold.
+    t_mask : NDArray[bool_]
+        Boolean mask selecting cells whose ``t`` value lies within
+        ``t_range``.
+    fp_resolution : float
+        Floating-point resolution used during iterative pseudotime
+        refinement (taken from ``np.finfo(X.dtype).resolution``).
+    """
+
     pseudotime: NDArray[floating]
     residues: NDArray[floating]
     phi: NDArray[floating]
@@ -24,6 +51,24 @@ class PseudotimeResult(NamedTuple):
 
 
 def periodic_parameter(data: NDArray[floating]) -> NDArray[floating]:
+    """Compute a periodic angle parameter from 2-D coordinates.
+
+    Converts a 2-column array of ``(x, y)`` coordinates into an angle in
+    ``[0, 2π)`` using :func:`numpy.arctan2`.  Useful for deriving an initial
+    periodic ordering from a 2-D embedding (e.g. the first two principal
+    components of a cyclic trajectory).
+
+    Parameters
+    ----------
+    data : NDArray[floating], shape (n_cells, 2)
+        Two-dimensional coordinate array. The first column is treated as
+        the *x* axis and the second as the *y* axis.
+
+    Returns
+    -------
+    NDArray[floating], shape (n_cells,)
+        Angle values in radians, in the range ``[0, 2π)``.
+    """
     x, y = data.T.astype(float)
     return np.arctan2(y, x) % _2PI
 
@@ -40,6 +85,54 @@ def _compute_pseudotime(
     roughness: float | None = None,
     progress: bool = True,
 ) -> PseudotimeResult:
+    """Fit a smooth curve to a high-dimensional embedding and compute pseudotime.
+
+    Projects each cell onto the fitted curve to obtain a 1-D arc-length
+    pseudotime. The algorithm iteratively refines the closest-point
+    projection to floating-point precision. Only dimensions with
+    signal-to-noise ratio (SNR) above *min_snr* are used for projection.
+
+    Parameters
+    ----------
+    t : NDArray[floating], shape (n_cells,)
+        Initial coarse time ordering (e.g. from an external experiment or
+        a preliminary pseudotime estimate). Used to fit the curve and to
+        define which cells fall within *t_range*.
+    X : NDArray[floating], shape (n_cells, n_features)
+        High-dimensional expression or embedding matrix.
+    t_range : tuple of float
+        ``(t_min, t_max)`` domain over which the curve is fitted. Cells
+        outside this range are excluded from the fit.
+    n_dims : int, optional
+        Maximum number of dimensions of *X* to use when fitting the curve.
+        Default is ``10``.
+    min_snr : float, optional
+        Minimum normalised SNR for a dimension to be included in the
+        closest-point projection. Default is ``0.25``.
+    periodic : bool, optional
+        Whether the trajectory is periodic (e.g. cell cycle). When *True*,
+        the Fourier method is also available and *t_range* must start at
+        ``0.0``. Default is *False*.
+    method : {"fourier", "splines"}, optional
+        Curve-fitting method. ``"splines"`` is always valid; ``"fourier"``
+        requires ``periodic=True``. Default is ``"splines"``.
+    largest_harmonic : int, optional
+        Highest harmonic used when ``method="fourier"``. Ignored for
+        ``"splines"``. Default is ``5``.
+    roughness : float, optional
+        Roughness penalty for the B-spline fit. When *None*, the default
+        penalty of :class:`NDBSpline` is used. Default is *None*.
+    progress : bool, optional
+        If *True*, display a progress bar during iterative refinement.
+        Default is *True*.
+
+    Returns
+    -------
+    PseudotimeResult
+        Named tuple with fields ``pseudotime``, ``residues``, ``phi``,
+        ``F``, ``SNR``, ``snr_mask``, ``t_mask``, and ``fp_resolution``.
+        See :class:`PseudotimeResult` for details.
+    """
     if not periodic:
         assert method == "splines"
 

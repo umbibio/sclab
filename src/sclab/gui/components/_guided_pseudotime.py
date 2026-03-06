@@ -18,6 +18,31 @@ _2PI = 2 * np.pi
 
 
 class GuidedPseudotime(ProcessorStepBase):
+    """Interactive pseudotime inference guided by a user-drawn path.
+
+    Enables the user to draw a trajectory directly on the scatter plot by
+    clicking "Start Drawing" and tracing a path with the mouse. The drawn
+    path is projected onto the selected cell embedding to assign a
+    pseudotime value (0–1) to each cell. An SNR (signal-to-noise ratio)
+    threshold filters embedding dimensions used for fitting.
+
+    Workflow
+    --------
+    1. Select an embedding (``use_rep``) from the dropdown.
+    2. Click **Start Drawing** and draw a path on the scatter plot.
+       Click again to finish drawing.
+    3. (Optional) Click **Plot Signal** to inspect the per-dimension fit.
+    4. Click **Compute Pseudotime** to run the pseudotime inference.
+    5. For periodic (circular) trajectories, click
+       **Estimate Pseudotime Start** to align the start of the cycle.
+
+    Alternatively, click **Automatic Drawing** to infer a circular path
+    automatically from the 2D layout.
+
+    Results are stored in ``adata.obs[key_added]`` and the fitted path
+    coordinates in ``adata.obsm["{key_added}_path"]``.
+    """
+
     parent: Processor
     name: str = "guided_pseudotime"
     description: str = "Guided Pseudotime"

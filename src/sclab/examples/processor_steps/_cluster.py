@@ -5,6 +5,16 @@ from sclab.dataset.processor.step import ProcessorStepBase
 
 
 class Cluster(ProcessorStepBase):
+    """Leiden graph-based clustering step.
+
+    Partitions cells into clusters using the Leiden algorithm on the
+    precomputed neighbor graph. The resulting cluster labels are stored in
+    ``adata.obs["leiden"]`` and published to the plotter as a metadata
+    change.
+
+    Requires ``scanpy`` (≥1.9 with igraph flavor support) to be installed.
+    """
+
     parent: Processor
     name: str = "cluster"
     description: str = "Cluster"

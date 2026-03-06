@@ -6,6 +6,16 @@ from sclab.dataset.processor.step import ProcessorStepBase
 
 
 class UMAP(ProcessorStepBase):
+    """UMAP dimensionality reduction step.
+
+    Computes a 2D or 3D UMAP embedding using the precomputed neighbor graph
+    and stores it in ``adata.obsm`` under the key ``X_{n_components}Dumap``
+    (e.g. ``"X_2Dumap"``). Optionally zero-centers the embedding. The
+    plotter is updated to display the new embedding.
+
+    Requires ``scanpy`` to be installed.
+    """
+
     parent: Processor
     name: str = "umap"
     description: str = "UMAP"

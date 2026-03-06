@@ -6,6 +6,16 @@ from sclab.dataset.processor.step import ProcessorStepBase
 
 
 class QC(ProcessorStepBase):
+    """Quality control step for single-cell RNA-seq data.
+
+    Computes per-cell and per-gene QC metrics using the selected counts
+    layer, applies minimum count/gene/cell filters, and optionally restricts
+    analysis to the top-ranked cells. After running, the plotter is updated
+    to show ``barcode_rank`` vs ``total_counts``.
+
+    Requires ``scanpy`` to be installed.
+    """
+
     parent: Processor
     name: str = "qc"
     description: str = "QC"

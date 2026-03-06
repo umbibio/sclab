@@ -22,6 +22,93 @@ def pseudotime(
     roughness: float | None = None,
     key_added="pseudotime",
 ) -> PseudotimeResult:
+    """Compute pseudotime ordering for cells by fitting a curve through a low-dimensional embedding.
+
+    Fits either a Fourier series or smoothing spline to a reduced-dimensional
+    representation of the data, then projects each cell onto the nearest point
+    along the fitted curve. The arc-length along that curve is used as the
+    pseudotime coordinate, normalised to the range [0, 1].
+
+    Parameters
+    ----------
+    adata : AnnData
+        Annotated data matrix. Must contain ``adata.obsm[use_rep]`` and
+        ``adata.obs[t_key]``.
+    use_rep : str
+        Key in ``adata.obsm`` containing the low-dimensional embedding
+        (e.g. ``"X_pca"``) used to fit the pseudotime curve.
+    t_key : str
+        Key in ``adata.obs`` that holds an initial continuous ordering of
+        cells (e.g. a coarse time label or an existing pseudotime estimate)
+        used to initialise the curve fit.
+    t_range : tuple[float, float]
+        ``(t_min, t_max)`` interval of ``t_key`` values to consider. Cells
+        outside this range are excluded from fitting and their pseudotime is
+        set to ``NaN``.
+    n_dims : int, optional
+        Maximum number of embedding dimensions to use for the curve fit.
+        Default is 10.
+    min_snr : float, optional
+        Minimum signal-to-noise ratio (relative to the dimension with the
+        highest SNR) required to include a dimension in the fit. Dimensions
+        below this threshold are discarded. Default is 0.25.
+    periodic : bool, optional
+        If ``True``, treat the trajectory as periodic (cyclic). Requires
+        ``t_range[0] == 0.0`` and ``method="fourier"`` or
+        ``method="splines"`` with periodic boundary conditions. Default is
+        ``False``.
+    method : {"splines", "fourier"}, optional
+        Curve-fitting method. ``"splines"`` fits an N-D smoothing spline;
+        ``"fourier"`` fits an N-D Fourier series (only valid when
+        ``periodic=True``). Default is ``"splines"``.
+    largest_harmonic : int, optional
+        Highest harmonic to include when ``method="fourier"``. Ignored for
+        ``method="splines"``. Default is 5.
+    roughness : float or None, optional
+        Roughness penalty for the smoothing spline when ``method="splines"``.
+        If ``None``, an automatic penalty is chosen. Default is ``None``.
+    key_added : str, optional
+        Base key under which results are stored. Default is ``"pseudotime"``.
+        The following entries are written to ``adata``:
+
+        - ``adata.obs[key_added]`` -- arc-length pseudotime in [0, 1].
+        - ``adata.obs[key_added + "_path_residue"]`` -- Euclidean distance
+          from each cell to its nearest point on the fitted curve.
+        - ``adata.obsm[key_added + "_path"]`` -- fitted curve coordinates
+          evaluated at each cell's projected pseudotime.
+        - ``adata.obsm[key_added + "_path_derivative"]`` -- first derivative
+          of the fitted curve at each cell's projected pseudotime.
+        - ``adata.uns[key_added]`` -- dictionary of run parameters and SNR
+          values.
+
+    Returns
+    -------
+    PseudotimeResult
+        A named tuple with the following fields:
+
+        - ``pseudotime`` -- arc-length pseudotime values for cells within
+          ``t_range``, normalised to [0, 1].
+        - ``residues`` -- Euclidean residuals between each cell and its
+          nearest curve point.
+        - ``phi`` -- raw parameter values (in the original ``t_key`` units)
+          of the nearest curve point for each cell.
+        - ``F`` -- fitted curve object (``NDBSpline`` or ``NDFourier``)
+          defined over the full embedding dimensionality.
+        - ``SNR`` -- per-dimension signal-to-noise ratios, normalised so
+          the maximum is 1.
+        - ``snr_mask`` -- boolean mask indicating which dimensions passed
+          the ``min_snr`` threshold.
+        - ``t_mask`` -- boolean mask indicating which cells fall within
+          ``t_range``.
+        - ``fp_resolution`` -- floating-point resolution used during the
+          final pseudotime refinement stage.
+
+    Notes
+    -----
+    Results for cells outside ``t_range`` are stored as ``NaN`` in
+    ``adata.obs``. The curve is fitted only on cells whose ``t_key`` value
+    lies within ``[t_min, t_max]``.
+    """
     X = adata.obsm[use_rep].copy().astype(float)
     X_path = np.zeros_like(X)
     X_path_derivative = np.zeros_like(X)
@@ -75,6 +162,62 @@ def estimate_periodic_pseudotime_start(
     show_plot: bool = False,
     nth_root: int = 1,
 ):
+    """Re-align a periodic pseudotime so that its zero corresponds to a density minimum.
+
+    For a periodic (cyclic) trajectory, the choice of where pseudotime "starts"
+    (i.e. where 0 and 1 meet) is arbitrary. This function estimates a
+    principled start point by locating a trough in the cell-density
+    distribution along the pseudotime axis. Concretely it:
+
+    1. Estimates the 1-D kernel-density of pseudotime values on the circle.
+    2. Fits the reciprocal density (sparsity) with a periodic smoothing spline.
+    3. Finds inflection points of that spline and selects the ``nth_root``-th
+       one corresponding to a local maximum of the sparsity derivative, i.e. a
+       region of rapidly increasing cell sparsity.
+    4. Shifts the pseudotime axis so that this point maps to 0, wrapping values
+       modulo 1.
+
+    The direction of the pseudotime axis is also checked and flipped if
+    necessary so that the sparsity is increasing (positive derivative) at the
+    selected start point.
+
+    Parameters
+    ----------
+    adata : AnnData
+        Annotated data matrix. Must contain ``adata.obs[time_key]`` with
+        periodic pseudotime values in [0, 1). Cells with ``NaN`` pseudotime
+        are ignored.
+    time_key : str, optional
+        Key in ``adata.obs`` that holds the periodic pseudotime to be
+        realigned. Modified in-place. Default is ``"pseudotime"``.
+    bandwidth : float, optional
+        Kernel bandwidth (as a fraction of the [0, 1] period) for the
+        kernel-density estimate of the pseudotime distribution. Smaller
+        values yield a finer-grained density estimate. Default is ``1/64``.
+    show_plot : bool, optional
+        If ``True``, display a diagnostic plot showing the pseudotime
+        histogram, the KDE, the normalised sparsity, its derivative, and the
+        selected start point. Default is ``False``.
+    nth_root : int, optional
+        Which inflection point (ranked by ascending sparsity-derivative
+        height) to use as the start. ``1`` selects the inflection point with
+        the smallest positive derivative, i.e. the gentlest transition out of
+        the densest region. Default is ``1``.
+
+    Returns
+    -------
+    None
+        Modifies ``adata`` in-place. The realigned pseudotime values
+        (shifted and wrapped to [0, 1)) are written back to
+        ``adata.obs[time_key]``.
+
+    Notes
+    -----
+    This function is intended for use after :func:`pseudotime` when
+    ``periodic=True``. The implementation is experimental and has not yet
+    been fully validated across all dataset types (see inline ``TODO``
+    comment).
+    """
     # TODO: Test implementation
     pseudotime = adata.obs[time_key].values.copy()
     t_mask = ~np.isnan(pseudotime)

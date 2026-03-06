@@ -13,7 +13,7 @@ def limma_is_available() -> bool:
 
 
 def pseudobulk_limma(
-    adata_: AnnData,
+    adata: AnnData,
     group_key: str,
     condition_group: str | list[str] | None = None,
     reference_group: str | None = None,
@@ -27,18 +27,82 @@ def pseudobulk_limma(
     aggregate: bool = True,
     verbosity: int = 0,
 ) -> dict[str, pd.DataFrame]:
+    """Pseudobulk differential expression analysis using limma-voom.
+
+    Aggregates single cells into pseudobulk samples, then fits a linear
+    model with limma-voom (via R) and computes top-table statistics for
+    each requested contrast.
+
+    Requires R with the packages ``limma``, ``edgeR``, ``MAST``, and
+    ``SingleCellExperiment``, as well as the Python packages ``rpy2`` and
+    ``anndata2ri``.
+
+    Parameters
+    ----------
+    adata : AnnData
+        Annotated data matrix.
+    group_key : str
+        Column in ``adata.obs`` defining the experimental groups.
+    condition_group : str or list of str or None, optional
+        Group(s) to test against ``reference_group``. If None, each group
+        is contrasted with the corresponding reference. Default is None.
+    reference_group : str or None, optional
+        Reference group for contrasts. If None, each condition group is
+        contrasted with all remaining cells. Default is None.
+    cell_identity_key : str or None, optional
+        Column in ``adata.obs`` for stratifying contrasts by cell type or
+        identity. Separate DE results are returned per identity.
+        Default is None.
+    batch_key : str or None, optional
+        Column in ``adata.obs`` to include as a covariate in the design
+        matrix for batch correction. Default is None.
+    layer : str or None, optional
+        Layer containing raw counts required by limma/edgeR. Uses
+        ``adata.X`` if None. Default is None.
+    replicas_per_group : int, optional
+        Number of pseudobulk replicas to create per group. Default is 5.
+    min_cells_per_group : int, optional
+        Minimum number of cells required for a group to be included.
+        Default is 30.
+    bootstrap_sampling : bool, optional
+        If True, use bootstrap sampling when creating pseudobulk replicas.
+        Default is False.
+    use_cells : dict or None, optional
+        Restrict analysis to specific cell subsets. Keys are ``adata.obs``
+        columns and values are lists of categories to include. Default is
+        None.
+    aggregate : bool, optional
+        If True, aggregate cells into pseudobulk samples before fitting.
+        Default is True.
+    verbosity : int, optional
+        Verbosity level (0 = silent). Default is 0.
+
+    Returns
+    -------
+    dict of str to pd.DataFrame
+        One DataFrame per contrast (keyed by contrast label), with columns:
+
+        - ``logFC`` — log2 fold change.
+        - ``AveExpr`` — average log2 expression.
+        - ``t`` — moderated t-statistic.
+        - ``P.Value`` — raw p-value.
+        - ``adj.P.Val`` — Benjamini-Hochberg adjusted p-value.
+        - ``B`` — log-odds of differential expression.
+        - ``pct_expr_cnd`` / ``pct_expr_ref`` — fraction of expressing
+          cells in condition/reference group.
+    """
     _try_imports()
-    import anndata2ri  # noqa: F401
+    import anndata2ri
     import rpy2.robjects as robjects
-    from rpy2.rinterface_lib.embedded import RRuntimeError  # noqa: F401
-    from rpy2.robjects import pandas2ri  # noqa: F401
-    from rpy2.robjects.conversion import localconverter  # noqa: F401
+    from rpy2.rinterface_lib.embedded import RRuntimeError
+    from rpy2.robjects import pandas2ri
+    from rpy2.robjects.conversion import localconverter
 
     R = robjects.r
 
     if aggregate:
         aggr_adata = aggregate_and_filter(
-            adata_,
+            adata,
             group_key,
             cell_identity_key,
             layer,
@@ -48,7 +112,7 @@ def pseudobulk_limma(
             use_cells,
         )
     else:
-        aggr_adata = adata_.copy()
+        aggr_adata = adata.copy()
 
     with localconverter(anndata2ri.converter):
         R.assign("aggr_adata", aggr_adata)
@@ -165,7 +229,7 @@ suppressPackageStartupMessages({
     library(MAST)
 })
 
-fit_limma_model <- function(adata_, group_key, cell_identity_key = "None", batch_key = "None", verbosity = 0){
+fit_limma_model <- function(adata, group_key, cell_identity_key = "None", batch_key = "None", verbosity = 0){
 
     if (verbosity > 0){
         cat("Group key:", group_key, "\n")
@@ -174,9 +238,9 @@ fit_limma_model <- function(adata_, group_key, cell_identity_key = "None", batch
 
     # create a vector that is concatentation of condition and cell type that we will later use with contrasts
     if (cell_identity_key == "None"){
-        group <- colData(adata_)[[group_key]]
+        group <- colData(adata)[[group_key]]
     } else {
-        group <- paste0(colData(adata_)[[group_key]], "_", colData(adata_)[[cell_identity_key]])
+        group <- paste0(colData(adata)[[group_key]], "_", colData(adata)[[cell_identity_key]])
     }
 
     if (verbosity > 1){
@@ -184,19 +248,19 @@ fit_limma_model <- function(adata_, group_key, cell_identity_key = "None", batch
     }
 
     group   <- factor(group)
-    replica <- factor(colData(adata_)$replica)
+    replica <- factor(colData(adata)$replica)
 
     # create a design matrix
     if (batch_key == "None"){
         design <- model.matrix(~ 0 + group + replica)
     } else {
-        batch  <- factor(colData(adata_)[[batch_key]])
+        batch  <- factor(colData(adata)[[batch_key]])
         design <- model.matrix(~ 0 + group + replica + batch)
     }
     colnames(design) <- make.names(colnames(design))
 
     # create an edgeR object with counts and grouping factor
-    y <- DGEList(assay(adata_, "X"), group = group)
+    y <- DGEList(assay(adata, "X"), group = group)
 
     # filter out genes with low counts
     if (verbosity > 1){

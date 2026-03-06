@@ -12,6 +12,57 @@ from .._results_panel import _Results
 
 
 class ProcessorStepBase(EventClient):
+    """Base class for interactive processor steps in the SCLab dashboard.
+
+    Subclass this to create a custom analysis step that integrates with the
+    :class:`~sclab.dataset.processor.Processor` panel. Each step exposes a
+    widget-based control panel and publishes events when it starts and
+    finishes running.
+
+    Subclasses must define the following class attributes:
+
+    - ``name`` (str): Unique step identifier (e.g. ``"my_step"``).
+    - ``description`` (str): Human-readable label shown in the UI.
+
+    Subclasses must override:
+
+    - :meth:`function`: The analysis logic to execute when the step is run.
+
+    Parameters
+    ----------
+    parent : Processor
+        The parent :class:`~sclab.dataset.processor.Processor` that owns
+        this step.
+    fixed_params : dict
+        Parameters that are fixed at construction time and passed directly
+        to :meth:`function` at runtime (not exposed as widgets).
+    variable_controls : dict
+        Mapping of parameter names to ipywidgets
+        (:class:`~ipywidgets.widgets.widget_description.DescriptionWidget`
+        or :class:`~ipywidgets.widgets.valuewidget.ValueWidget`). Each
+        widget's ``.value`` is passed to :meth:`function` at runtime under
+        its key.
+    results : _Results or None, optional
+        Optional results panel to display after the step runs. If provided,
+        it is registered with the parent's results panel. Default is None.
+
+    Attributes
+    ----------
+    name : str
+        Step identifier. Must be set as a class variable in subclasses.
+    description : str
+        Human-readable step name. Must be set as a class variable.
+    order : int
+        Integer used to sort steps in the processor accordion. Lower values
+        appear first. Default is 1000.
+    controls : VBox
+        The assembled widget panel for this step.
+    run_button : Button
+        The button that triggers :meth:`run`.
+    output : Output
+        Widget area for displaying step output messages.
+    """
+
     events: list[str] = None
     parent: Processor
     name: str = None

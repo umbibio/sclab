@@ -16,6 +16,39 @@ from .._processor import Processor
 
 
 class BasicProcessorStep(EventClient):
+    """Lightweight wrapper that registers a plain function as a processor step.
+
+    Use this when you have a standalone function that operates on ``adata``
+    and you want to expose it as a runnable step in the
+    :class:`~sclab.dataset.processor.Processor` panel without subclassing
+    :class:`ProcessorStepBase`.
+
+    Parameters
+    ----------
+    parent : Processor
+        The parent :class:`~sclab.dataset.processor.Processor`.
+    description : str
+        Human-readable label for the step.
+    function : callable
+        The function to call when the step runs. It receives the merged
+        ``fixed_params`` and ``variable_params`` as keyword arguments.
+    fixed_params : dict, optional
+        Parameters passed to ``function`` at runtime that are not exposed
+        as widgets. Default is ``{}``.
+    variable_controls : dict, optional
+        Mapping of parameter names to ipywidgets. Each widget's ``.value``
+        is passed to ``function`` under its key at runtime. Default is
+        ``{}``.
+    use_run_button : bool, optional
+        If True, include a "Run" button in the control panel. Default is
+        True.
+
+    Attributes
+    ----------
+    controls : VBox
+        The assembled widget panel for this step.
+    """
+
     events: list[str] = None
     parent: Processor
     description: str

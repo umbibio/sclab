@@ -5,6 +5,17 @@ from sclab.dataset.processor.step import ProcessorStepBase
 
 
 class Neighbors(ProcessorStepBase):
+    """k-nearest-neighbor graph construction step.
+
+    Builds the cell neighborhood graph using a selected embedding
+    (``use_rep``) and a specified range of dimensions. Supports standard
+    k-NN (via :func:`scanpy.pp.neighbors`) and batch-aware BBKNN graph
+    construction when ``group_by_batch`` is enabled and the dashboard has a
+    ``batch_key``.
+
+    Requires ``scanpy`` to be installed.
+    """
+
     parent: Processor
     name: str = "neighbors"
     description: str = "Neighbors"

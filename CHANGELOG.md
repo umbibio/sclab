@@ -49,6 +49,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Update Output widgets to use Layout instead of deprecated style parameter
 - Fix import paths throughout codebase for reorganized cellflow module structure
 
+### Documentation
+- Add comprehensive NumPy-style docstrings across all public APIs
+- Include usage examples, parameter descriptions, and algorithm explanations
+
 ## [0.3.3] - 2025-10-17
 ### Added
 - Standalone `preprocess()` function for complete preprocessing workflow with configurable normalization methods

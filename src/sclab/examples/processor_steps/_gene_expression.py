@@ -13,6 +13,15 @@ colorscales = list(
 
 
 class GeneExpression(ProcessorStepBase):
+    """Interactive gene expression visualization step.
+
+    Lets users search for a gene by name and immediately visualize its
+    expression on the current plot. Expression can be shown on the 2D/3D
+    scatter (colored by gene expression) or as a scatter plot against any
+    numeric metadata column (e.g. pseudotime). The plot updates reactively
+    whenever the gene, layer, axis, or color scale selection changes.
+    """
+
     parent: Processor
     name: str = "gene_expression"
     description: str = "Gene Expression"

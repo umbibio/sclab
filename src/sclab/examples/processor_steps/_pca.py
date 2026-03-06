@@ -7,6 +7,17 @@ from sclab.dataset.processor.step import ProcessorStepBase
 
 
 class PCA(ProcessorStepBase):
+    """Principal component analysis step.
+
+    Fits PCA on all cells or on a reference batch, then projects all cells
+    onto the resulting principal components. Stores the embedding in
+    ``adata.obsm["X_pca"]``. Optionally zero-centers the embedding. A
+    "Plot Variance Ratio" button is enabled after the step runs to inspect
+    the explained variance per component.
+
+    Requires ``scanpy`` to be installed.
+    """
+
     parent: Processor
     name: str = "pca"
     description: str = "PCA"

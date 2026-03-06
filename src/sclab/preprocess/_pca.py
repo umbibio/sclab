@@ -10,6 +10,45 @@ def pca(
     reference_batch: str | None = None,
     zero_center: bool = False,
 ):
+    """Compute principal components and project all cells onto the PCA space.
+
+    When ``reference_batch`` is provided, PCA is fitted on the reference
+    batch only and all cells are projected onto those principal components.
+    This prevents the PC axes from being dominated by batch effects.
+
+    Parameters
+    ----------
+    adata : AnnData
+        Annotated data matrix. Modified in-place.
+    layer : str or None, optional
+        Layer to use as input to PCA. Uses ``adata.X`` if None. Default is
+        None.
+    n_comps : int, optional
+        Number of principal components to compute. Default is 30.
+    mask_var : str or None, optional
+        Boolean column in ``adata.var`` used to select a gene subset for
+        PCA (e.g. ``"highly_variable"``). Default is None (use all genes).
+    batch_key : str or None, optional
+        Column in ``adata.obs`` identifying batches. Required when
+        ``reference_batch`` is set. Default is None.
+    reference_batch : str or None, optional
+        Batch value in ``adata.obs[batch_key]`` to use for fitting the PCA
+        model. All cells are then projected onto the reference PCs. Default
+        is None (fit PCA on all cells).
+    zero_center : bool, optional
+        If True, subtract the mean of the PC coordinates so that the
+        embedding is centred at the origin. Default is False.
+
+    Returns
+    -------
+    None
+        Modifies ``adata`` in-place, storing results in:
+
+        - ``adata.obsm["X_pca"]`` — PC coordinates for all cells.
+        - ``adata.varm["PCs"]`` — loadings matrix.
+        - ``adata.uns["pca"]`` — variance and variance-ratio arrays; also
+          stores ``"reference_batch"`` when fitted on a reference batch.
+    """
     import scanpy as sc
 
     pca_kwargs = dict(

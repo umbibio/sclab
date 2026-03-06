@@ -1,16 +1,27 @@
 from typing import Literal
 
-import numpy as np
 from ipywidgets import BoundedIntText, Checkbox, Dropdown, FloatText
 from pandas.api.types import is_numeric_dtype
 
 from sclab.dataset.processor import Processor
 from sclab.dataset.processor.step import ProcessorStepBase
 
-_2PI = 2 * np.pi
-
 
 class TransferMetadata(ProcessorStepBase):
+    """Metadata transfer step using the k-nearest-neighbor graph.
+
+    Propagates a metadata column from a labeled source group to all other
+    cells using neighbor-weighted interpolation. Supports numeric,
+    categorical, and boolean columns. For periodic numeric values (e.g.
+    pseudotime on a circular trajectory), a periodic aggregation mode is
+    available that accounts for border conditions.
+
+    Results are stored in ``adata.obs`` as a new ``transferred_{column}``
+    column (and an associated error/proportion column).
+
+    Requires a precomputed neighbor graph (run the Neighbors step first).
+    """
+
     parent: Processor
     name: str = "transfer_metadata"
     description: str = "Transfer Metadata"

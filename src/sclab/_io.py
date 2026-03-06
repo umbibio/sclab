@@ -9,6 +9,33 @@ from tqdm.auto import tqdm
 
 
 def read_adata(path: str | Path, var_names: str = "gene_ids") -> AnnData:
+    """Read an AnnData object from a local file.
+
+    Supports 10x Genomics HDF5 (.h5), AnnData HDF5 (.h5ad), and 10x MTX
+    folders. If a column named ``var_names`` exists in ``adata.var``, it is
+    promoted to the index.
+
+    Parameters
+    ----------
+    path : str or Path
+        Path to a ``.h5`` file (10x HDF5), a ``.h5ad`` file, or a directory
+        containing 10x MTX files (``matrix.mtx``, ``barcodes.tsv``,
+        ``features.tsv``).
+    var_names : str, optional
+        Column in ``adata.var`` to use as the variable index. Default is
+        ``"gene_ids"``.
+
+    Returns
+    -------
+    AnnData
+        Loaded annotated data matrix.
+
+    Raises
+    ------
+    ValueError
+        If the file extension is not ``.h5``, ``.h5ad``, or an empty string
+        (directory).
+    """
     from .scanpy.readwrite import read_10x_h5, read_10x_mtx
 
     path = Path(path)
@@ -75,6 +102,25 @@ def load_adata_from_url(
 
 
 def fetch_file(url: str, progress: bool = True) -> BytesIO:
+    """Download a file from a URL into an in-memory buffer.
+
+    Parameters
+    ----------
+    url : str
+        URL to download.
+    progress : bool, optional
+        If True, display a tqdm progress bar. Default is True.
+
+    Returns
+    -------
+    BytesIO
+        In-memory buffer containing the downloaded file content.
+
+    Raises
+    ------
+    requests.HTTPError
+        If the HTTP request returns an error status code.
+    """
     response = requests.get(url, stream=True)
     response.raise_for_status()
 
@@ -97,6 +143,18 @@ def fetch_file(url: str, progress: bool = True) -> BytesIO:
 
 
 def is_valid_url(url: str) -> bool:
+    """Check whether a string is a valid URL.
+
+    Parameters
+    ----------
+    url : str
+        String to validate.
+
+    Returns
+    -------
+    bool
+        True if ``url`` has both a scheme and a netloc, False otherwise.
+    """
     if not isinstance(url, str):
         return False
 
@@ -105,7 +163,21 @@ def is_valid_url(url: str) -> bool:
 
 
 def get_file_hash(file_path, algorithm="sha256") -> str:
-    """Compute the hash of a file using hashlib.file_digest (Python 3.11+)."""
+    """Compute the hash of a file using ``hashlib.file_digest`` (Python 3.11+).
+
+    Parameters
+    ----------
+    file_path : str or Path
+        Path to the file to hash.
+    algorithm : str, optional
+        Hash algorithm name accepted by :mod:`hashlib`, e.g. ``"sha256"`` or
+        ``"md5"``. Default is ``"sha256"``.
+
+    Returns
+    -------
+    str
+        Hexadecimal digest string of the file contents.
+    """
     with open(file_path, "rb") as f:
         digest = hashlib.file_digest(f, algorithm)
 

@@ -19,6 +19,61 @@ def preprocess(
     log1p: bool = True,
     scale: bool = True,
 ):
+    """Normalize, transform, and scale single-cell RNA-seq count data.
+
+    Applies a configurable preprocessing pipeline: optional filtering,
+    highly-variable gene selection, normalization, log1p transformation,
+    optional covariate regression, and per-group scaling. The resulting
+    processed matrix is stored in a new named layer whose suffix encodes
+    the applied steps (e.g. ``counts_normt_log1p_scale``).
+
+    Parameters
+    ----------
+    adata : AnnData
+        Annotated data matrix. Modified in-place.
+    counts_layer : str, optional
+        Layer containing raw counts. Default is ``"counts"``.
+    group_by : str or None, optional
+        Column in ``adata.obs`` for per-group HVG selection, normalization,
+        and scaling. When set, batch-aware processing is applied. Default
+        is None.
+    min_cells : int, optional
+        Minimum number of cells a gene must be detected in to be retained.
+        Default is 5.
+    min_genes : int, optional
+        Minimum number of genes detected per cell to be retained. Default
+        is 5.
+    compute_hvg : bool, optional
+        If True, compute highly variable genes (union of Seurat and Seurat
+        v3 selections) and store the result in ``adata.var["highly_variable"]``.
+        Default is True.
+    regress_total_counts : bool, optional
+        If True, regress out total counts (or log1p total counts if
+        ``log1p=True``) per cell. Default is False.
+    regress_n_genes : bool, optional
+        If True, regress out the number of detected genes per cell.
+        Default is False.
+    normalization_method : {"library", "weighted", "none"}, optional
+        Normalization strategy. ``"library"`` applies library-size
+        normalization to ``target_scale`` counts; ``"weighted"`` applies
+        entropy-weighted normalization; ``"none"`` skips normalization.
+        Default is ``"library"``.
+    target_scale : float, optional
+        Target sum for library-size normalization (counts per cell after
+        normalization). Default is 1e4.
+    log1p : bool, optional
+        If True, apply log(x + 1) transformation after normalization.
+        Default is True.
+    scale : bool, optional
+        If True, scale each gene to unit variance (zero-center disabled).
+        Applied per group when ``group_by`` is set. Default is True.
+
+    Returns
+    -------
+    None
+        Modifies ``adata`` in-place. Stores the processed matrix in a new
+        layer and updates ``adata.X``.
+    """
     import scanpy as sc
 
     from ._normalize_weighted import normalize_weighted
