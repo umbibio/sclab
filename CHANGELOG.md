@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- Comprehensive documentation site with MkDocs and ReadTheDocs integration
+- Getting Started guide with installation, quick start, and optional R setup instructions
+- API reference documentation for all public functions and classes using mkdocstrings
+- User guide structure covering standard workflow, batch integration, doublet detection, differential expression, and pseudotime analysis
+- Developer guide placeholders for custom steps and event system
+- Material theme with dark mode, navigation tabs, search, and code highlighting
+
+### Changed
+- Update project documentation URL to https://sclab.readthedocs.io
+- Add docs dependency group separate from dev dependencies
+- Expand .gitignore to exclude MkDocs build output and data files
+
+## [0.4.0] - 2026-03-06
+### Added
 - Reference-based PCA (`rpca()`) with multiple reference batch support and variance filtering
 - `propagate_metadata()` function for filling missing metadata values using neighbor information
 - Periodic gene detection utilities using power spectrum analysis and periodogram computation

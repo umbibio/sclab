@@ -19,3 +19,10 @@ wheels/
 
 # Virtual environments
 .venv
+
+# MkDocs build output
+site/
+
+# Data files
+*.h5
+*.h5ad

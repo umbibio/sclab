@@ -35,7 +35,7 @@ dependencies = [
 
 [project.urls]
 "Repository" = "https://github.com/umbibio/sclab.git"
-"Documentation" = "https://github.com/umbibio/sclab/docs"
+"Documentation" = "https://sclab.readthedocs.io"
 "Homepage" = "https://github.com/umbibio/sclab"
 "Bug Tracker" = "https://github.com/umbibio/sclab/issues"
 "Changelog" = "https://github.com/umbibio/sclab/blob/main/CHANGELOG.md"
@@ -58,19 +58,23 @@ source = "src/sclab"
 sclab-tools = { path = "../sclab-tools" }
 
 [dependency-groups]
+docs = [
+    "mkdocs>=1.6.1",
+    "mkdocs-material>=9.6.3",
+    "mkdocs-jupyter>=0.25.1",
+    "mkdocstrings[python]>=1.0.3",
+]
 dev = [
     "bump-my-version>=0.31.1",
     "pre-commit>=4.1.0",
     "ruff>=0.9.4",
     "nox>=2024.1.29",
     "pytest>=8.3.4",
-    "mkdocs>=1.6.1",
-    "mkdocs-material>=9.6.3",
-    "mkdocs-jupyter>=0.25.1",
     "scanpy[harmony,leiden,scrublet,skmisc]>=1.10.4",
     "jupyterlab>=4.3.6",
     "sclab-tools",
     "scrublet>=0.2.3",
     "doubletdetection>=4.3.0.post1",
     "sclab[jupyter,r,scanpy]",
+    {include-group = "docs"},
 ]

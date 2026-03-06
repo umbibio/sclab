@@ -1,11 +1,13 @@
-site_name: SCLab Documentation
-site_description: Documentation for SCLab - Single-Cell Analysis Tools
+site_name: SCLab
+site_description: Interactive single-cell RNA-seq analysis in Jupyter notebooks
+site_url: !ENV [READTHEDOCS_CANONICAL_URL, "https://sclab.readthedocs.io"]
 repo_url: https://github.com/umbibio/sclab
+repo_name: umbibio/sclab
+edit_uri: edit/main/docs/
 
 theme:
   name: material
   palette:
-    # Light mode
     - media: "(prefers-color-scheme: light)"
       scheme: default
       primary: deep-purple
@@ -13,7 +15,6 @@ theme:
       toggle:
         icon: material/brightness-7
         name: Switch to dark mode
-    # Dark mode
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
       primary: deep-purple
@@ -21,25 +22,94 @@ theme:
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.highlight
+    - search.suggest
+    - content.code.copy
+    - content.code.annotate
 
 nav:
   - Home: index.md
-  # - Tutorials:
-  #     - Quick Start: tutorials/quickstart.ipynb
+  - Getting Started:
+      - Installation: getting-started/installation.md
+      - Quick Start: getting-started/quickstart.md
+      - R Setup (optional): getting-started/r-setup.md
+  - User Guide:
+      - The Dashboard: user-guide/dashboard.md
+      - Standard Workflow: user-guide/standard-workflow.md
+      - Exploring Results: user-guide/exploring-results.md
+      - Batch Integration: user-guide/batch-integration.md
+      - Doublet Detection: user-guide/doublet-detection.md
+      - Differential Expression: user-guide/differential-expression.md
+      - Pseudotime Analysis: user-guide/pseudotime.md
+  - Developer Guide:
+      - Custom Processor Steps: developer-guide/custom-steps.md
+      - Event System: developer-guide/event-system.md
+  - API Reference:
+      - Dashboard: api/dashboard.md
+      - Methods (Built-in Steps): api/methods.md
+      - Preprocessing: api/preprocess.md
+      - Tools: api/tools.md
+  - Tutorials:
+      - Overview: tutorials/index.md
 
 markdown_extensions:
   - admonition
   - pymdownx.details
-  - pymdownx.superfences
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.highlight:
       anchor_linenums: true
-  - pymdownx.tasklist:
-      custom_checkbox: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
   - pymdownx.tabbed:
       alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - attr_list
+  - md_in_html
+  - tables
+  - footnotes
+  - toc:
+      permalink: true
 
 plugins:
   - search
+  - mkdocstrings:
+      default_handler: python
+      handlers:
+        python:
+          paths: [src]
+          options:
+            docstring_style: numpy
+            show_source: false
+            show_root_heading: true
+            show_root_full_path: false
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
+            members_order: source
+            separate_signature: true
+            show_signature_annotations: true
+            signature_crossrefs: true
+            merge_init_into_class: true
+            inherited_members: false
+            filters:
+              - "!^_"
   - mkdocs-jupyter:
       include_source: true
       ignore_h1_titles: true
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/umbibio/sclab
