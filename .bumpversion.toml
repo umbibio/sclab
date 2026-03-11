@@ -6,12 +6,12 @@ parse = """(?x)
     (?P<patch>\\d+)
     (?:
         .                             # dash separator for pre-release section
-        (?P<pre_l>[a-zA-Z-]+)        # pre-release label (dev, rc, etc.)
-        (?P<pre_n>\\d+)              # pre-release version number
+        (?P<release>[a-zA-Z-]+)       # pre-release label (dev, rc, etc.)
+        (?P<dev>\\d+)                 # pre-release version number
     )?                                # pre-release section is optional
 """
 serialize = [
-    "{major}.{minor}.{patch}.{pre_l}{pre_n}",
+    "{major}.{minor}.{patch}.{release}{dev}",
     "{major}.{minor}.{patch}",
 ]
 search = "{current_version}"
@@ -28,11 +28,11 @@ commit = true
 message = "chore: Bump version: {current_version} → {new_version}"
 commit_args = ""
 
-[tool.bumpversion.parts.pre_l]
-values = ["dev", "final"]
-optional_value = "final"
+[tool.bumpversion.parts.release]
+values = ["dev", "release"]
+optional_value = "release"
 
-[tool.bumpversion.parts.pre_n]
+[tool.bumpversion.parts.dev]
 first_value = "0"
 
 [[tool.bumpversion.files]]
@@ -52,7 +52,7 @@ replace = "Copyright (c) {now:%Y}"
 regex = true
 
 [[tool.bumpversion.files]]
-include_bumps = ["pre_l"]
+include_bumps = ["release"]
 filename = "CHANGELOG.md"
 search = "## [Unreleased]"
 replace = """## [Unreleased]
