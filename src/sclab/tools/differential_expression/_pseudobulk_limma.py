@@ -1,15 +1,16 @@
+from importlib.util import find_spec
+
 import pandas as pd
 from anndata import AnnData
 
 from ..utils import aggregate_and_filter
 
+PYTHON_DEPENDENCIES = ["rpy2", "anndata2ri"]
+R_DEPENDENCIES = ["edgeR", "limma", "MAST", "SingleCellExperiment"]
+
 
 def limma_is_available() -> bool:
-    try:
-        _try_imports()
-    except ImportError:
-        return False
-    return True
+    return _python_deps_available() and _r_deps_available()
 
 
 def pseudobulk_limma(
@@ -327,3 +328,17 @@ def _try_imports():
         )
         print(message)
         raise ImportError(message)
+
+
+def _python_deps_available() -> bool:
+    return all([find_spec(dep) is not None for dep in PYTHON_DEPENDENCIES])
+
+
+def _r_deps_available() -> bool:
+    if not find_spec("rpy2") or not find_spec("anndata2ri"):
+        return False
+
+    from rpy2.robjects import r
+
+    installed_packages = list(r("installed.packages()"))
+    return all([dep in installed_packages for dep in R_DEPENDENCIES])
