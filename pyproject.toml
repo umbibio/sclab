@@ -1,6 +1,6 @@
 [project]
 name = "sclab"
-version = "0.4.1"
+version = "0.4.2.dev0"
 description = "sclab"
 readme = "README.md"
 authors = [
@@ -25,6 +25,7 @@ dependencies = [
     "numpy",
     "pandas",
     "plotly<6.0",
+    "pydeseq2>=0.5.2",
     "requests",
     "scikit-learn",
     "scipy",
