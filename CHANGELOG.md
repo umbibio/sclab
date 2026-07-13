@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- `call_differential_expression()` utility to call DE genes using robust Z-score thresholding on log-fold-change combined with p-value and expression-percentage filters
+- Populate `sclab.tools` package `__init__.py` to expose `cellflow`, `differential_expression`, and `labeling` submodules
+
+### Changed
+- Relax R backend availability checks for edgeR, limma, and scDblFinder to no longer require `anndata2ri`
+- `periodic_genes()` now normalizes total counts before computing log expression profiles and defaults to a boxcar window with constant detrending for power spectrum estimation
+
+### Fixed
+- Fix `cellflow` density plotting issues
+    - Broken relative import in `density()` preventing density plots from rendering
+    - Histogram bar width now scales with the actual time range instead of a fixed fraction
+- Fix `_assign_numerical` in metadata transfer to avoid division-by-zero when weights sum to zero or effective sample size is 1
 
 ## [0.4.1] - 2026-03-19
 ### Added

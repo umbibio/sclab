@@ -335,7 +335,7 @@ def _python_deps_available() -> bool:
 
 
 def _r_deps_available() -> bool:
-    if not find_spec("rpy2") or not find_spec("anndata2ri"):
+    if not find_spec("rpy2"):
         return False
 
     from rpy2.robjects import r

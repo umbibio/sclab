@@ -18,6 +18,8 @@ def periodic_genes(
     min_pct_power_below: float = 0.75,
     layer: str | None = None,
 ):
+    import scanpy as sc
+
     times = adata.obs[time_key].values.copy()
     if layer is None or layer == "X":
         X = adata.X
@@ -41,9 +43,10 @@ def periodic_genes(
         make_stats=False,
         make_dummies=False,
     )
+    sc.pp.normalize_total(aggregated, target_sum=1e4)
     log_cnts = np.log1p(aggregated.X)
     profiles = pd.DataFrame(log_cnts, index=labels, columns=aggregated.var_names)
-    ps = power_spectrum_df(profiles)
+    ps = power_spectrum_df(profiles, window="boxcar", detrend="constant")
     pp = pct_power_below(ps, 1 / period)
 
     adata.varm["profile"] = profiles.T
@@ -69,7 +72,11 @@ def infer_dt_from_index(idx: pd.Index) -> float:
     return dt
 
 
-def power_spectrum_df(X: pd.DataFrame, window: str = "hann", detrend: str = "constant"):
+def power_spectrum_df(
+    X: pd.DataFrame,
+    window: str = "boxcar",
+    detrend: str = "constant",
+):
     # X: rows=timepoints, columns=variables
     Xd = X - X.mean()  # remove DC so percent computations are stable
     dt = infer_dt_from_index(X.index) if X.index.size > 1 else 1.0

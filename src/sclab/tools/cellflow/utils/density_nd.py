@@ -184,7 +184,7 @@ def density_result_1d(
         # we recover the original time vector and corresponding density
         x = xx[histogram_nbins : 2 * histogram_nbins]
         d = dd[histogram_nbins : 2 * histogram_nbins] * 3  # correct the density
-        ax.bar(x, d, width=1 / histogram_nbins, fill=False, linewidth=0.5)
+        ax.bar(x, d, width=(tmax - tmin) / histogram_nbins, fill=False, linewidth=0.5)
 
     x = np.linspace(tmin, tmax, 2**10 + 1)
     if plot_density_fit:

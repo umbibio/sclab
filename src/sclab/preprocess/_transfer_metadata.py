@@ -238,12 +238,25 @@ def _assign_categorical(values: pd.Series, weights: NDArray):
 def _assign_numerical(values: pd.Series, weights: NDArray):
     # weighted mean and standard error
     sum_w: float = weights.sum()
-    sum2_w: float = weights.sum() ** 2
+
+    # If weights sum to 0, mean and error are undefined
+    if sum_w == 0:
+        return np.nan, np.nan
+
+    sum2_w: float = sum_w ** 2
     sum_w2: float = (weights**2).sum()
     n_eff: float = sum2_w / sum_w2
 
     mean_x: float = (values * weights).sum() / sum_w
-    var_x: float = ((values - mean_x) ** 2 * weights).sum() * sum_w / (sum2_w - sum_w2)
+
+    var_denom = sum2_w - sum_w2
+    
+    # If effective sample size is 1, variance is undefined (denominator is 0)
+    # We use <= 0 to handle potential floating point inaccuracies
+    if var_denom <= 0:
+        return mean_x, np.nan
+
+    var_x: float = ((values - mean_x) ** 2 * weights).sum() * sum_w / var_denom
     err_x: float = np.sqrt(var_x / n_eff)
 
     return mean_x, err_x
