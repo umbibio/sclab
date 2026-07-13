@@ -38,6 +38,12 @@ Advanced analysis functions available via `sclab.tools`.
 
 ---
 
+## Cell Type Labeling
+
+::: sclab.tools.labeling.sctype.classify_cells
+
+---
+
 ## Differential Expression
 
 ::: sclab.tools.differential_expression.pseudobulk_edger
@@ -45,3 +51,13 @@ Advanced analysis functions available via `sclab.tools`.
 ---
 
 ::: sclab.tools.differential_expression.pseudobulk_limma
+
+---
+
+### Utilities
+
+::: sclab.tools.utils.aggregate_and_filter
+
+---
+
+::: sclab.tools.utils.call_differential_expression

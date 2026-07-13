@@ -144,6 +144,18 @@ def classify_cells(
         distances in `adata.uns[neighbors_key]["distances"]`. Defaults to `None`.
     save_scores
         Whether to save the classification scores. Defaults to `False`
+
+    Returns
+    -------
+    None
+        Results are written in place to `adata.obs[key_added]` (category
+        dtype, `pd.NA` for calls below `threshold`) and
+        `adata.obs[key_added + "_noNA"]` (best-guess label regardless of
+        confidence). `key_added` defaults to `marker_class_key` when not
+        given. If `save_scores=True`, also writes
+        `adata.obs[key_added + "_score"]` (max per-cell confidence score) and
+        `adata.obsm[key_added + "_scores"]` (full class-by-cell score
+        matrix).
     """
     # cite("10.1038/s41467-022-28803-w", __package__)
 
