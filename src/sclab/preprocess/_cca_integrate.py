@@ -98,8 +98,9 @@ def cca_integrate_pair(
     uns[f"{group1}-{group2}"] = {"sigma": sigma}
     for gr, obs_names in groups.items():
         idx = adata.obs_names.get_indexer(obs_names)
-        adata.obsm[adjusted_basis][idx] = Ys[gr]
-        uns[gr] = Ys[gr]
+        if gr in Ys:
+            adata.obsm[adjusted_basis][idx] = Ys[gr]
+            uns[gr] = Ys[gr]
 
 
 def mcca_integrate(
