@@ -19,7 +19,6 @@ def pseudobulk_edger(
     condition_group: str | list[str] | None = None,
     reference_group: str | None = None,
     cell_identity_key: str | None = None,
-    batch_key: str | None = None,
     layer: str | None = None,
     replicas_per_group: int = 5,
     min_cells_per_group: int = 30,
@@ -143,7 +142,7 @@ def pseudobulk_edger(
 
         try:
             R(f"""
-                outs <- fit_edger_model(aggr_adata, "{gk}", "{cell_identity_key}", "{batch_key}", verbosity = {verbosity})
+                outs <- fit_edger_model(aggr_adata, "{gk}", "{cell_identity_key}", verbosity = {verbosity})
                 fit <- outs$fit
                 y <- outs$y
             """)
@@ -223,7 +222,7 @@ suppressPackageStartupMessages({
     library(MAST)
 })
 
-fit_edger_model <- function(adata_, group_key, cell_identity_key = "None", batch_key = "None", verbosity = 0){
+fit_edger_model <- function(adata_, group_key, cell_identity_key = "None", verbosity = 0){
 
     if (verbosity > 0){
         cat("Group key:", group_key, "\n")
@@ -245,12 +244,7 @@ fit_edger_model <- function(adata_, group_key, cell_identity_key = "None", batch
     replica <- factor(colData(adata_)$replica)
 
     # create a design matrix
-    if (batch_key == "None"){
-        design <- model.matrix(~ 0 + group + replica)
-    } else {
-        batch  <- factor(colData(adata_)[[batch_key]])
-        design <- model.matrix(~ 0 + group + replica + batch)
-    }
+    design <- model.matrix(~ 0 + group + replica)
     colnames(design) <- make.names(colnames(design))
 
     # create an edgeR object with counts and grouping factor

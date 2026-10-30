@@ -19,7 +19,6 @@ def pseudobulk_limma(
     condition_group: str | list[str] | None = None,
     reference_group: str | None = None,
     cell_identity_key: str | None = None,
-    batch_key: str | None = None,
     layer: str | None = None,
     replicas_per_group: int = 5,
     min_cells_per_group: int = 30,
@@ -54,9 +53,6 @@ def pseudobulk_limma(
         Column in ``adata.obs`` for stratifying contrasts by cell type or
         identity. Separate DE results are returned per identity.
         Default is None.
-    batch_key : str or None, optional
-        Column in ``adata.obs`` to include as a covariate in the design
-        matrix for batch correction. Default is None.
     layer : str or None, optional
         Layer containing raw counts required by limma/edgeR. Uses
         ``adata.X`` if None. Default is None.
@@ -230,7 +226,7 @@ suppressPackageStartupMessages({
     library(MAST)
 })
 
-fit_limma_model <- function(adata, group_key, cell_identity_key = "None", batch_key = "None", verbosity = 0){
+fit_limma_model <- function(adata, group_key, cell_identity_key = "None", verbosity = 0){
 
     if (verbosity > 0){
         cat("Group key:", group_key, "\n")
@@ -252,12 +248,7 @@ fit_limma_model <- function(adata, group_key, cell_identity_key = "None", batch_
     replica <- factor(colData(adata)$replica)
 
     # create a design matrix
-    if (batch_key == "None"){
-        design <- model.matrix(~ 0 + group + replica)
-    } else {
-        batch  <- factor(colData(adata)[[batch_key]])
-        design <- model.matrix(~ 0 + group + replica + batch)
-    }
+    design <- model.matrix(~ 0 + group + replica)
     colnames(design) <- make.names(colnames(design))
 
     # create an edgeR object with counts and grouping factor
