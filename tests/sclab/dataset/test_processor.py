@@ -1,0 +1,503 @@
+import json
+import pickle
+
+import numpy as np
+import pandas as pd
+import pytest
+from anndata import AnnData
+from ipywidgets import (
+    Checkbox,
+    Dropdown,
+    FloatRangeSlider,
+    IntRangeSlider,
+    SelectMultiple,
+)
+from scipy.sparse import csr_matrix
+
+from sclab import SCLabDashboard
+from sclab.dataset.processor import Processor
+
+
+def make_adata(n_obs=40, n_vars=6, batch=True) -> AnnData:
+    rng = np.random.default_rng(1)
+    X = csr_matrix(rng.poisson(2.0, size=(n_obs, n_vars)).astype(float))
+    obs = pd.DataFrame(
+        {
+            "num_f": np.linspace(0, 10, n_obs),
+            "num_i": np.arange(n_obs),
+            "cat": pd.Categorical(["a", "b", "c", "d"] * (n_obs // 4)),
+            "flag": [True, False] * (n_obs // 2),
+        },
+        index=[f"c{i:02d}" for i in range(n_obs)],
+    )
+    if batch:
+        obs["batch"] = pd.Categorical(["b1", "b2"] * (n_obs // 2))
+    return AnnData(X, obs=obs, var=pd.DataFrame(index=[f"g{i}" for i in range(n_vars)]))
+
+
+@pytest.fixture
+def dash() -> SCLabDashboard:
+    return SCLabDashboard(make_adata())
+
+
+@pytest.fixture
+def proc(dash) -> Processor:
+    return dash.processor
+
+
+# --------------------------------------------------------------------------
+# construction / batch handling
+# --------------------------------------------------------------------------
+class TestConstruction:
+    def test_batch_key_autodetected(self, proc):
+        assert proc.batch_key == "batch"
+        assert proc.batch_values == ["b1", "b2"]
+
+    def test_no_batch_column(self):
+        p = SCLabDashboard(make_adata(batch=False)).processor
+        assert p.batch_key is None and p.batch_values is None
+        assert p.make_selectbatch_drowpdown() == {}
+        assert p.make_groupbybatch_checkbox() == {}
+
+    def test_explicit_batch_key(self):
+        d = SCLabDashboard(make_adata(batch=False), batch_key="cat")
+        assert d.processor.batch_key == "cat"
+        assert d.processor.batch_values == ["a", "b", "c", "d"]
+
+    def test_batch_controls(self, proc):
+        sel = proc.make_selectbatch_drowpdown(description="Reference Batch")
+        assert list(sel) == ["reference_batch"]
+        assert isinstance(sel["reference_batch"], Dropdown)
+        assert set(sel["reference_batch"].options) == {"", "b1", "b2"}  # "" -> None
+        assert sel["reference_batch"].value is None
+        chk = proc.make_groupbybatch_checkbox()
+        assert (
+            isinstance(chk["group_by_batch"], Checkbox) and chk["group_by_batch"].value
+        )
+
+    def test_builtin_steps_registered(self, proc):
+        assert {"filter_rows", "apply_label", "QC", "Preprocess", "PCA"} <= set(
+            proc.steps
+        )
+        assert "Processing" in proc.step_groups
+
+
+# --------------------------------------------------------------------------
+# step registration
+# --------------------------------------------------------------------------
+class TestAddSteps:
+    def test_add_step_func_and_run(self, proc):
+        seen = {}
+
+        def my_func(a=0, b=1):
+            seen.update(a=a, b=b)
+
+        proc.add_step_func(
+            "My Step", my_func, fixed_params={"b": 5}, variable_controls={}
+        )
+        assert "My Step" in proc.steps
+        proc.steps["My Step"].run(a=3)
+        assert seen == {"a": 3, "b": 5}
+        assert proc.step_history[-1] == {
+            "step_description": "My Step",
+            "params": {"b": 5, "a": 3},
+        }
+
+    def test_duplicate_step_rejected(self, proc):
+        proc.add_step_func("Dup", lambda: None)
+        with pytest.raises(AssertionError, match="already exists"):
+            proc.add_step_func("Dup", lambda: None)
+
+    def test_add_steps_instantiates_classes_and_creates_group(self, proc):
+        from sclab.dataset.processor.step import ProcessorStepBase
+
+        class Mine(ProcessorStepBase):
+            name = "mine"
+            description = "Mine Step"
+
+            def __init__(self, parent):
+                super().__init__(parent, fixed_params={}, variable_controls={})
+
+            def function(self):
+                pass
+
+        proc.add_steps(Mine, step_group_name="Custom")
+        assert isinstance(proc.steps["Mine Step"], Mine)
+        assert "Custom" in proc.step_groups
+        assert "Mine Step" in proc.step_groups["Custom"].titles
+
+        with pytest.raises(AssertionError, match="already exists"):
+            proc.add_steps(Mine(proc), step_group_name="Custom")
+
+    def test_add_steps_rejects_non_step_class(self, proc):
+        with pytest.raises(AssertionError, match="must be a subclass"):
+            proc.add_steps(dict)
+
+    def test_step_added_to_existing_group_is_merged(self, proc):
+        from sclab.dataset.processor.step import ProcessorStepBase
+
+        class Extra(ProcessorStepBase):
+            name = "extra"
+            description = "Extra Step"
+
+            def __init__(self, parent):
+                super().__init__(parent, fixed_params={}, variable_controls={})
+
+            def function(self):
+                pass
+
+        before = set(proc.step_groups["Processing"].titles)
+        proc.add_steps([Extra])
+        after = set(proc.step_groups["Processing"].titles)
+        assert after == before | {"Extra Step"}
+
+
+# --------------------------------------------------------------------------
+# step run behaviour (success / failure bookkeeping)
+# --------------------------------------------------------------------------
+class TestStepRun:
+    def test_failure_is_logged_not_raised_and_not_recorded(self, proc, dash):
+        def boom():
+            raise RuntimeError("kaboom")
+
+        proc.add_step_func("Boom", boom)
+        events = []
+        original = dash.broker.publish
+
+        def spy(ev, *a, **k):
+            events.append((ev, k))
+            return original(ev, *a, **k)
+
+        dash.broker.publish = spy
+        proc.steps["Boom"].run()
+        assert proc.step_history == []
+        assert "kaboom" in dash.broker.exceptions_log[-1]
+        ended = [k for ev, k in events if ev.endswith("_ended")]
+        assert ended and ended[-1]["status"] == "failed"
+        assert isinstance(ended[-1]["error"], RuntimeError)
+
+
+# --------------------------------------------------------------------------
+# step history
+# --------------------------------------------------------------------------
+def label_step(proc, rows, column="lab", label="x"):
+    proc.steps["apply_label"].run(index=pd.Index(rows), column=column, label=label)
+
+
+class TestStepHistory:
+    def test_pd_index_params_are_stored_as_lists(self, proc):
+        label_step(proc, ["c00", "c01"])
+        assert proc.step_history == [
+            {
+                "step_description": "apply_label",
+                "params": {"index": ["c00", "c01"], "column": "lab", "label": "x"},
+            }
+        ]
+        json.dumps(proc.step_history)  # serialisable
+
+    def test_hash_is_deterministic_and_history_sensitive(self, proc):
+        h0 = proc.step_history_hash
+        label_step(proc, ["c00"])
+        h1 = proc.step_history_hash
+        label_step(proc, ["c01"], label="y")
+        h2 = proc.step_history_hash
+        assert len({h0, h1, h2}) == 3 and len(h1) == 64
+        assert proc._get_step_history_hash(proc.step_history[:1]) == h1
+
+    @pytest.mark.parametrize("fmt", ["json", "pickle"])
+    def test_save_load_apply_roundtrip(self, tmp_path, fmt):
+        d1 = SCLabDashboard(make_adata())
+        label_step(d1.processor, ["c00", "c01", "c02"], "lab", "A")
+        d1.processor.steps["filter_rows"].run(index=pd.Index(["c00", "c01", "c05"]))
+        path = tmp_path / f"hist.{fmt}"
+        d1.processor.save_step_history(path)
+
+        d2 = SCLabDashboard(make_adata())
+        d2.processor.load_step_history(path)
+        d2.processor.apply_step_history()
+
+        assert d2.processor.step_history == d1.processor.step_history
+        assert d2.dataset.adata.obs_names.tolist() == ["c00", "c01", "c05"]
+        assert d2.dataset.adata.obs["lab"].loc[["c00", "c01"]].tolist() == ["A", "A"]
+        assert d2.processor.step_history_hash == d1.processor.step_history_hash
+
+    def test_apply_only_runs_new_steps(self, tmp_path):
+        d1 = SCLabDashboard(make_adata())
+        label_step(d1.processor, ["c00"], "lab", "A")
+        label_step(d1.processor, ["c01"], "lab", "B")
+        p = tmp_path / "h.json"
+        d1.processor.save_step_history(p)
+
+        d2 = SCLabDashboard(make_adata())
+        label_step(d2.processor, ["c00"], "lab", "A")  # same first step already applied
+        d2.processor.load_step_history(p)
+        d2.processor.apply_step_history()
+        assert len(d2.processor.step_history) == 2
+        col = d2.dataset.adata.obs["lab"]
+        assert col.loc["c00"] == "A" and col.loc["c01"] == "B"
+
+    def test_apply_detects_mismatch_and_missing_history(self, tmp_path):
+        d1 = SCLabDashboard(make_adata())
+        label_step(d1.processor, ["c00"], "lab", "A")
+        p = tmp_path / "h.json"
+        d1.processor.save_step_history(p)
+
+        d2 = SCLabDashboard(make_adata())
+        with pytest.raises(AssertionError, match="No step history loaded"):
+            d2.processor.apply_step_history()
+        label_step(d2.processor, ["c00"], "other", "Z")  # diverging history
+        d2.processor.load_step_history(p)
+        with pytest.raises(AssertionError, match="mismatch"):
+            d2.processor.apply_step_history()
+
+        d3 = SCLabDashboard(make_adata())
+        label_step(d3.processor, ["c00"], "lab", "A")
+        label_step(d3.processor, ["c01"], "lab", "A")
+        d3.processor.load_step_history(p)  # loaded history is shorter
+        with pytest.raises(AssertionError, match="mismatch"):
+            d3.processor.apply_step_history()
+
+    def test_format_inference_and_errors(self, proc, tmp_path):
+        label_step(proc, ["c00"])
+        proc.save_step_history(tmp_path / "a.json")
+        proc.save_step_history(tmp_path / "b.pickle", format="pickle")
+        assert json.loads((tmp_path / "a.json").read_text()) == proc.step_history
+        assert pickle.loads((tmp_path / "b.pickle").read_bytes()) == proc.step_history
+        with pytest.raises(ValueError, match="Unsupported format"):
+            proc.save_step_history(tmp_path / "c.txt")
+        with pytest.raises(ValueError, match="Unsupported format"):
+            proc.load_step_history(tmp_path / "c.txt")
+
+    def test_print_step_history(self, proc, capsys):
+        label_step(proc, ["c00", "c01"], "lab", "A")
+        proc.print_step_history()
+        out = capsys.readouterr().out
+        assert "apply_label(index=list(2), column=lab, label=A)" in out
+        proc.print_step_history(with_hash=True)
+        out = capsys.readouterr().out
+        assert proc.step_history_hash[:8] in out
+
+
+# --------------------------------------------------------------------------
+# selection controls
+# --------------------------------------------------------------------------
+class TestSelectionControls:
+    def test_control_types_follow_dtypes(self, proc):
+        c = proc.selection_controls_dict
+        assert set(c) == {"num_f", "num_i", "cat", "flag", "batch"}
+        assert isinstance(c["num_f"], FloatRangeSlider)
+        assert isinstance(c["num_i"], IntRangeSlider)
+        assert isinstance(c["cat"], SelectMultiple)
+        assert list(c["cat"].options) == ["a", "b", "c", "d"]
+        assert isinstance(c["flag"], SelectMultiple)
+        assert list(c["flag"].options) == [True, False]
+        assert c["num_i"].min == 0 and c["num_i"].max == 39
+        # initially no selection: range sliders collapsed, selectors empty
+        assert c["num_i"].value == (0, 0) and c["cat"].value == ()
+
+    def test_selection_values_property(self, proc):
+        proc.selection_controls_dict["cat"].value = ("a",)
+        assert proc.selection_values["cat"] == ("a",)
+
+    def test_categorical_selection_selects_matching_rows(self, proc, dash):
+        proc.selection_controls_dict["cat"].value = ("a", "c")
+        sel = dash.dataset.selected_rows
+        assert sel.tolist() == [f"c{i:02d}" for i in range(40) if i % 4 in (0, 2)]
+
+    def test_numeric_range_is_inclusive(self, proc, dash):
+        proc.selection_controls_dict["num_i"].value = (5, 9)
+        assert dash.dataset.selected_rows.tolist() == [
+            f"c{i:02d}" for i in range(5, 10)
+        ]
+
+    def test_bool_selection(self, proc, dash):
+        proc.selection_controls_dict["flag"].value = (True,)
+        assert len(dash.dataset.selected_rows) == 20
+        assert dash.dataset.metadata.loc[dash.dataset.selected_rows, "flag"].all()
+
+    def test_multiple_controls_intersect(self, proc, dash):
+        proc.selection_controls_dict["cat"].value = ("a", "b")
+        proc.selection_controls_dict["num_i"].value = (0, 5)
+        assert dash.dataset.selected_rows.tolist() == [
+            f"c{i:02d}" for i in (0, 1, 4, 5)
+        ]
+
+    def test_disjoint_controls_give_empty_selection(self, proc, dash):
+        proc.selection_controls_dict["cat"].value = ("a",)  # i % 4 == 0
+        proc.selection_controls_dict["num_i"].value = (1, 3)  # i in 1..3
+        assert len(dash.dataset.selected_rows) == 0
+        assert (
+            dash.dataset._selected_rows is not None
+        )  # empty selection != no selection
+
+    def test_no_active_control_means_no_selection(self, proc, dash):
+        proc.selection_controls_dict["cat"].value = ("a",)
+        proc.selection_controls_dict["cat"].value = ()
+        assert dash.dataset._selected_rows is None
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason="BUG: _processor.py dspr_selection_values_change_callback ignores a later "
+        "control whose subset is empty (`elif not subset.empty`), so AND-ing a "
+        "satisfiable control with an unsatisfiable one still returns the first's rows",
+    )
+    def test_empty_later_subset_empties_selection(self, proc, dash):
+        proc.selection_controls_dict["cat"].value = ("a",)
+        assert len(dash.dataset.selected_rows) == 10
+        # num_f takes values k * 10/39 = 0, 0.256, ...: nothing lies in (0.05, 0.2)
+        proc.selection_controls_dict["num_f"].value = (0.05, 0.2)
+        assert len(dash.dataset.selected_rows) == 0
+
+    def test_clear_selection_resets_controls(self, proc, dash):
+        c = proc.selection_controls_dict
+        c["cat"].value = ("a",)
+        c["num_i"].value = (3, 8)
+        proc.dspr_clear_selection_click_callback()
+        assert c["cat"].value == () and c["num_i"].value == (0, 0)
+        assert dash.dataset._selected_rows is None
+
+    def test_plotter_selection_resets_controls(self, proc):
+        c = proc.selection_controls_dict
+        c["cat"].value = ("b",)
+        proc.dplt_selected_points_change_callback(pd.Index(["c00"]))
+        assert c["cat"].value == ()
+
+    def test_keep_selected_filters_rows_and_records_history(self, proc, dash):
+        proc.selection_controls_dict["cat"].value = ("a",)
+        proc.dspr_keep_selected_click_callback()
+        assert dash.dataset.adata.n_obs == 10
+        assert set(dash.dataset.adata.obs["cat"]) == {"a"}
+        assert proc.step_history[-1]["step_description"] == "filter_rows"
+        # slider bounds refreshed after the row change
+        assert proc.selection_controls_dict["num_i"].max == 36
+
+    def test_drop_selected_removes_rows(self, proc, dash):
+        proc.selection_controls_dict["cat"].value = ("a",)
+        proc.dspr_drop_selected_click_callback()
+        assert dash.dataset.adata.n_obs == 30
+        assert "a" not in set(dash.dataset.adata.obs["cat"])
+
+    def test_apply_label_via_controls(self, proc, dash):
+        proc.selection_controls_dict["num_i"].value = (0, 3)
+        lab = proc.selection_labeling_controls_dict
+        lab["create_new_key_checkbox"].value = True
+        lab["new_medatadata_key"].value = "mylabel"
+        lab["new_label"].value = "first"
+        assert lab["apply_button"].disabled is False
+        proc.dspr_apply_label_click_callback()
+        col = dash.dataset.adata.obs["mylabel"]
+        assert col.loc[["c00", "c01", "c02", "c03"]].tolist() == ["first"] * 4
+        assert col.drop(["c00", "c01", "c02", "c03"]).isna().all()
+        assert "mylabel" in lab["existing_metadata_key"].options
+
+    def test_apply_label_button_disabled_without_key(self, proc):
+        lab = proc.selection_labeling_controls_dict
+        assert lab["apply_button"].disabled is True
+        lab["create_new_key_checkbox"].value = True
+        lab["new_medatadata_key"].value = "k"
+        assert lab["apply_button"].disabled is False
+        lab["new_medatadata_key"].value = ""
+        assert lab["apply_button"].disabled is True
+
+    def test_new_obs_column_gets_a_control(self, proc, dash):
+        dash.dataset.adata.obs["extra"] = np.arange(40) * 0.5
+        proc._make_selection_controls()
+        assert isinstance(proc.selection_controls_dict["extra"], FloatRangeSlider)
+
+    def test_datetime_columns_get_no_control(self, proc, dash):
+        dash.dataset.adata.obs["dt"] = pd.date_range("2020", periods=40)
+        # datetimes are filtered out of metadata, so they never get a control
+        proc._make_selection_controls()
+        assert "dt" not in proc.selection_controls_dict
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason="BUG: _processor.py remove_column_selection_control calls "
+        "all_controls_list.remove(control) but selection controls live in "
+        "selection_controls_list -> ValueError when an obs column disappears",
+    )
+    def test_removed_obs_column_removes_control(self, proc, dash):
+        del dash.dataset.adata.obs["num_i"]
+        proc._make_selection_controls()
+        assert "num_i" not in proc.selection_controls_dict
+        assert all(c.description != "num_i" for c in proc.selection_controls_list)
+
+
+# --------------------------------------------------------------------------
+# callbacks that refresh step controls
+# --------------------------------------------------------------------------
+def _isolate_from_integration_bug(proc):
+    """Integration.group_by raises when options are reassigned (see the xfail test in
+    tests/sclab/examples/test_processor_steps.py) and aborts the refresh loops, so
+    take that control out of the way to test the rest of the callbacks."""
+    control = proc.steps["Integration"].variable_controls["group_by"]
+    proc.all_controls_list.remove(control)
+
+
+class TestControlRefreshCallbacks:
+    def test_metadata_change_refreshes_group_dropdowns(self, proc, dash):
+        _isolate_from_integration_bug(proc)
+        control = proc.steps["Differential Expression"].variable_controls["groupby"]
+        assert "new_cat" not in control.options
+        dash.dataset.adata.obs["new_cat"] = pd.Categorical(["u", "v"] * 20)
+        proc.dset_metadata_change_callback()
+        assert "new_cat" in control.options
+        labelkey = proc.selection_labeling_controls_dict["existing_metadata_key"]
+        assert "new_cat" in labelkey.options
+
+    def test_metadata_change_refreshes_axis_dropdowns_and_keeps_valid_value(
+        self, proc, dash
+    ):
+        _isolate_from_integration_bug(proc)
+        control = proc.steps["Gene Expression"].variable_controls["time_key"]
+        control.value = "num_f"
+        dash.dataset.adata.obs["extra_num"] = np.arange(40.0)
+        proc.dset_metadata_change_callback()
+        assert "extra_num" in control.options
+        assert control.value == "num_f"
+        del dash.dataset.adata.obs["num_f"]
+        proc.dset_metadata_change_callback()
+        assert "num_f" not in control.options and control.value is None
+
+    def test_layers_change_refreshes_layer_dropdowns(self, proc, dash):
+        control = proc.steps["Differential Expression"].variable_controls["layer"]
+        dash.dataset.adata.layers["fancy"] = dash.dataset.adata.X.copy()
+        proc.dset_anndata_layers_change_callback()
+        assert "fancy" in control.options
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason="BUG: _processor.py dset_total_vars_change_callback assigns a dict to the "
+        "Combobox 'Gene' options (tuple required) -> TraitError whenever genes are "
+        "dropped (Preprocess publishes dset_total_vars_change)",
+    )
+    def test_total_vars_change_refreshes_gene_dropdowns(self, proc, dash):
+        control = proc.steps["Gene Expression"].variable_controls["gene_input"]
+        dash.dataset.adata.var_names = [f"new{i}" for i in range(6)]
+        proc.dset_total_vars_change_callback()
+        assert "new0" in control.options
+
+    def test_data_dict_change_selects_x_pca_by_default(self, proc, dash):
+        control = proc.steps["Integration"].variable_controls["use_rep"]
+        dash.dataset.adata.obsm["X_pca"] = np.zeros((40, 2))
+        proc.dset_data_dict_change_callback()
+        assert control.value == "X_pca"
+        assert {"counts", "X_pca"} <= set(control.options)
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason="BUG: Processor.dset_data_dict_change_callback reassigns `use rep` "
+        "options (ipywidgets auto-selects the first, a layer such as 'counts'); "
+        "Neighbors.update_dims_range then does adata.obsm['counts'] -> KeyError, "
+        "which aborts the callback before the old value is restored",
+    )
+    def test_second_data_dict_change_keeps_neighbors_use_rep(self, proc, dash):
+        dash.dataset.adata.obsm["X_pca"] = np.zeros((40, 4))
+        n = len(dash.broker.exceptions_log)
+        dash.broker.publish("dset_data_dict_change", dash.dataset.data_dict)
+        # a new representation (e.g. produced by Integration) changes the options
+        dash.dataset.adata.obsm["X_pca_harmony"] = np.zeros((40, 4))
+        dash.broker.publish("dset_data_dict_change", dash.dataset.data_dict)
+        control = proc.steps["Neighbors"].variable_controls["use_rep"]
+        assert [e for e in dash.broker.exceptions_log[n:] if "KeyError" in e] == []
+        assert control.value == "X_pca"

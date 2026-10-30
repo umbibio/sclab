@@ -4,7 +4,12 @@ from anndata import AnnData
 from sclab import SCLabDashboard
 from sclab.methods import GuidedPseudotime
 
-from .test_utils import simple_loop_adata
+from .test_utils import (
+    assert_widgets_serializable,
+    live_widget_ids,
+    run_step,
+    simple_loop_adata,
+)
 
 
 @pytest.fixture(scope="class")
@@ -13,31 +18,57 @@ def adata() -> AnnData:
 
 
 @pytest.fixture(scope="class")
-def dashboard(adata: AnnData) -> SCLabDashboard:
+def preexisting_widgets() -> set[str]:
+    return live_widget_ids()
+
+
+@pytest.fixture(scope="class")
+def dashboard(adata: AnnData, preexisting_widgets: set[str]) -> SCLabDashboard:
     return SCLabDashboard(adata)
 
 
 class TestWorkflow:
-    def test_qc(self, dashboard: SCLabDashboard):
-        dashboard.processor.steps["QC"].run()
+    def test_dashboard_builds(self, dashboard: SCLabDashboard):
+        assert not dashboard.broker.exceptions_log
 
+    @pytest.mark.xfail(
+        strict=True,
+        reason="BUG: DifferentialExpression.dset_var_dataframe_change_callback "
+        "reads variable_controls['mask_var'], which that step lacks",
+    )
+    def test_qc(self, dashboard: SCLabDashboard):
+        run_step(dashboard, "QC")
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason="BUG: DifferentialExpression.dset_var_dataframe_change_callback "
+        "reads variable_controls['mask_var'], which that step lacks",
+    )
     def test_preprocess(self, dashboard: SCLabDashboard):
-        dashboard.processor.steps["Preprocess"].run()
+        run_step(dashboard, "Preprocess")
 
     def test_pca(self, dashboard: SCLabDashboard):
-        dashboard.processor.steps["PCA"].run()
+        run_step(dashboard, "PCA")
 
     def test_auto_pseudotime(self, dashboard: SCLabDashboard):
         step: GuidedPseudotime = dashboard.processor.steps["Guided Pseudotime"]
         step._automatic_periodic_path_drawing()
         step.variable_controls["roughness"].value = 1
-        step.run()
+        run_step(dashboard, "Guided Pseudotime")
 
     def test_neighbors(self, dashboard: SCLabDashboard):
-        dashboard.processor.steps["Neighbors"].run()
+        run_step(dashboard, "Neighbors")
 
     def test_cluster(self, dashboard: SCLabDashboard):
-        dashboard.processor.steps["Cluster"].run()
+        run_step(dashboard, "Cluster")
 
+    @pytest.mark.xfail(
+        strict=True,
+        reason="BUG: refreshing Neighbors use_rep options fires update_dims_range "
+        "with a layer key -> KeyError in adata.obsm",
+    )
     def test_umap(self, dashboard: SCLabDashboard):
-        dashboard.processor.steps["UMAP"].run()
+        run_step(dashboard, "UMAP")
+
+    def test_widgets_serializable(self, preexisting_widgets: set[str]):
+        assert_widgets_serializable(exclude_ids=preexisting_widgets)
