@@ -426,17 +426,8 @@ class TestSelectionControls:
 # --------------------------------------------------------------------------
 # callbacks that refresh step controls
 # --------------------------------------------------------------------------
-def _isolate_from_integration_bug(proc):
-    """Integration.group_by raises when options are reassigned (see the xfail test in
-    tests/sclab/examples/test_processor_steps.py) and aborts the refresh loops, so
-    take that control out of the way to test the rest of the callbacks."""
-    control = proc.steps["Integration"].variable_controls["group_by"]
-    proc.all_controls_list.remove(control)
-
-
 class TestControlRefreshCallbacks:
     def test_metadata_change_refreshes_group_dropdowns(self, proc, dash):
-        _isolate_from_integration_bug(proc)
         control = proc.steps["Differential Expression"].variable_controls["groupby"]
         assert "new_cat" not in control.options
         dash.dataset.adata.obs["new_cat"] = pd.Categorical(["u", "v"] * 20)
@@ -448,7 +439,6 @@ class TestControlRefreshCallbacks:
     def test_metadata_change_refreshes_axis_dropdowns_and_keeps_valid_value(
         self, proc, dash
     ):
-        _isolate_from_integration_bug(proc)
         control = proc.steps["Gene Expression"].variable_controls["time_key"]
         control.value = "num_f"
         dash.dataset.adata.obs["extra_num"] = np.arange(40.0)
@@ -465,18 +455,6 @@ class TestControlRefreshCallbacks:
         proc.dset_anndata_layers_change_callback()
         assert "fancy" in control.options
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: _processor.py dset_total_vars_change_callback assigns a dict to the "
-        "Combobox 'Gene' options (tuple required) -> TraitError whenever genes are "
-        "dropped (Preprocess publishes dset_total_vars_change)",
-    )
-    def test_total_vars_change_refreshes_gene_dropdowns(self, proc, dash):
-        control = proc.steps["Gene Expression"].variable_controls["gene_input"]
-        dash.dataset.adata.var_names = [f"new{i}" for i in range(6)]
-        proc.dset_total_vars_change_callback()
-        assert "new0" in control.options
-
     def test_data_dict_change_selects_x_pca_by_default(self, proc, dash):
         control = proc.steps["Integration"].variable_controls["use_rep"]
         dash.dataset.adata.obsm["X_pca"] = np.zeros((40, 2))
@@ -484,13 +462,6 @@ class TestControlRefreshCallbacks:
         assert control.value == "X_pca"
         assert {"counts", "X_pca"} <= set(control.options)
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: Processor.dset_data_dict_change_callback reassigns `use rep` "
-        "options (ipywidgets auto-selects the first, a layer such as 'counts'); "
-        "Neighbors.update_dims_range then does adata.obsm['counts'] -> KeyError, "
-        "which aborts the callback before the old value is restored",
-    )
     def test_second_data_dict_change_keeps_neighbors_use_rep(self, proc, dash):
         dash.dataset.adata.obsm["X_pca"] = np.zeros((40, 4))
         n = len(dash.broker.exceptions_log)

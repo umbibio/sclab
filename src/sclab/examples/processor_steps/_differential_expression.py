@@ -255,19 +255,6 @@ class DifferentialExpression(ProcessorStepBase):
         else:
             control.value = current_value
 
-    def dset_var_dataframe_change_callback(self, *args, **kwargs):
-        var_df = self.parent.dataset.adata.var
-        df = var_df.select_dtypes(include=["bool"])
-        options = {"": None, **{c: c for c in df.columns}}
-
-        control: Dropdown = self.variable_controls["mask_var"]
-        current_value = control.value
-        control.options = options
-        if current_value not in control.options:
-            control.value = None
-        else:
-            control.value = current_value
-
 
 # from scanpy 1.10.4
 # scanpy/src/scanpy/get/get.py

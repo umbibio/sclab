@@ -28,13 +28,10 @@ class GeneExpression(ProcessorStepBase):
 
     run_button_description = "Plot Expression"
 
-    def __init__(self, parent: Processor) -> None:
-        df = parent.dataset.metadata.select_dtypes("number")
-        df = parent.dataset.metadata
-        axis_key_options = {"": None, **{c: c for c in df.columns}}
-
-        gene_input_options = parent.dataset.adata.var_names
-        genes_df = parent.dataset.adata.var
+    @staticmethod
+    def _gene_options(adata) -> tuple[str, ...]:
+        gene_input_options = adata.var_names
+        genes_df = adata.var
         info_cols = ["name", "symbol", "description"]
         for col in [
             c for c in genes_df.columns if any([s.lower() in c for s in info_cols])
@@ -42,10 +39,17 @@ class GeneExpression(ProcessorStepBase):
             new_info = genes_df[col].astype(str).str.replace("nan", "")
             gene_input_options = gene_input_options + " - " + new_info
 
+        return tuple(gene_input_options.to_list())
+
+    def __init__(self, parent: Processor) -> None:
+        df = parent.dataset.metadata.select_dtypes("number")
+        df = parent.dataset.metadata
+        axis_key_options = {"": None, **{c: c for c in df.columns}}
+
         variable_controls = dict(
             gene_input=Combobox(
                 placeholder="Type gene name",
-                options=gene_input_options.to_list(),
+                options=self._gene_options(parent.dataset.adata),
                 description="Gene",
                 ensure_option=True,
             ),
@@ -74,6 +78,15 @@ class GeneExpression(ProcessorStepBase):
         self.variable_controls["layer"].observe(self.send_plot, names="value")
         self.variable_controls["time_key"].observe(self.send_plot, names="value")
         self.variable_controls["colorscale"].observe(self.send_plot, names="value")
+
+    def dset_total_vars_change_callback(self, *args, **kwargs):
+        control = self.variable_controls["gene_input"]
+        current_value = control.value
+        control.options = self._gene_options(self.parent.dataset.adata)
+        if current_value in control.options:
+            control.value = current_value
+        else:
+            control.value = ""
 
     def function(self, *pargs, **kwargs):
         self.send_plot({})

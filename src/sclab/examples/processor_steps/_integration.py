@@ -58,6 +58,13 @@ class Integration(ProcessorStepBase):
 
         def update_reference_batch(*args, **kwargs):
             group_by = variable_controls["group_by"].value
+            if (
+                group_by is None
+                or group_by not in self.parent.dataset.adata.obs.columns
+            ):
+                variable_controls["reference_batch"].options = {"": None}
+                return
+
             options = {
                 "": None,
                 **{
@@ -76,6 +83,8 @@ class Integration(ProcessorStepBase):
             fixed_params={},
             variable_controls=variable_controls,
         )
+
+        update_reference_batch()
 
     def function(
         self,

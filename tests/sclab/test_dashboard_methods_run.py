@@ -31,19 +31,9 @@ class TestWorkflow:
     def test_dashboard_builds(self, dashboard: SCLabDashboard):
         assert not dashboard.broker.exceptions_log
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: DifferentialExpression.dset_var_dataframe_change_callback "
-        "reads variable_controls['mask_var'], which that step lacks",
-    )
     def test_qc(self, dashboard: SCLabDashboard):
         run_step(dashboard, "QC")
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: DifferentialExpression.dset_var_dataframe_change_callback "
-        "reads variable_controls['mask_var'], which that step lacks",
-    )
     def test_preprocess(self, dashboard: SCLabDashboard):
         run_step(dashboard, "Preprocess")
 
@@ -62,11 +52,6 @@ class TestWorkflow:
     def test_cluster(self, dashboard: SCLabDashboard):
         run_step(dashboard, "Cluster")
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: refreshing Neighbors use_rep options fires update_dims_range "
-        "with a layer key -> KeyError in adata.obsm",
-    )
     def test_umap(self, dashboard: SCLabDashboard):
         run_step(dashboard, "UMAP")
 

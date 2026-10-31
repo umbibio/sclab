@@ -50,6 +50,9 @@ class Neighbors(ProcessorStepBase):
         def update_dims_range(*args, **kwargs):
             adata = self.parent.dataset.adata
             use_rep = variable_controls["use_rep"].value
+            if use_rep not in adata.obsm:
+                return
+
             max_dim = adata.obsm[use_rep].shape[1]
             variable_controls["dims"].max = max_dim
 

@@ -306,23 +306,12 @@ class TestIntegration:
         controls["group_by"].value = "batch"
         assert "b1" in controls["reference_batch"].options
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: _integration.py reference_batch options are only filled when "
-        "group_by changes, so with the default group_by='batch' they start empty",
-    )
     def test_reference_options_populated_for_default_group_by(self):
         d = SCLabDashboard(make_adata(60, 20))
         controls = d.processor.steps["Integration"].variable_controls
         assert controls["group_by"].value == "batch"
         assert "b1" in controls["reference_batch"].options
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: _integration.py update_reference_batch does adata.obs[None] when "
-        "group_by is reset to None (which Processor.dset_metadata_change_callback "
-        "triggers by reassigning options), raising KeyError and leaving GroupBy unset",
-    )
     def test_metadata_change_keeps_group_by(self):
         d = SCLabDashboard(make_adata(60, 20))
         controls = d.processor.steps["Integration"].variable_controls
@@ -431,6 +420,36 @@ class TestGeneExpression:
             .options
         )
         assert any("nanos homolog" in o for o in opts)
+
+    def test_total_vars_change_refreshes_gene_options(self, gene_dash):
+        dash = gene_dash
+        control = dash.processor.steps["Gene Expression"].variable_controls[
+            "gene_input"
+        ]
+        control.value = "var_0005 - G4 - desc 4"
+        n = len(dash.broker.exceptions_log)
+
+        # drop genes, keeping the selected one
+        dash.dataset.adata._inplace_subset_var(
+            ~dash.dataset.adata.var_names.isin(["var_0001", "var_0002"])
+        )
+        dash.broker.publish("dset_total_vars_change", dash.dataset.adata.var)
+        assert dash.broker.exceptions_log[n:] == []
+        assert isinstance(control.options, tuple) and len(control.options) == 28
+        assert not any(
+            o.startswith(("var_0001 ", "var_0002 ")) for o in control.options
+        )
+        assert "var_0003 - G2 - desc 2" in control.options
+        assert control.value == "var_0005 - G4 - desc 4"
+
+        # drop the selected gene: the value falls back to ""
+        dash.dataset.adata._inplace_subset_var(
+            ~dash.dataset.adata.var_names.isin(["var_0005"])
+        )
+        dash.broker.publish("dset_total_vars_change", dash.dataset.adata.var)
+        assert dash.broker.exceptions_log[n:] == []
+        assert len(control.options) == 27
+        assert control.value == ""
 
     def test_nothing_published_until_gene_and_layer_chosen(self, gene_dash):
         calls = capture(gene_dash, "dplt_plot_figure_request")
@@ -636,12 +655,6 @@ class TestDifferentialExpressionStep:
         assert c["groups"].options == ("",)
         assert c["reference"].value == ""
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: _differential_expression.py dset_var_dataframe_change_callback "
-        "(copy-pasted from PCA) indexes variable_controls['mask_var'], which this "
-        "step does not have -> KeyError on every var change, aborting later subscribers",
-    )
     def test_var_dataframe_change_event_is_handled(self):
         d = SCLabDashboard(make_adata(60, 20))
         n = len(d.broker.exceptions_log)

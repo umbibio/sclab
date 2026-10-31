@@ -11,7 +11,6 @@ from ipywidgets.widgets import (
     Accordion,
     Button,
     Checkbox,
-    Combobox,
     Dropdown,
     FloatRangeSlider,
     HBox,
@@ -1066,20 +1065,6 @@ class Processor(EventClient):
                 if current_value is None and "X_pca" in control.options:
                     control.value = "X_pca"
                 elif current_value not in control.options:
-                    control.value = None
-                else:
-                    control.value = current_value
-
-    def dset_total_vars_change_callback(self, *args, **kwargs):
-        options = {v: v for v in self.dataset.adata.var_names}
-        for control in self.all_controls_list:
-            if not isinstance(control, Dropdown | Combobox):
-                continue
-            description: str = control.description
-            if description.lower().strip(" :.") == "gene":
-                current_value = control.value
-                control.options = options
-                if current_value not in control.options:
                     control.value = None
                 else:
                     control.value = current_value
