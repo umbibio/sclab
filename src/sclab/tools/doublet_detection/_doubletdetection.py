@@ -5,6 +5,8 @@ from anndata import AnnData
 from numpy import ndarray
 from numpy.ma.core import MaskedArray
 
+from sclab.utils import check_raw_counts
+
 
 def doubletdetection_is_available() -> bool:
     return find_spec("doubletdetection") is not None
@@ -14,6 +16,7 @@ def doubletdetection(
     adata: AnnData,
     layer: str = "X",
     key_added: str = "doubletdetection",
+    check_counts: bool = True,
     boost_rate=0.25,
     n_components=30,
     n_top_var_genes=10000,
@@ -28,6 +31,28 @@ def doubletdetection(
     standard_scaling=False,
     n_jobs=1,
 ) -> None:
+    """Detect doublet cells using DoubletDetection's ``BoostClassifier``.
+
+    Adds ``{key_added}_cluster``, ``{key_added}_label`` and
+    ``{key_added}_score`` to ``adata.obs``. Remaining parameters are
+    forwarded to ``BoostClassifier``.
+
+    Parameters
+    ----------
+    adata : AnnData
+        Annotated data matrix. Modified in-place.
+    layer : str, optional
+        Layer to use as the count matrix. Use ``"X"`` for ``adata.X``.
+        Default is ``"X"``.
+    key_added : str, optional
+        Prefix for the columns added to ``adata.obs``. Default is
+        ``"doubletdetection"``.
+    check_counts : bool, optional
+        If True, raise ``ValueError`` when the selected matrix does not
+        look like raw counts (non-negative integers). Set to False to
+        bypass the check, e.g. for non-integer corrected counts. Default
+        is True.
+    """
     from doubletdetection.doubletdetection import BoostClassifier
 
     clf = BoostClassifier(
@@ -50,6 +75,16 @@ def doubletdetection(
         X = adata.X
     else:
         X = adata.layers[layer]
+
+    if check_counts:
+        check_raw_counts(
+            X,
+            name=f"layer '{layer}'",
+            hint=(
+                "Doublet detection needs raw UMI counts; use layer='counts' "
+                "(or check_counts=False for non-integer corrected counts)."
+            ),
+        )
 
     # raw_counts is a cells by genes count matrix
     labels: ndarray = clf.fit(X).predict()

@@ -371,17 +371,91 @@ class TestDoubletDetection:
         with pytest.raises(ImportError):
             DoubletDetection(dash.processor)
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: _doublet_detection.py Layer dropdown defaults to None and has no "
-        "'X' option, so running with default controls raises KeyError(None)",
-    )
-    def test_default_controls_can_run(self):
+    def test_default_controls_use_counts_layer(self):
         d = SCLabDashboard(make_adata(300, 300))
         step = d.processor.steps["Doublet Detection"]
+        assert step.variable_controls["override_layer"].value is False
+        layer = step.variable_controls["layer"]
+        assert layer.disabled is True
+        assert layer.value == d.dataset.counts_layer
+        assert step.variable_params["layer"] == "counts"
+
         step.variable_controls["flavor"].value = "scrublet"
         step.run()
         assert step.run_button.button_style == "success"
+        assert "scrublet_score" in d.dataset.adata.obs
+
+    def test_default_ignores_other_layers(self):
+        d = SCLabDashboard(make_adata(300, 300))
+        adata = d.dataset.adata
+        adata.layers["other"] = adata.layers["counts"] * 0
+        used = []
+        step = d.processor.steps["Doublet Detection"]
+        step.variable_controls["flavor"].value = "scrublet"
+
+        import sclab.examples.processor_steps._doublet_detection as mod
+
+        mod_scrublet = mod.scrublet
+        mod.scrublet = lambda **kw: used.append(kw["layer"])
+        try:
+            step.run()
+        finally:
+            mod.scrublet = mod_scrublet
+        assert used == ["counts"]
+        # history records both variable controls
+        params = d.processor.step_history[-1]["params"]
+        assert params["override_layer"] is False
+
+    def test_override_enables_dropdown_and_uses_chosen_layer(self):
+        d = SCLabDashboard(make_adata(300, 300))
+        adata = d.dataset.adata
+        adata.layers["other"] = adata.layers["counts"].copy()
+        d.broker.publish("dset_anndata_layers_change", adata.layers)
+        step = d.processor.steps["Doublet Detection"]
+        controls = step.variable_controls
+        controls["flavor"].value = "scrublet"
+
+        controls["override_layer"].value = True
+        assert controls["layer"].disabled is False
+        controls["layer"].value = "other"
+
+        used = []
+        import sclab.examples.processor_steps._doublet_detection as mod
+
+        mod_scrublet = mod.scrublet
+        mod.scrublet = lambda **kw: used.append(kw["layer"])
+        try:
+            step.run()
+        finally:
+            mod.scrublet = mod_scrublet
+        assert used == ["other"]
+        params = d.processor.step_history[-1]["params"]
+        assert params["override_layer"] is True and params["layer"] == "other"
+
+        controls["override_layer"].value = False
+        assert controls["layer"].disabled is True
+        assert controls["layer"].value == "counts"
+
+    def test_layers_change_refresh_keeps_counts_selected(self):
+        d = SCLabDashboard(make_adata(300, 300))
+        adata = d.dataset.adata
+        adata.layers["extra"] = adata.layers["counts"].copy()
+        d.broker.publish("dset_anndata_layers_change", adata.layers)
+        layer = d.processor.steps["Doublet Detection"].variable_controls["layer"]
+        assert "extra" in layer.options
+        assert layer.value == "counts"
+        assert layer.disabled is True
+
+    def test_normalized_layer_override_fails(self, dash):
+        _, ok = run_step(
+            dash,
+            "Doublet Detection",
+            flavor="scrublet",
+            override_layer=True,
+            layer="counts_log1p",
+        )
+        assert not ok
+        assert "does not look like raw counts" in dash.broker.exceptions_log[-1]
 
 
 # --------------------------------------------------------------------------

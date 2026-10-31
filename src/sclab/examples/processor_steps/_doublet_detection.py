@@ -1,4 +1,4 @@
-from ipywidgets import Dropdown
+from ipywidgets import Checkbox, Dropdown
 
 from sclab.dataset.processor import Processor
 from sclab.dataset.processor.step import ProcessorStepBase
@@ -12,12 +12,16 @@ from sclab.tools.doublet_detection import (
 class DoubletDetection(ProcessorStepBase):
     """Doublet detection step.
 
-    Identifies putative doublet cells using Scrublet. Scores and binary
-    labels (``"singlet"`` / ``"doublet"``) are added to ``adata.obs``
-    under keys ``{flavor}_score`` and ``{flavor}_label``.
+    Identifies putative doublet cells using one of the available flavors
+    (scrublet, doubletdetection, scDblFinder). Scores and binary labels
+    (``"singlet"`` / ``"doublet"``) are added to ``adata.obs`` under keys
+    ``{flavor}_score`` and ``{flavor}_label``.
 
-    Requires the ``scrublet`` package to be installed
-    (``pip install scrublet``).
+    All flavors require raw counts. By default the dataset's counts layer
+    is used; tick "Override layer" to pick a different layer.
+
+    Requires at least one of the flavors' packages to be installed
+    (e.g. ``pip install scrublet``).
     """
 
     parent: Processor
@@ -35,16 +39,24 @@ class DoubletDetection(ProcessorStepBase):
 
         methods_available = get_available_doublet_detection_methods()
 
+        layers = tuple(parent.dataset.adata.layers.keys())
+        counts_layer = parent.dataset.counts_layer
+        self._layer_dropdown = Dropdown(
+            options=layers,
+            value=counts_layer if counts_layer in layers else None,
+            description="Layer",
+            disabled=True,
+        )
+        self._override_checkbox = Checkbox(value=False, description="Override layer")
+        self._override_checkbox.observe(self._on_override_change, names="value")
+
         variable_controls = dict(
-            layer=Dropdown(
-                options=tuple(parent.dataset.adata.layers.keys()),
-                value=None,
-                description="Layer",
-            ),
             flavor=Dropdown(
                 options=methods_available,
                 description="Flavor",
             ),
+            override_layer=self._override_checkbox,
+            layer=self._layer_dropdown,
         )
 
         super().__init__(
@@ -53,8 +65,20 @@ class DoubletDetection(ProcessorStepBase):
             variable_controls=variable_controls,
         )
 
-    def function(self, layer: str, flavor: str):
+    def _on_override_change(self, change) -> None:
+        override = change["new"]
+        self._layer_dropdown.disabled = not override
+        if not override:
+            counts_layer = self.parent.dataset.counts_layer
+            if counts_layer in self._layer_dropdown.options:
+                self._layer_dropdown.value = counts_layer
+
+    def function(
+        self, flavor: str, override_layer: bool = False, layer: str | None = None
+    ):
         adata = self.parent.dataset.adata
+        if not override_layer:
+            layer = self.parent.dataset.counts_layer
 
         kvargs = {"adata": adata, "layer": layer, "key_added": flavor}
 

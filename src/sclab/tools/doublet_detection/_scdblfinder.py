@@ -5,6 +5,8 @@ import numpy as np
 import pandas as pd
 from anndata import AnnData
 
+from sclab.utils import check_raw_counts
+
 PYTHON_DEPENDENCIES = ["rpy2", "anndata2ri"]
 R_DEPENDENCIES = ["scater", "scDblFinder", "BiocParallel", "SingleCellExperiment"]
 
@@ -17,6 +19,7 @@ def scdblfinder(
     adata: AnnData,
     layer: str = "X",
     key_added: str = "scDblFinder",
+    check_counts: bool = True,
     clusters_col: str | bool | None = None,
     samples_col: str | None = None,
     clust_cor: np.ndarray | int | None = None,
@@ -48,6 +51,41 @@ def scdblfinder(
     verbose: bool = True,
     random_state: int = 31415,
 ):
+    """Detect doublet cells using scDblFinder (requires R).
+
+    Adds ``{key_added}_label`` and ``{key_added}_score`` (and
+    ``{key_added}_cluster`` when ``clusters_col`` is given) to
+    ``adata.obs``. Remaining parameters are forwarded to
+    ``scDblFinder::scDblFinder``. The input is copied; ``adata`` is only
+    modified by adding the ``adata.obs`` columns.
+
+    Parameters
+    ----------
+    adata : AnnData
+        Annotated data matrix.
+    layer : str, optional
+        Layer to use as the count matrix. Use ``"X"`` for ``adata.X``.
+        Default is ``"X"``.
+    key_added : str, optional
+        Prefix for the columns added to ``adata.obs``. Default is
+        ``"scDblFinder"``.
+    check_counts : bool, optional
+        If True, raise ``ValueError`` when the selected matrix does not
+        look like raw counts (non-negative integers). Set to False to
+        bypass the check, e.g. for non-integer corrected counts. Default
+        is True.
+    """
+    if check_counts:
+        X = adata.X if layer == "X" else adata.layers[layer]
+        check_raw_counts(
+            X,
+            name=f"layer '{layer}'",
+            hint=(
+                "Doublet detection needs raw UMI counts; use layer='counts' "
+                "(or check_counts=False for non-integer corrected counts)."
+            ),
+        )
+
     _try_imports()
 
     import anndata2ri

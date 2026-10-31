@@ -325,3 +325,49 @@ class TestScDblFinder:
         assert score[is_doublet].mean() > score[~is_doublet].mean()
         # original counts are untouched (works on a copy)
         assert len(adata.layers) == 0
+
+
+class TestCheckCounts:
+    @pytest.fixture
+    def normalized(self, adata):
+        adata.layers["counts"] = adata.X.copy()
+        adata.X = adata.X.multiply(1 / 3.0).tocsr()  # non-integer values
+        return adata
+
+    @needs_scrublet
+    def test_scrublet_rejects_normalized_input(self, normalized):
+        with pytest.raises(ValueError, match="layer 'X' does not look like raw"):
+            scrublet(normalized, scrub_doublets_kwargs=QUIET)
+        assert "scrublet_score" not in normalized.obs
+
+    @needs_scrublet
+    def test_scrublet_check_can_be_bypassed(self, normalized):
+        scrublet(normalized, check_counts=False, scrub_doublets_kwargs=QUIET)
+        assert "scrublet_score" in normalized.obs
+
+    @needs_scrublet
+    def test_scrublet_checks_the_selected_layer(self, normalized):
+        scrublet(normalized, layer="counts", scrub_doublets_kwargs=QUIET)
+        normalized.layers["bad"] = normalized.X.copy()
+        with pytest.raises(ValueError, match="layer 'bad'"):
+            scrublet(normalized, layer="bad", scrub_doublets_kwargs=QUIET)
+
+    @needs_doubletdetection
+    def test_doubletdetection_rejects_normalized_input(self, normalized):
+        with pytest.raises(ValueError, match="does not look like raw counts"):
+            doubletdetection(normalized, n_iters=1, n_components=5)
+
+    @needs_doubletdetection
+    def test_doubletdetection_check_can_be_bypassed(self, normalized):
+        doubletdetection(normalized, check_counts=False, n_iters=1, n_components=5)
+        assert "doubletdetection_score" in normalized.obs
+
+    @needs_scdblfinder
+    def test_scdblfinder_rejects_normalized_input(self, normalized):
+        with pytest.raises(ValueError, match="does not look like raw counts"):
+            scdblfinder(normalized, verbose=False)
+
+    @needs_scdblfinder
+    def test_scdblfinder_check_can_be_bypassed(self, normalized):
+        scdblfinder(normalized, check_counts=False, verbose=False)
+        assert "scDblFinder_score" in normalized.obs

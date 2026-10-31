@@ -5,6 +5,8 @@ import pandas as pd
 from anndata import AnnData
 from numpy import ndarray
 
+from sclab.utils import check_raw_counts
+
 
 def scrublet_is_available() -> bool:
     return find_spec("scrublet") is not None
@@ -14,6 +16,7 @@ def scrublet(
     adata: AnnData,
     layer: str = "X",
     key_added: str = "scrublet",
+    check_counts: bool = True,
     total_counts: ndarray | None = None,
     sim_doublet_ratio: float = 2.0,
     n_neighbors: int = None,
@@ -55,6 +58,11 @@ def scrublet(
         Prefix for the columns added to ``adata.obs``. Results are stored
         as ``{key_added}_score`` and ``{key_added}_label``. Default is
         ``"scrublet"``.
+    check_counts : bool, optional
+        If True, raise ``ValueError`` when the selected matrix does not
+        look like raw counts (non-negative integers). Set to False to
+        bypass the check, e.g. for non-integer corrected counts. Default
+        is True.
     total_counts : ndarray or None, optional
         Pre-computed per-cell total counts. If None, Scrublet computes
         them internally. Default is None.
@@ -93,6 +101,16 @@ def scrublet(
         X = adata.X
     else:
         X = adata.layers[layer]
+
+    if check_counts:
+        check_raw_counts(
+            X,
+            name=f"layer '{layer}'",
+            hint=(
+                "Doublet detection needs raw UMI counts; use layer='counts' "
+                "(or check_counts=False for non-integer corrected counts)."
+            ),
+        )
 
     scrub = Scrublet(
         counts_matrix=X,
