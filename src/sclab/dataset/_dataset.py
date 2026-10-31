@@ -218,15 +218,18 @@ class SCLabDataset(EventClient):
 
     @property
     def data_dict(self) -> dict:
+        """Read-only view of the available data.
+
+        Contains a ``"metadata"`` entry (numeric columns of :attr:`metadata`)
+        followed by one DataFrame per key of ``adata.obsm``. It is rebuilt on
+        every access and cannot be assigned. To change it, edit
+        ``dataset.adata.obsm`` directly and then call :meth:`update_data_dict`
+        to notify subscribers.
+        """
         return {
             "metadata": self.metadata.select_dtypes(include="number"),
             **self._data_dict,
         }
-
-    @data_dict.setter
-    def data_dict(self, value: dict[str, pd.DataFrame | NDArray]):
-        self._data_dict = self._validate_data_dict(value)
-        self.broker.publish("dset_data_dict_change", self.data_dict)
 
     @property
     def _data_dict(self):
@@ -237,7 +240,15 @@ class SCLabDataset(EventClient):
         return self.adata.obs
 
     def update_data_dict(self):
-        self.data_dict = self.adata.obsm._data
+        """Notify subscribers that ``adata.obsm`` changed.
+
+        Call this after adding, removing or replacing embeddings in
+        ``dataset.adata.obsm`` (e.g. from a notebook) so that the plotter and
+        processor controls refresh their options. It only publishes
+        ``dset_data_dict_change`` with the current :attr:`data_dict`; it does
+        not modify any data.
+        """
+        self.broker.publish("dset_data_dict_change", self.data_dict)
 
     def _validate_data_dict(self, value: dict[str, pd.DataFrame | NDArray]) -> dict:
         assert isinstance(value, dict), "data_dict must be a dictionary"
@@ -310,6 +321,14 @@ class SCLabDataset(EventClient):
 
     @property
     def metadata(self) -> pd.DataFrame:
+        """Read-only filtered copy of ``adata.obs``.
+
+        Keeps numeric, categorical, boolean and low-cardinality string columns
+        and adds an ``is_selected`` column reflecting the current row
+        selection. Because it is a derived copy it cannot be assigned, and
+        editing it does not change the dataset. To change observation metadata,
+        edit ``dataset.adata.obs`` directly.
+        """
         # Retain only numerical, categorical and string columns.
         # If a column has object dtype (string) and there are no more than 10 unique values,
         # convert it to categorical.
@@ -332,17 +351,6 @@ class SCLabDataset(EventClient):
             metadata["is_selected"] = pd.NA
             metadata["is_selected"] = metadata["is_selected"].astype("boolean")
         return metadata
-
-    @metadata.setter
-    def metadata(self, value: pd.DataFrame | None):
-        if value is None:
-            value = pd.DataFrame()
-
-        if not isinstance(value, pd.DataFrame):
-            raise TypeError("metadata must be a pandas DataFrame")
-
-        self._metadata = value
-        self.broker.publish("dset_metadata_change", self.metadata)
 
     @property
     def row_names(self) -> pd.Index:

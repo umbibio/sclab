@@ -162,33 +162,33 @@ class TestDataDict:
         with pytest.raises(AssertionError, match="same index"):
             ds._validate_data_dict({"a": a, "b": b})
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: _dataset.py data_dict setter assigns to `_data_dict`, a read-only "
-        "property -> AttributeError (also breaks update_data_dict)",
-    )
-    def test_data_dict_setter(self, ds):
-        ds.data_dict = {"emb2": np.zeros((12, 2))}
-        assert "emb2" in ds.data_dict
+    def test_data_dict_is_read_only(self, ds):
+        with pytest.raises(AttributeError):
+            ds.data_dict = {"emb2": np.zeros((12, 2))}
+        assert list(ds.data_dict) == ["metadata", "X_emb"]
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: _dataset.py update_data_dict uses the data_dict setter which raises",
-    )
-    def test_update_data_dict(self, ds):
-        ds.adata.obsm["X_new"] = np.zeros((12, 2))
-        ds.update_data_dict()
-
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: _dataset.py metadata setter assigns to `_metadata`, a read-only "
-        "property -> AttributeError",
-    )
-    def test_metadata_setter(self, ds):
+    def test_metadata_is_read_only(self, ds):
         new = ds.adata.obs.copy()
         new["extra"] = 1
-        ds.metadata = new
-        assert "extra" in ds.metadata
+        with pytest.raises(AttributeError):
+            ds.metadata = new
+        assert "extra" not in ds.metadata
+        assert "extra" not in ds.adata.obs
+
+    def test_update_data_dict_publishes_current_data_dict(self, ds):
+        calls = record(ds, "dset_data_dict_change")
+        n_exc = len(ds.broker.exceptions_log)
+        ds.adata.obsm["X_new"] = np.zeros((12, 2))
+
+        ds.update_data_dict()
+
+        assert len(calls) == 1
+        (args, kwargs) = calls[0]
+        assert kwargs == {}
+        (published,) = args
+        assert list(published) == ["metadata", "X_emb", "X_new"]
+        assert published["X_new"].shape == (12, 2)
+        assert ds.broker.exceptions_log[n_exc:] == []
 
 
 class TestDataKeySelection:
