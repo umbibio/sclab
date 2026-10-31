@@ -89,24 +89,24 @@ def density(
         * ``'density_bspline_tck'`` — B-spline knots, coefficients, and
           degree (``t``, ``c``, ``k``) as plain Python lists/ints.
     """
-    if t_range is None and time_key in adata.uns:
-        # using stored t_range
-        t_range = adata.uns[time_key]["t_range"]
-    else:
-        # guessing t_range
-        pts = adata.obs[time_key].values
-        pts = pts[np.isfinite(pts)]
-        t_range = guess_trange(pts)
-        if pts.size < 500:
-            logger.warning(
-                "Guessing t_range may not be accurate for fewer than 500 points."
-                " Consider setting the pseudotime_t_range parameter instead."
-            )
+    # precedence: explicit argument > stored value > guess (t_range) / False
+    stored = adata.uns.get(time_key, {})
 
-    if periodic is None and time_key in adata.uns and "periodic" in adata.uns[time_key]:
-        periodic = adata.uns[time_key]["periodic"]
-    else:
-        periodic = False
+    if t_range is None:
+        if "t_range" in stored:
+            t_range = stored["t_range"]
+        else:
+            pts = adata.obs[time_key].values
+            pts = pts[np.isfinite(pts)]
+            t_range = guess_trange(pts)
+            if pts.size < 500:
+                logger.warning(
+                    "Guessing t_range may not be accurate for fewer than 500 points."
+                    " Consider setting the pseudotime_t_range parameter instead."
+                )
+
+    if periodic is None:
+        periodic = stored["periodic"] if "periodic" in stored else False
 
     times = adata.obs[time_key].values
     lam = 1 / max_grid_size / 1e4
@@ -134,6 +134,8 @@ def density(
         {
             "density": {
                 "params": {
+                    "t_range": [float(t_range[0]), float(t_range[1])],
+                    "periodic": bool(periodic),
                     "bandwidth": bandwidth,
                     "algorithm": algorithm,
                     "kernel": kernel,
@@ -253,8 +255,11 @@ def density_dynamics(
           fitted density.
     """
     if t_range is None:
-        test = time_key in adata.uns and "t_range" in adata.uns[time_key]
-        assert test, f"t_range must be provided for time_key: {time_key}"
+        if time_key not in adata.uns or "t_range" not in adata.uns[time_key]:
+            raise ValueError(
+                f"t_range must be provided for time_key: {time_key!r}, since "
+                f"adata.uns[{time_key!r}]['t_range'] is not set."
+            )
         t_range = adata.uns[time_key]["t_range"]
 
     if periodic is None:
@@ -457,9 +462,11 @@ def real_time(
     )
 
     time_key_uns = adata.uns[pseudotime_key]
-    # density function sets appropriate t_range and periodic parameters if missing
-    pseudotime_t_range = time_key_uns["t_range"]
-    periodic = time_key_uns["periodic"]
+    # take the t_range / periodic the density was actually fitted with; fall back
+    # to the top-level keys for results stored by older versions
+    density_params = time_key_uns["density"]["params"]
+    pseudotime_t_range = density_params.get("t_range", time_key_uns.get("t_range"))
+    periodic = density_params.get("periodic", time_key_uns.get("periodic"))
     # density_bspline_tck is computed in density function
     density_bspline_tck = time_key_uns["density"]["density_bspline_tck"]
 

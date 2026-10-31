@@ -128,11 +128,6 @@ class TestDensity:
         tmin, tmax = adata.uns["pseudotime"]["t_range"]
         assert np.isfinite([tmin, tmax]).all()
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: density() ignores an explicit t_range (falls into else branch "
-        "and re-guesses the range)",
-    )
     def test_explicit_t_range_is_respected(self, bimodal_times):
         adata = _make_adata(bimodal_times)
 
@@ -140,16 +135,51 @@ class TestDensity:
 
         assert list(adata.uns["pseudotime"]["t_range"]) == [0.0, 1.0]
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: density() overwrites an explicit periodic=True with False",
-    )
     def test_explicit_periodic_is_respected(self, bimodal_times):
         adata = _make_adata(bimodal_times)
 
         density(adata, t_range=(0.0, 1.0), periodic=True)
 
         assert adata.uns["pseudotime"]["periodic"] is True
+        assert adata.uns["pseudotime"]["density"]["params"]["periodic"] is True
+
+    def test_explicit_args_do_not_overwrite_existing_metadata(self, bimodal):
+        # bimodal carries t_range=[0, 1], periodic=False from "pseudotime()"
+        density(bimodal, t_range=(0.1, 0.9), periodic=True)
+
+        uns = bimodal.uns["pseudotime"]
+        assert uns["t_range"] == [0, 1]
+        assert uns["periodic"] is False
+        assert uns["density"]["params"]["t_range"] == [0.1, 0.9]
+        assert uns["density"]["params"]["periodic"] is True
+
+    def test_params_record_stored_values_when_args_omitted(self):
+        rng = np.random.default_rng(0)
+        adata = _make_adata(
+            rng.uniform(0.2, 0.9, 600), {"t_range": [0, 1], "periodic": True}
+        )
+
+        density(adata)
+
+        params = adata.uns["pseudotime"]["density"]["params"]
+        assert params["t_range"] == [0, 1]
+        assert params["periodic"] is True
+
+    def test_params_record_guessed_values(self):
+        rng = np.random.default_rng(1)
+        adata = _make_adata(rng.uniform(0.1, 0.8, 600))
+
+        density(adata)
+
+        params = adata.uns["pseudotime"]["density"]["params"]
+        assert params["t_range"] == list(adata.uns["pseudotime"]["t_range"])
+        assert params["periodic"] is False
+
+    def test_explicit_args_override_stored_params(self, bimodal):
+        density(bimodal, t_range=(0.0, 2.0))
+        density(bimodal)  # stored top-level t_range is still [0, 1]
+
+        assert bimodal.uns["pseudotime"]["density"]["params"]["t_range"] == [0, 1]
 
     def test_plotting_options_do_not_fail(self, bimodal):
         density(
@@ -165,7 +195,7 @@ class TestDensityDynamics:
     def test_requires_t_range(self, bimodal_times):
         adata = _make_adata(bimodal_times)
 
-        with pytest.raises(AssertionError, match="t_range must be provided"):
+        with pytest.raises(ValueError, match="t_range must be provided"):
             density_dynamics(adata)
 
     def test_finds_both_modes(self, bimodal):
@@ -408,17 +438,41 @@ class TestRealTime:
 
         assert "density" in bimodal.uns["pseudotime"]
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: real_time() forwards pseudotime_t_range/periodic to density(), "
-        "which ignores explicit values and re-guesses the range",
-    )
     def test_explicit_pseudotime_t_range_is_used(self, bimodal_times):
         adata = _make_adata(bimodal_times)
 
         real_time(adata, pseudotime_t_range=(0.0, 1.0))
 
         assert list(adata.uns["real_time"]["params"]["pseudotime_t_range"]) == [0, 1]
+
+    def test_explicit_periodic_is_forwarded(self, bimodal_times):
+        adata = _make_adata(bimodal_times)
+
+        real_time(adata, pseudotime_t_range=(0.0, 1.0), periodic=True)
+
+        assert adata.uns["real_time"]["periodic"] is True
+
+    def test_explicit_args_override_stored_metadata(self, bimodal):
+        real_time(bimodal, pseudotime_t_range=(0.1, 0.9), periodic=True)
+
+        assert list(bimodal.uns["real_time"]["params"]["pseudotime_t_range"]) == [
+            0.1,
+            0.9,
+        ]
+        assert bimodal.uns["real_time"]["periodic"] is True
+        assert bimodal.uns["pseudotime"]["t_range"] == [0, 1]
+        assert bimodal.uns["pseudotime"]["periodic"] is False
+
+    def test_old_results_without_density_params_fall_back_to_top_level(self, bimodal):
+        # stored pre-fix results have no t_range/periodic in density params
+        density(bimodal)
+        params = bimodal.uns["pseudotime"]["density"]["params"]
+        del params["t_range"], params["periodic"]
+
+        real_time(bimodal)
+
+        assert list(bimodal.uns["real_time"]["params"]["pseudotime_t_range"]) == [0, 1]
+        assert bimodal.uns["real_time"]["periodic"] is False
 
     def test_plotting_options_do_not_fail(self, bimodal):
         real_time(bimodal, plot_density_fit=True)
