@@ -159,18 +159,25 @@ class TestPCA:
         np.testing.assert_allclose(y, dash.dataset.adata.uns["pca"]["variance_ratio"])
         assert list(fig.data[0].x) == list(range(1, 11))
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: _pca.py plot_variance_ratio_callback sizes the index from the "
-        "n_comps widget instead of the stored result, so it crashes after "
-        "run(n_comps=...) / apply_step_history()",
-    )
     def test_plot_variance_ratio_after_programmatic_run(self, dash):
         step = dash.processor.steps["PCA"]
         step.variable_controls["n_comps"].value = 30
         _, ok = run_step(dash, "PCA", n_comps=7)
         assert ok
+        calls = capture(dash, "dplt_plot_figure_request")
         step.plot_variance_ratio_callback()
+        fig = calls[0][1]["figure"]
+        assert list(fig.data[0].x) == list(range(1, 8))
+        assert len(fig.data[0].y) == 7
+
+    def test_refuses_raw_counts_in_X(self):
+        d = SCLabDashboard(make_adata())
+        step = d.processor.steps["PCA"]
+        _, ok = run_step(d, "PCA")
+        assert not ok
+        assert "Run the Preprocess step first" in d.broker.exceptions_log[-1]
+        assert "X_pca" not in d.dataset.adata.obsm
+        assert step.plot_variance_ratio_button.disabled is True
 
     def test_var_dataframe_change_refreshes_mask_options(self, dash):
         step = dash.processor.steps["PCA"]

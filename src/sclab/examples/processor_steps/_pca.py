@@ -4,6 +4,7 @@ from ipywidgets import Button, Checkbox, Dropdown, IntText
 
 from sclab.dataset.processor import Processor
 from sclab.dataset.processor.step import ProcessorStepBase
+from sclab.utils import looks_like_raw_counts
 
 
 class PCA(ProcessorStepBase):
@@ -14,6 +15,9 @@ class PCA(ProcessorStepBase):
     ``adata.obsm["X_pca"]``. Optionally zero-centers the embedding. A
     "Plot Variance Ratio" button is enabled after the step runs to inspect
     the explained variance per component.
+
+    Expects preprocessed (normalized) data in ``adata.X``; raises
+    ``ValueError`` if ``adata.X`` looks like raw counts.
 
     Requires ``scanpy`` to be installed.
     """
@@ -75,6 +79,12 @@ class PCA(ProcessorStepBase):
         adata = self.parent.dataset.adata
         counts_layer = self.parent.dataset.counts_layer
 
+        if looks_like_raw_counts(adata.X):
+            raise ValueError(
+                "PCA expects preprocessed data in adata.X, but it looks like "
+                "raw counts. Run the Preprocess step first."
+            )
+
         if reference_batch:
             batch_key = self.parent.batch_key
 
@@ -116,11 +126,11 @@ class PCA(ProcessorStepBase):
 
     def plot_variance_ratio_callback(self, *args, **kwargs):
         adata = self.parent.dataset.adata
-        ncomps = self.variable_controls["n_comps"].value
+        n = len(adata.uns["pca"]["variance_ratio"])
 
         df = pd.DataFrame(
             {k: adata.uns["pca"][k] for k in ["variance", "variance_ratio"]},
-            index=pd.Index(range(ncomps), name="component") + 1,
+            index=pd.Index(range(n), name="component") + 1,
         )
 
         fig = px.scatter(df, y="variance_ratio")
