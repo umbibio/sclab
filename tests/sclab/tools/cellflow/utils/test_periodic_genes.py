@@ -5,7 +5,6 @@ from anndata import AnnData
 from scipy.sparse import csr_array, csr_matrix
 
 from sclab.tools.cellflow.utils.periodic_genes import (
-    _assert_integer_counts,
     infer_dt_from_index,
     pct_power_below,
     periodic_genes,
@@ -57,7 +56,9 @@ def _make_adata(t, extra_cols=None, extra_names=None, seed=4, offset=0.0) -> Ann
         names.extend(extra_names)
     X = np.column_stack(cols).astype(float)
     obs = pd.DataFrame({"t": t}, index=[f"c{i}" for i in range(n)])
-    return AnnData(csr_matrix(X), obs=obs, var=pd.DataFrame(index=names))
+    adata = AnnData(csr_matrix(X), obs=obs, var=pd.DataFrame(index=names))
+    adata.layers["counts"] = adata.X.copy()
+    return adata
 
 
 @pytest.fixture(scope="module")
@@ -278,9 +279,31 @@ class TestCosinorParameters:
         assert np.isfinite(adata.var["cosinor_pvalue"]).all()
 
     def test_non_count_data_is_rejected(self, adata):
-        adata.X = adata.X * 0.5
+        adata.layers["counts"] = adata.layers["counts"] * 0.5
 
-        with pytest.raises(AssertionError, match="raw integer counts"):
+        with pytest.raises(ValueError, match="does not look like raw counts"):
+            periodic_genes_cosinor(adata, "t", tmin=0, tmax=PERIOD, n=N_BINS)
+
+    def test_normalized_input_is_rejected(self, adata):
+        adata.X = adata.X.astype(float)
+        sc_norm = adata.X.multiply(1e4 / adata.X.sum(axis=1)).tocsr()
+        adata.X = sc_norm.copy()
+        adata.X.data = np.log1p(adata.X.data)
+
+        with pytest.raises(ValueError, match="does not look like raw counts"):
+            periodic_genes_cosinor(adata, "t", tmin=0, tmax=PERIOD, n=N_BINS, layer="X")
+
+    def test_default_layer_is_counts(self, adata):
+        adata.X = adata.X * 0.5  # would be rejected if X were used
+
+        periodic_genes_cosinor(adata, "t", tmin=0, tmax=PERIOD, n=N_BINS)
+
+        assert adata.var.loc["per_6", "periodic"]
+
+    def test_missing_layer_raises(self, adata):
+        del adata.layers["counts"]
+
+        with pytest.raises(ValueError, match="layer 'counts' not found.*layer='X'"):
             periodic_genes_cosinor(adata, "t", tmin=0, tmax=PERIOD, n=N_BINS)
 
     def test_explicit_period_changes_the_model(self, adata):
@@ -291,11 +314,6 @@ class TestCosinorParameters:
 
         assert adata.var.loc[list(PEAKS), "cosinor_r_squared"].max() < 0.5
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: wrap-around subtracts tmax instead of the period, so with "
-        "tmin != 0 cells in the last half bin are dropped (NaN bin)",
-    )
     def test_time_shift_invariance(self, times):
         base = _make_adata(times)
         shifted = _make_adata(times + 30.0, offset=30.0)
@@ -317,53 +335,86 @@ class TestCosinorParameters:
             got = shifted.var.loc[name, "cosinor_peak_time"]
             assert _circ_dist(got - 30.0, peak) < 1.0
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: bins with <30 cells are dropped by aggregate_and_filter but the "
-        "profile frame is built with all bin labels -> ValueError on gaps in time",
-    )
     def test_gap_in_time_coverage(self, times):
         keep = ~((times > 6) & (times < 12))
         adata = _make_adata(times[keep])
 
         periodic_genes_cosinor(adata, "t", tmin=0, tmax=PERIOD, n=N_BINS)
 
+        labels = adata.varm["profile"].columns.astype(float)
+        assert len(labels) < N_BINS
+        assert not ((labels > 6.5) & (labels < 11.5)).any()
+        assert list(adata.varm["cosinor_fit"].columns) == list(
+            adata.varm["profile"].columns
+        )
+        assert list(adata.varm["profile"].index) == list(adata.var_names)
         assert adata.var.loc["per_6", "periodic"]
+
+    def test_time_shift_invariance_with_gap(self, times):
+        keep = ~((times > 6) & (times < 12))
+        base = _make_adata(times[keep])
+        shifted = _make_adata(times[keep] + 30.0, offset=30.0)
+
+        periodic_genes_cosinor(base, "t", tmin=0, tmax=PERIOD, n=N_BINS)
+        periodic_genes_cosinor(shifted, "t", tmin=30, tmax=30 + PERIOD, n=N_BINS)
+
+        np.testing.assert_allclose(
+            shifted.varm["profile"].values, base.varm["profile"].values
+        )
+
+    def test_non_finite_times_are_excluded(self, times):
+        base = _make_adata(times)
+        dirty = _make_adata(times)
+        dirty.obs.loc[dirty.obs_names[:50], "t"] = np.nan
+        dirty.obs.loc[dirty.obs_names[50:60], "t"] = np.inf
+
+        periodic_genes_cosinor(dirty, "t", tmin=0, tmax=PERIOD, n=N_BINS)
+        periodic_genes_cosinor(base, "t", tmin=0, tmax=PERIOD, n=N_BINS)
+
+        assert dirty.varm["profile"].shape == base.varm["profile"].shape
+        assert dirty.var.loc[list(PEAKS), "periodic"].all()
+
+    def test_times_wrap_into_range(self, times):
+        base = _make_adata(times)
+        wrapped = _make_adata(times + 2 * PERIOD)
+
+        periodic_genes_cosinor(base, "t", tmin=0, tmax=PERIOD, n=N_BINS)
+        periodic_genes_cosinor(wrapped, "t", tmin=0, tmax=PERIOD, n=N_BINS)
+
+        assert wrapped.varm["profile"].shape == (wrapped.n_vars, N_BINS)
+        np.testing.assert_allclose(
+            wrapped.varm["profile"].values, base.varm["profile"].values, atol=1e-6
+        )
 
 
 class TestCountValidation:
-    def test_sparse_integer_counts_pass(self):
-        _assert_integer_counts(csr_matrix(np.array([[0, 1], [2, 3]], dtype=float)))
-
-    def test_sparse_fractional_counts_fail(self):
-        with pytest.raises(AssertionError, match="raw integer counts"):
-            _assert_integer_counts(csr_matrix(np.array([[0, 1.5], [2, 3]])))
-
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: builtin all() iterates rows of a 2-D dense array -> ValueError "
-        "(dense adata.X is unsupported)",
-    )
-    def test_dense_integer_counts_pass(self):
-        _assert_integer_counts(np.array([[0.0, 1.0], [2.0, 3.0]]))
-
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: isinstance(X, spmatrix) is False for sparse arrays (csr_array)",
-    )
-    def test_sparse_array_integer_counts_pass(self):
-        _assert_integer_counts(csr_array(np.array([[0.0, 1.0], [2.0, 3.0]])))
-
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: dense adata.X crashes in _assert_integer_counts",
-    )
     def test_cosinor_with_dense_X(self, adata):
         adata.X = adata.X.toarray()
+
+        periodic_genes_cosinor(adata, "t", tmin=0, tmax=PERIOD, n=N_BINS, layer="X")
+
+        assert adata.var.loc["per_6", "periodic"]
+
+    def test_cosinor_with_dense_counts_layer(self, adata):
+        adata.layers["counts"] = adata.layers["counts"].toarray()
 
         periodic_genes_cosinor(adata, "t", tmin=0, tmax=PERIOD, n=N_BINS)
 
         assert adata.var.loc["per_6", "periodic"]
+
+    def test_cosinor_with_csr_array_counts(self, adata):
+        adata.layers["counts"] = csr_array(adata.layers["counts"])
+
+        periodic_genes_cosinor(adata, "t", tmin=0, tmax=PERIOD, n=N_BINS)
+
+        assert adata.var.loc["per_6", "periodic"]
+
+    def test_periodogram_with_dense_X(self, adata):
+        adata.X = adata.X.toarray()
+
+        periodic_genes(adata, "t", 0, PERIOD, PERIOD, N_BINS, layer="X")
+
+        assert adata.var.loc[list(PEAKS), "periodic"].all()
 
 
 class TestSpectralPeriodicGenes:
@@ -396,10 +447,41 @@ class TestSpectralPeriodicGenes:
         np.testing.assert_array_equal(adata.var["periodic"], other.var["periodic"])
 
     def test_rejects_non_counts(self, adata):
+        adata.layers["counts"] = adata.layers["counts"] * 0.5
+
+        with pytest.raises(ValueError, match="does not look like raw counts"):
+            periodic_genes(adata, "t", 0, PERIOD, PERIOD, N_BINS)
+
+    def test_default_layer_is_counts(self, adata):
         adata.X = adata.X * 0.5
 
-        with pytest.raises(AssertionError, match="raw integer counts"):
+        periodic_genes(adata, "t", 0, PERIOD, PERIOD, N_BINS)
+
+        assert adata.var.loc[list(PEAKS), "periodic"].all()
+
+    def test_missing_layer_raises(self, adata):
+        del adata.layers["counts"]
+
+        with pytest.raises(ValueError, match="layer 'counts' not found"):
             periodic_genes(adata, "t", 0, PERIOD, PERIOD, N_BINS)
+
+    def test_gap_in_time_coverage_raises_naming_bins(self, times):
+        keep = ~((times > 6) & (times < 12))
+        adata = _make_adata(times[keep])
+
+        with pytest.raises(ValueError, match=r"Bins \[.*'8\.00'.*\].*smaller `n`"):
+            periodic_genes(adata, "t", 0, PERIOD, PERIOD, N_BINS)
+
+    def test_time_shift_invariance(self, times):
+        base = _make_adata(times)
+        shifted = _make_adata(times + 30.0, offset=30.0)
+
+        periodic_genes(base, "t", 0, PERIOD, PERIOD, N_BINS)
+        periodic_genes(shifted, "t", 30, 30 + PERIOD, PERIOD, N_BINS)
+
+        np.testing.assert_allclose(
+            shifted.varm["profile"].values, base.varm["profile"].values
+        )
 
 
 class TestSpectrumHelpers:
