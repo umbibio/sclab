@@ -1,5 +1,5 @@
 import logging
-from typing import Optional
+from typing import Literal, Optional
 
 import numpy as np
 import pandas as pd
@@ -9,8 +9,14 @@ from scipy import stats
 from scipy.sparse import csc_matrix, csr_matrix, issparse
 
 from ...preprocess import pool_neighbors
+from ...utils import looks_like_raw_counts
 
 logger = logging.getLogger(__name__)
+
+
+def _count_cell_types(markers: pd.DataFrame, marker_class_key: str) -> int:
+    """Number of cell-type categories in `markers`, excluding "Unknown"."""
+    return int((markers[marker_class_key].cat.categories != "Unknown").sum())
 
 
 def _get_classification_scores_matrix(
@@ -22,6 +28,8 @@ def _get_classification_scores_matrix(
     directed_pooling: bool = True,
     layer: Optional[str] = None,
     penalize_non_specific: bool = True,
+    specificity: Literal["sctype", "observed_range"] = "sctype",
+    n_types: Optional[int] = None,
 ):
     # Ianevski, A., Giri, A.K. & Aittokallio, T.
     # Fully-automated and ultra-fast cell-type identification using specific
@@ -31,9 +39,25 @@ def _get_classification_scores_matrix(
 
     if layer is not None:
         X = adata.layers[layer]
+        X_name = f"layer '{layer}'"
 
     else:
         X = adata.X
+        X_name = "adata.X"
+
+    if looks_like_raw_counts(X):
+        raise ValueError(
+            f"sctype expects log-normalized expression; {X_name} looks like raw "
+            "counts. Use a normalized layer (e.g. adata.X after Preprocess)."
+        )
+
+    if specificity not in ("sctype", "observed_range"):
+        raise ValueError(
+            f"specificity must be 'sctype' or 'observed_range', got {specificity!r}"
+        )
+
+    if n_types is None:
+        n_types = _count_cell_types(markers, marker_class_key)
 
     min_val: np.number = X.min()
     M = X > min_val
@@ -46,7 +70,18 @@ def _get_classification_scores_matrix(
 
     x = markers[[marker_class_key, "names"]].groupby("names").count()[marker_class_key]
     if penalize_non_specific:
-        S = 1.0 - (x - x.min()) / (x.max() - x.min())
+        if specificity == "sctype":
+            # published ScType: rescale by the number of cell types in the table
+            if n_types > 1:
+                S = 1.0 - (x - 1.0) / (n_types - 1.0)
+            else:
+                S = x * 0.0 + 1.0
+        else:
+            # legacy: rescale by the range observed in this dataset
+            if x.max() > x.min():
+                S = 1.0 - (x - x.min()) / (x.max() - x.min())
+            else:
+                S = x * 0.0 + 1.0
         S = S[S > 0]
     else:
         S = x * 0.0 + 1.0
@@ -55,7 +90,7 @@ def _get_classification_scores_matrix(
     if neighbors_key is not None:
         X = pool_neighbors(
             adata[:, S.index],
-            layer=layer,
+            key=layer,
             neighbors_key=neighbors_key,
             weighted=weighted_pooling,
             directed=directed_pooling,
@@ -108,6 +143,7 @@ def classify_cells(
     penalize_non_specific: bool = True,
     neighbors_key: Optional[str] = None,
     save_scores: bool = False,
+    specificity: Literal["sctype", "observed_range"] = "sctype",
 ):
     """
     Classify cells based on a set of marker genes.
@@ -138,12 +174,32 @@ def classify_cells(
     threshold
         Confidence threshold for classification. Defaults to `0.25`.
     penalize_non_specific
-        Whether to penalize non-specific markers. Defaults to `True`.
+        Whether to penalize non-specific markers. Defaults to `True`. If
+        `False`, all markers get weight 1.
     neighbors_key
         If provided, counts will be pooled across neighbor cells using the
         distances in `adata.uns[neighbors_key]["distances"]`. Defaults to `None`.
     save_scores
         Whether to save the classification scores. Defaults to `False`
+    specificity
+        How marker specificity weights are computed when
+        `penalize_non_specific=True`. With `x` the number of cell types that
+        list a gene as a marker:
+
+        - `"sctype"` (default): the published ScType weight,
+          `1 - (x - 1) / (n_types - 1)`, where `n_types` is the number of cell
+          types in `markers` (excluding "Unknown"). Weights depend only on the
+          marker table, not on the dataset. Genes with weight <= 0 are dropped.
+        - `"observed_range"`: legacy formula
+          `1 - (x - x.min()) / (x.max() - x.min())`, with `x` computed only over
+          marker genes expressed in the dataset (weight 1 if all counts are
+          equal). It is dataset-dependent and kept to reproduce/compare earlier
+          results.
+
+    Notes
+    -----
+    Expression (`layer` or `X`) must be log-normalized, since genes are
+    z-scored internally; raw counts raise a `ValueError`.
 
     Returns
     -------
@@ -172,6 +228,7 @@ def classify_cells(
 
     classes = markers[marker_class_key].cat.categories
     dtype = markers[marker_class_key].dtype
+    n_types = _count_cell_types(markers, marker_class_key)
 
     # if doing cell by cell classification, we should pool counts to use cell
     # neighborhood information. This allows to estimate the confidence of the
@@ -185,6 +242,8 @@ def classify_cells(
         directed_pooling=True,
         layer=layer,
         penalize_non_specific=penalize_non_specific,
+        specificity=specificity,
+        n_types=n_types,
     )
     negXc = _get_classification_scores_matrix(
         adata,
@@ -195,6 +254,8 @@ def classify_cells(
         directed_pooling=True,
         layer=layer,
         penalize_non_specific=penalize_non_specific,
+        specificity=specificity,
+        n_types=n_types,
     )
     Xc = posXc + negXc
 
