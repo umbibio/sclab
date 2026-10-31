@@ -1,4 +1,6 @@
+from datetime import datetime, timezone
 from io import BytesIO
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -10,6 +12,7 @@ from sclab._io import (
     fetch_file,
     get_file_hash,
     is_valid_url,
+    _read_adata_bytes,
     load_adata_from_url,
     read_adata,
 )
@@ -260,26 +263,107 @@ class TestUrlHelpers:
         assert adata.var_names.tolist() == tx.GENE_IDS
         np.testing.assert_array_equal(_dense(adata), tx.counts_cxg())
 
-    def test_load_adata_from_url_rejects_invalid_url(self):
-        with pytest.raises(AssertionError, match="URL is not valid"):
-            load_adata_from_url("not a url")
+    @pytest.mark.parametrize("url", ["not a url", "example.com/a.h5ad", ""])
+    def test_load_adata_from_url_rejects_invalid_url(self, url):
+        with pytest.raises(ValueError, match="URL is not valid"):
+            load_adata_from_url(url)
 
     def test_load_adata_from_url_rejects_unknown_suffix(self, fake_get):
         url = "https://x.org/data.csv"
         fake_get.store[url] = _FakeResponse(b"a,b\n")
-        with pytest.raises(ValueError, match="h5 or h5ad"):
+        with pytest.raises(ValueError, match=r"'\.csv'.*\.h5.*\.h5ad"):
             load_adata_from_url(url, progress=False)
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: read_10x_h5 is handed a BytesIO but does Path(BytesIO)/str(BytesIO)",
-    )
     def test_load_adata_from_url_10x_h5(self, tmp_path, fake_get):
         p = tx.write_10x_h5_v3(tmp_path / "v3.h5")
         url = "https://x.org/data/v3.h5"
         fake_get.store[url] = _FakeResponse(p.read_bytes())
         adata = load_adata_from_url(url, progress=False)
         assert adata.shape == (4, 2)
+        assert adata.var_names.tolist() == tx.GENE_IDS[:2]
+        np.testing.assert_array_equal(_dense(adata), tx.counts_cxg()[:, :2])
+
+
+class TestReadAdataBytes:
+    def test_h5_from_bytesio(self, tmp_path):
+        p = tx.write_10x_h5_v3(tmp_path / "v3.h5")
+        adata = _read_adata_bytes(BytesIO(p.read_bytes()), ".h5")
+        assert adata.shape == (4, 2)
+        assert adata.var_names.tolist() == tx.GENE_IDS[:2]
+        np.testing.assert_array_equal(_dense(adata), tx.counts_cxg()[:, :2])
+
+    def test_h5_from_raw_bytes_and_var_names(self, tmp_path):
+        p = tx.write_10x_h5_v3(tmp_path / "v3.h5")
+        adata = _read_adata_bytes(p.read_bytes(), ".h5", var_names="not_a_column")
+        assert adata.var_names.tolist() == tx.GENE_NAMES[:2]
+
+    def test_h5ad_roundtrip_is_in_memory(self, tmp_path):
+        import pandas as pd
+
+        src = AnnData(
+            tx.counts_cxg(),
+            obs=pd.DataFrame(index=tx.BARCODES),
+            var=pd.DataFrame({"gene_ids": tx.GENE_IDS}, index=tx.GENE_NAMES),
+        )
+        p = tmp_path / "x.h5ad"
+        src.write_h5ad(p)
+        adata = _read_adata_bytes(BytesIO(p.read_bytes()), ".h5ad")
+        assert not adata.isbacked
+        assert adata.var_names.tolist() == tx.GENE_IDS
+        np.testing.assert_array_equal(_dense(adata), tx.counts_cxg())
+
+    def test_temp_dir_is_removed(self, tmp_path, monkeypatch):
+        import tempfile
+
+        seen = []
+        real = tempfile.TemporaryDirectory
+
+        class Spy(real):
+            def __init__(self, *a, **kw):
+                super().__init__(*a, **kw)
+                seen.append(self.name)
+
+        monkeypatch.setattr(_io.tempfile, "TemporaryDirectory", Spy)
+        p = tx.write_10x_h5_v3(tmp_path / "v3.h5")
+        _read_adata_bytes(p.read_bytes(), ".h5")
+        assert len(seen) == 1
+        assert not Path(seen[0]).exists()
+
+    def test_unsupported_suffix(self):
+        with pytest.raises(ValueError, match="10x h5, h5ad"):
+            _read_adata_bytes(b"a,b\n", ".csv")
+
+
+class TestDataLoaderOnUpload:
+    @staticmethod
+    def _loader():
+        from sclab._sclab import DataLoader
+
+        return DataLoader(None)
+
+    @staticmethod
+    def _upload(name: str, content: bytes) -> tuple:
+        return (
+            {
+                "name": name,
+                "type": "application/octet-stream",
+                "size": len(content),
+                "last_modified": datetime.now(timezone.utc),
+                "content": memoryview(content),
+            },
+        )
+
+    def test_upload_10x_h5(self, tmp_path):
+        loader = self._loader()
+        p = tx.write_10x_h5_v3(tmp_path / "v3.h5")
+        loader.upload.value = self._upload("v3.h5", p.read_bytes())
+        assert loader.adata.shape == (4, 2)
+        assert loader.adata.var_names.tolist() == tx.GENE_IDS[:2]
+
+    def test_upload_unsupported_suffix_leaves_adata_unset(self):
+        loader = self._loader()
+        loader.upload.value = self._upload("data.csv", b"a,b\n")
+        assert getattr(loader, "adata", None) is None
 
 
 # --------------------------------------------------------------------------

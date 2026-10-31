@@ -1,5 +1,4 @@
 import inspect
-from io import BytesIO
 from pathlib import Path
 
 from anndata import AnnData
@@ -18,7 +17,7 @@ from ipywidgets.widgets import (
     VBox,
 )
 
-from ._io import is_valid_url, load_adata_from_url, read_adata
+from ._io import _read_adata_bytes, is_valid_url, load_adata_from_url, read_adata
 from .dataset import SCLabDataset
 from .dataset.plotter import Plotter
 from .dataset.processor import Processor
@@ -278,10 +277,6 @@ class DataLoader(VBox):
         self.adata = adata
 
     def on_upload(self, *args, **kwargs):
-        import tempfile
-
-        from .scanpy.readwrite import read_10x_h5, read_h5ad
-
         files = self.upload.value
         if len(files) == 0:
             return
@@ -296,31 +291,18 @@ class DataLoader(VBox):
                 print(f"{k}: {v}")
 
         filename = file["name"]
-        contents = BytesIO(file["content"].tobytes())
-        var_names = "gene_ids"
+        suffix = Path(filename).suffix
 
-        path = Path(filename)
+        if suffix not in (".h5", ".h5ad"):
+            self.upload_info.clear_output()
+            with self.upload_info:
+                print(f"`{filename}` is not valid")
+                print("Please upload a 10x .h5 or .h5ad file")
+            return
 
-        match path.suffix:
-            case ".h5":
-                with tempfile.NamedTemporaryFile(suffix=".h5") as tmp:
-                    tmp.write(contents.getbuffer())
-                    tmp.flush()
-                    adata = read_10x_h5(tmp.name)
-            case ".h5ad":
-                with tempfile.NamedTemporaryFile(suffix=".h5ad") as tmp:
-                    tmp.write(contents.getbuffer())
-                    tmp.flush()
-                    adata = read_h5ad(tmp.name)
-            case _:
-                self.upload_info.clear_output()
-                with self.upload_info:
-                    print(f"`{filename}` is not valid")
-                    print("Please upload a 10x .h5 or .h5ad file")
-                return
-
-        if var_names in adata.var:
-            adata.var = adata.var.set_index(var_names)
+        adata = _read_adata_bytes(
+            file["content"].tobytes(), suffix, var_names="gene_ids"
+        )
 
         with self.progress_output:
             print(f"Loaded {adata.shape[0]} observations and {adata.shape[1]} genes\n")

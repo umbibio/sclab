@@ -1,4 +1,5 @@
 import hashlib
+import tempfile
 from io import BytesIO
 from pathlib import Path
 from urllib.parse import urlparse
@@ -6,6 +7,8 @@ from urllib.parse import urlparse
 import requests
 from anndata import AnnData, read_h5ad
 from tqdm.auto import tqdm
+
+_URL_SUFFIXES = (".h5", ".h5ad")
 
 
 def read_adata(path: str | Path, var_names: str = "gene_ids") -> AnnData:
@@ -59,20 +62,64 @@ def read_adata(path: str | Path, var_names: str = "gene_ids") -> AnnData:
     return adata
 
 
+def _read_adata_bytes(
+    content: BytesIO | bytes,
+    suffix: str,
+    var_names: str = "gene_ids",
+) -> AnnData:
+    """Read an AnnData object from the raw bytes of a ``.h5`` or ``.h5ad`` file.
+
+    The readers need a real file path, so the bytes are written to a file in a
+    temporary directory (not a ``NamedTemporaryFile``, which cannot be reopened
+    on Windows), read fully into memory, and the directory is removed.
+
+    Parameters
+    ----------
+    content : BytesIO or bytes
+        Raw file content.
+    suffix : str
+        File extension including the dot, e.g. ``".h5"`` or ``".h5ad"``. It
+        selects the reader (see :func:`read_adata`).
+    var_names : str, optional
+        Column in ``adata.var`` to use as the variable index. Default is
+        ``"gene_ids"``.
+
+    Returns
+    -------
+    AnnData
+        Loaded annotated data matrix (in memory, not backed by a file).
+
+    Raises
+    ------
+    ValueError
+        If ``suffix`` is not a supported file extension.
+    """
+    data = content.getvalue() if isinstance(content, BytesIO) else bytes(content)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = Path(tmpdir) / f"data{suffix}"
+        path.write_bytes(data)
+        adata = read_adata(path, var_names=var_names)
+        if adata.isbacked:
+            adata = adata.to_memory()
+
+    return adata
+
+
 def load_adata_from_url(
     url: str,
     var_names: str = "gene_ids",
     progress: bool = True,
 ) -> AnnData:
     """
-    Load an AnnData object from a URL to an .h5ad file.
+    Load an AnnData object from a URL to a 10x .h5 or an .h5ad file.
 
     Parameters:
     -----------
     url : str
-        URL to the .h5ad file
+        URL to the .h5 (10x HDF5) or .h5ad file
     var_names : str
-        Name of the variable column in the .h5ad file
+        Name of the variable column to use as the variable index
     progress : bool
         Whether to show a progress bar
 
@@ -80,25 +127,25 @@ def load_adata_from_url(
     --------
     anndata.AnnData
         Loaded AnnData object
-    """
-    from .scanpy.readwrite import read_10x_h5
 
-    assert is_valid_url(url), "URL is not valid"
-    url_path = Path(urlparse(url).path)
+    Raises:
+    -------
+    ValueError
+        If ``url`` is not a valid URL or does not point to a ``.h5`` or
+        ``.h5ad`` file.
+    """
+    if not is_valid_url(url):
+        raise ValueError(f"URL is not valid: {url!r}")
+
+    suffix = Path(urlparse(url).path).suffix
+    if suffix not in _URL_SUFFIXES:
+        supported = ", ".join(_URL_SUFFIXES)
+        raise ValueError(
+            f"Unsupported file type {suffix!r} in URL; supported types: {supported}"
+        )
 
     file_content = fetch_file(url, progress=progress)
-    match url_path.suffix:
-        case ".h5":
-            adata = read_10x_h5(file_content)
-        case ".h5ad":
-            adata = read_h5ad(file_content)
-        case _:
-            raise ValueError("Input file must be a 10x h5 or h5ad file")
-
-    if var_names in adata.var:
-        adata.var = adata.var.set_index(var_names)
-
-    return adata
+    return _read_adata_bytes(file_content, suffix, var_names=var_names)
 
 
 def fetch_file(url: str, progress: bool = True) -> BytesIO:
