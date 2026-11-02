@@ -228,17 +228,22 @@ def test_pair_unknown_key_raises(adata: AnnData):
         cca_integrate_pair(adata, "nope", "A", "B")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: n_components > min group size fails with an opaque numpy "
-    "broadcast error instead of a clear ValueError",
-)
 def test_pair_n_components_larger_than_group_size_raises_clear_error(
     adata: AnnData,
 ):
     small = adata[:10].copy()  # 5 cells per batch
     with pytest.raises(ValueError, match="n_components"):
         cca_integrate_pair(small, "batch", "A", "B", n_components=8)
+
+
+def test_pair_partial_solver_requires_n_components_below_group_size(
+    adata: AnnData,
+):
+    small = adata[:10].copy()  # 5 cells per batch
+    with pytest.raises(ValueError, match="partial"):
+        cca_integrate_pair(
+            small, "batch", "A", "B", n_components=5, svd_solver="partial"
+        )
 
 
 # ---------------------------------------------------------------------------

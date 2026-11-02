@@ -55,6 +55,16 @@ def cca(
         raise ValueError("The two matrices must have the same number of features.")
 
     k = n_components or min(n1, n2)
+    if not 0 < k <= min(n1, n2):
+        raise ValueError(
+            f"n_components={k} must be between 1 and the smaller group size "
+            f"({min(n1, n2)})"
+        )
+    if svd_solver == "partial" and k >= min(n1, n2):
+        raise ValueError(
+            f"n_components={k} must be smaller than the smaller group size "
+            f"({min(n1, n2)}) for svd_solver='partial'"
+        )
 
     if issparse(X):
         C = _cross_covariance_sparse(X, Y, n_jobs=n_jobs)
