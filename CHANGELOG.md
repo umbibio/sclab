@@ -6,6 +6,51 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- `pseudobulk_pylimma()`, a pure-Python limma-voom pseudobulk DE method (pylimma, optional edgePython TMM preprocessing) that matches R limma results
+- `de` optional extra (`edgepython`, `pylimma`); `xlsxwriter` is now a core dependency
+- `check_raw_counts()` / `looks_like_raw_counts()` input validators in `sclab.utils`
+- `check_counts` parameter on `scrublet()`, `doubletdetection()` and `scdblfinder()` (default `True`) to reject non-count input
+- `specificity` parameter on sctype `classify_cells()`: `"sctype"` (default, published ScType weights) or `"observed_range"` (previous dataset-dependent weights, kept for comparison)
+- Doublet Detection step "Override layer" checkbox to use a layer other than the dataset's counts layer
+- Expanded test suite, including headless dashboard/widget tests
+
+### Changed
+- **Breaking:** remove `batch_key` from `pseudobulk_edger()` and `pseudobulk_limma()`
+- **Breaking:** `periodic_genes()` and `periodic_genes_cosinor()` default to `layer="counts"` (pass `layer="X"` to use `adata.X`) and raise `ValueError` on non-count input; `periodic_genes()` raises if time bins are dropped, while the cosinor version fits the remaining bins
+- **Breaking:** `SCLabDataset.data_dict` and `SCLabDataset.metadata` are read-only; edit `dataset.adata` and call `update_data_dict()` to refresh embeddings
+- **Breaking:** `cca_integrate()` raises `ValueError` when `reference_batch` is given (CCA is symmetric; use Harmony for reference-based integration)
+- sctype raises `ValueError` on raw-count input; its expressed-gene filter uses each gene's own minimum, so scaled data works
+- The Doublet Detection step always uses the dataset's counts layer by default; the PCA step refuses raw counts in `adata.X`
+- `density()` / `real_time()` record the `t_range` and `periodic` actually used in `uns[time_key]["density"]["params"]`
+- `density_dynamics(mode="valleys")` with `derivative=0` keeps all density minima by default; `height` selects valleys with density at most `height * max(density)`
+- Harmony cosine-normalizes cells without the extra max-division, matching R Harmony
+- Transferred boolean metadata uses the nullable `boolean` dtype (cells without enough neighbors are `<NA>`)
+- `load_adata_from_url()` raises `ValueError` (instead of `AssertionError`) for invalid URLs and unsupported file types
+- ALRA uses a scoped rpy2 converter instead of the deprecated global `numpy2ri.activate()`
+
+### Fixed
+- Dashboard
+    - Callbacks crashing on dataset changes (differential expression, integration, neighbors, gene expression)
+    - Selection filters now AND together correctly when one of them matches no cells
+    - Removing an `obs` column no longer breaks the selection controls
+    - Gene search no longer strips "nan" from gene descriptions (e.g. "nanos")
+    - PCA variance plot sized from the stored result
+- Loading 10x `.h5` files from a URL (uploads share the same temp-dir reader)
+- `periodic_genes()`: time binning when `tmin != 0`, dense and `csr_array` input, and gaps from dropped bins
+- `density()` and `real_time()` ignoring explicit `t_range` / `periodic`
+- `density_dynamics()`: valleys never found, caller's `find_peaks_kwargs` mutated, zero delta for a single periodic peak
+- `transfer_metadata()` / `propagate_metadata()`: periodic values straddling the wrap boundary (circular mean instead of median), and boolean columns becoming all `True`
+- `pca(layer=...)` projecting `adata.X` instead of the layer
+- Harmony crashes with a list `key` plus `reference_batch` and with small datasets (< 45 cells)
+- `pool_neighbors()`: `key_added` writing obsm/obs results to layers, and truncated neighbor graphs losing their last columns
+- `cca()`: clear error when `n_components` exceeds the smaller group size
+- sctype: neighbor pooling crash and NaN specificity weights
+- Periodic `density_nd()` without `normalize=True` integrating to 1/3 (1-D) or 1/9 (2-D)
+- `write_excel()`: `sort_ascending=False` ignored, per-column sort directions misaligned, crash on datetime columns
+
+### Removed
+- Unused `rotate_and_project_traces()` plotter helper and the unused `normalize` / `periodic` options of the plotter's internal density estimator
 
 ## [0.4.2] - 2026-07-13
 ### Added
