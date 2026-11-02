@@ -489,11 +489,6 @@ class TestGeneExpression:
         assert len(opts) == 30
         assert "var_0003 - G2 - desc 2" in opts
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: _gene_expression.py strips NaN placeholders with "
-        "str.replace('nan', '') which also corrupts real text (e.g. 'nanos' -> 'os')",
-    )
     def test_description_text_containing_nan_is_preserved(self, gene_dash):
         opts = (
             gene_dash.processor.steps["Gene Expression"]
@@ -501,6 +496,19 @@ class TestGeneExpression:
             .options
         )
         assert any("nanos homolog" in o for o in opts)
+
+    def test_missing_info_values_render_empty(self):
+        from sclab.examples.processor_steps._gene_expression import GeneExpression
+
+        adata = make_adata(10, 3)
+        adata.var["gene_name"] = ["G0", np.nan, "nanos"]
+        adata.var["symbol"] = pd.Categorical(["S0", None, "S2"])
+        v = adata.var_names
+        assert GeneExpression._gene_options(adata) == (
+            f"{v[0]} - G0 - S0",
+            f"{v[1]} -  - ",
+            f"{v[2]} - nanos - S2",
+        )
 
     def test_total_vars_change_refreshes_gene_options(self, gene_dash):
         dash = gene_dash

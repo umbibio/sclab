@@ -36,7 +36,7 @@ class GeneExpression(ProcessorStepBase):
         for col in [
             c for c in genes_df.columns if any([s.lower() in c for s in info_cols])
         ]:
-            new_info = genes_df[col].astype(str).str.replace("nan", "")
+            new_info = genes_df[col].astype(str).where(genes_df[col].notna(), "")
             gene_input_options = gene_input_options + " - " + new_info
 
         return tuple(gene_input_options.to_list())
