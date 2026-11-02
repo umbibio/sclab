@@ -58,6 +58,8 @@ def pca(
         svd_solver="arpack",
     )
 
+    X = adata.X if layer is None else adata.layers[layer]
+
     if reference_batch:
         obs_mask = adata.obs[batch_key] == reference_batch
         adata_ref = adata[obs_mask].copy()
@@ -79,12 +81,12 @@ def pca(
         uns_pca = adata_ref.uns["pca"]
         uns_pca["reference_batch"] = reference_batch
         PCs = adata_ref.varm["PCs"]
-        adata.obsm["X_pca"] = adata.X.dot(PCs)
+        adata.obsm["X_pca"] = X.dot(PCs)
         adata.uns["pca"] = uns_pca
         adata.varm["PCs"] = PCs
     else:
         sc.pp.pca(adata, **pca_kwargs)
-        adata.obsm["X_pca"] = adata.X.dot(adata.varm["PCs"])
+        adata.obsm["X_pca"] = X.dot(adata.varm["PCs"])
 
     if zero_center:
         adata.obsm["X_pca"] -= adata.obsm["X_pca"].mean(axis=0, keepdims=True)

@@ -127,13 +127,23 @@ def test_too_many_components_raises(adata: AnnData):
         pca(adata, n_comps=N_VARS + 5)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: with layer=..., PCs are fitted on the layer but X_pca is "
-    "computed from adata.X",
-)
 def test_layer_embedding_is_projection_of_layer(adata: AnnData):
     pca(adata, layer="alt", n_comps=N_COMPS, zero_center=True)
+
+    L = adata.layers["alt"]
+    expected = (L - L.mean(axis=0)) @ adata.varm["PCs"]
+    np.testing.assert_allclose(adata.obsm["X_pca"], expected, atol=1e-8)
+
+
+def test_reference_batch_layer_embedding_is_projection_of_layer(adata: AnnData):
+    pca(
+        adata,
+        layer="alt",
+        n_comps=N_COMPS,
+        batch_key="batch",
+        reference_batch="ref",
+        zero_center=True,
+    )
 
     L = adata.layers["alt"]
     expected = (L - L.mean(axis=0)) @ adata.varm["PCs"]
