@@ -400,10 +400,6 @@ class TestDensityDynamics:
         assert threshold == pytest.approx(0.1 * max_density)
         assert (res["heights"] <= threshold).all()
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: find_peaks_kwargs.pop('height') mutates the caller's dict",
-    )
     def test_does_not_mutate_find_peaks_kwargs(self, bimodal):
         kwargs = {"height": 0.5}
 

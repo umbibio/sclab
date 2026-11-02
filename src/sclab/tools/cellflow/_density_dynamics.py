@@ -175,7 +175,7 @@ def density_dynamics(
     max_grid_size: int = 2**8 + 1,
     derivative: int = 0,
     mode: Literal["peaks", "valleys"] = "peaks",
-    find_peaks_kwargs: dict = {},
+    find_peaks_kwargs: dict | None = None,
     plot_density: bool = False,
     plot_density_fit: bool = False,
     plot_density_fit_derivative: bool = False,
@@ -230,7 +230,8 @@ def density_dynamics(
         of the) density and rescaled accordingly. For ``mode="peaks"`` it
         defaults to ``0``; for ``mode="valleys"`` it defaults to no filter
         (all local minima are kept), and if given only valleys whose value is
-        at most ``height * max`` are kept. Default is ``{}``.
+        at most ``height * max`` are kept. Default is *None* (no extra
+        arguments).
     plot_density : bool, optional
         If *True*, plot the raw KDE. Default is *False*.
     plot_density_fit : bool, optional
@@ -291,6 +292,7 @@ def density_dynamics(
 
     # height is a fraction of the max of the (unnegated) signal; peaks default
     # to 0, valleys to no filter
+    find_peaks_kwargs = dict(find_peaks_kwargs or {})
     peak_height = find_peaks_kwargs.pop("height", None)
     if peak_height is not None:
         peak_height = peak_height * y.max()
