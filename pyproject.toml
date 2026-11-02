@@ -25,7 +25,6 @@ dependencies = [
     "numpy",
     "pandas",
     "plotly<6.0",
-    "pydeseq2>=0.5.2",
     "requests",
     "scikit-learn",
     "scipy",
