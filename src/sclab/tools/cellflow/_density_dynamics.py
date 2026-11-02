@@ -221,13 +221,16 @@ def density_dynamics(
         density itself; ``1`` analyses its rate of change, etc.
         Default is ``0``.
     mode : {"peaks", "valleys"}, optional
-        Whether to detect peaks or valleys in the (derivative of the)
-        density. Default is ``"peaks"``.
+        Whether to detect peaks (local maxima) or valleys (local minima) in
+        the (derivative of the) density. Default is ``"peaks"``.
     find_peaks_kwargs : dict, optional
         Extra keyword arguments forwarded to
         :func:`scipy.signal.find_peaks`. The ``'height'`` key, if present,
-        is treated as a *fraction* of the global maximum and rescaled
-        accordingly. Default is ``{}``.
+        is treated as a *fraction* of the global maximum of the (derivative
+        of the) density and rescaled accordingly. For ``mode="peaks"`` it
+        defaults to ``0``; for ``mode="valleys"`` it defaults to no filter
+        (all local minima are kept), and if given only valleys whose value is
+        at most ``height * max`` are kept. Default is ``{}``.
     plot_density : bool, optional
         If *True*, plot the raw KDE. Default is *False*.
     plot_density_fit : bool, optional
@@ -249,7 +252,8 @@ def density_dynamics(
         * ``'times'`` — pseudotime positions of detected peaks.
         * ``'deltas'`` — inter-peak durations (or phase durations for
           periodic data).
-        * ``'heights'`` — density (or derivative) values at each peak.
+        * ``'heights'`` — density (or derivative) values at each peak or
+          valley, in the original (unnegated) units.
         * ``'params'`` — KDE and peak-finding hyper-parameters.
         * ``'density_bspline_tck'`` — B-spline representation of the
           fitted density.
@@ -284,9 +288,16 @@ def density_dynamics(
 
     t = np.linspace(*t_range, 2**16 + 1)
     y = bspl.derivative(derivative)(t)
-    if mode == "peaks":
-        pass
-    elif mode == "valleys":
+
+    # height is a fraction of the max of the (unnegated) signal; peaks default
+    # to 0, valleys to no filter
+    peak_height = find_peaks_kwargs.pop("height", None)
+    if peak_height is not None:
+        peak_height = peak_height * y.max()
+    elif mode == "peaks":
+        peak_height = 0.0
+
+    if mode == "valleys":
         y = -y
 
     tmin, tmax = t_range
@@ -298,12 +309,14 @@ def density_dynamics(
         tt = t
         yy = y
 
-    peak_height = find_peaks_kwargs.pop("height", 0.0)
-    peak_height = peak_height * y.max()
+    # valleys are searched as peaks of -y, so the signal-unit threshold flips sign
+    fp_height = peak_height
+    if mode == "valleys" and peak_height is not None:
+        fp_height = -peak_height
 
-    peaks, _ = find_peaks(yy, height=peak_height, **find_peaks_kwargs)
+    peaks, _ = find_peaks(yy, height=fp_height, **find_peaks_kwargs)
     peak_times = tt[peaks]
-    peak_heights = yy[peaks]
+    peak_heights = yy[peaks] if mode == "peaks" else -yy[peaks]
 
     peaks_mask = np.logical_and(peak_times >= tmin, peak_times < tmax)
     peak_times = peak_times[peaks_mask]

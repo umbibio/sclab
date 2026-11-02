@@ -44,6 +44,20 @@ def overlapping_bimodal_times():
 
 
 @pytest.fixture
+def shallow_and_deep_valleys():
+    # modes at 0.15 / 0.5 / 0.72: deep valley near 0.30, shallow one near 0.61
+    rng = np.random.default_rng(0)
+    t = np.concatenate(
+        [
+            rng.normal(0.15, 0.04, 1000),
+            rng.normal(0.50, 0.05, 1000),
+            rng.normal(0.72, 0.05, 1000),
+        ]
+    )
+    return _make_adata(t[(t > 0) & (t < 1)], {"t_range": [0, 1]})
+
+
+@pytest.fixture
 def bimodal(bimodal_times):
     return _make_adata(bimodal_times, {"t_range": [0, 1], "periodic": False})
 
@@ -303,12 +317,13 @@ class TestDensityDynamics:
         assert "density_dynamics_d1_valleys" in uns
 
     def test_first_derivative_extrema_flank_density_peaks(self, bimodal):
-        # density rises fastest before a mode and falls fastest after it
+        # density rises fastest before a mode and falls fastest after it;
+        # valley height is relative to max(signal), so falls need a negative one
         density_dynamics(
             bimodal, derivative=1, mode="peaks", find_peaks_kwargs={"height": 0.5}
         )
         density_dynamics(
-            bimodal, derivative=1, mode="valleys", find_peaks_kwargs={"height": 0.5}
+            bimodal, derivative=1, mode="valleys", find_peaks_kwargs={"height": -0.5}
         )
 
         uns = bimodal.uns["pseudotime"]
@@ -341,11 +356,6 @@ class TestDensityDynamics:
 
         assert "density_dynamics_d0_peaks" in adata.uns["pseudotime"]
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: mode='valleys' negates the density and applies height=0, so "
-        "true density valleys (where -density < 0) are never found",
-    )
     def test_valleys_finds_density_minimum(self, overlapping_bimodal_times):
         adata = _make_adata(overlapping_bimodal_times, {"t_range": [0, 1]})
 
@@ -354,6 +364,41 @@ class TestDensityDynamics:
         times = adata.uns["pseudotime"]["density_dynamics_d0_valleys"]["times"]
         assert len(times) == 1
         assert times[0] == pytest.approx(0.5, abs=0.05)
+
+    def test_valleys_height_keeps_only_deep_valleys(self, shallow_and_deep_valleys):
+        def valley_times(**kwargs):
+            density_dynamics(
+                shallow_and_deep_valleys, mode="valleys", find_peaks_kwargs=kwargs
+            )
+            uns = shallow_and_deep_valleys.uns["pseudotime"]
+            return uns["density_dynamics_d0_valleys"]["times"]
+
+        def has(times, x):
+            return np.isclose(times, x, atol=0.05).any()
+
+        times = valley_times()  # no height: every local minimum
+        assert has(times, 0.30) and has(times, 0.61)
+
+        times = valley_times(height=0.1)  # 0.61 is shallower than 0.1 * max
+        assert has(times, 0.30) and not has(times, 0.61)
+
+    def test_valleys_heights_and_params_in_signal_units(self, shallow_and_deep_valleys):
+        density_dynamics(shallow_and_deep_valleys, mode="valleys")
+        res = shallow_and_deep_valleys.uns["pseudotime"]["density_dynamics_d0_valleys"]
+        assert res["params"]["find_peaks_kwargs"]["height"] is None
+        i = np.argmin(np.abs(res["times"] - 0.61))
+        assert res["heights"][i] > 0  # unnegated density at the shallow valley
+
+        density_dynamics(
+            shallow_and_deep_valleys, mode="valleys", find_peaks_kwargs={"height": 0.1}
+        )
+        uns = shallow_and_deep_valleys.uns["pseudotime"]
+        res = uns["density_dynamics_d0_valleys"]
+        density_dynamics(shallow_and_deep_valleys)
+        max_density = uns["density_dynamics_d0_peaks"]["heights"].max()
+        threshold = res["params"]["find_peaks_kwargs"]["height"]
+        assert threshold == pytest.approx(0.1 * max_density)
+        assert (res["heights"] <= threshold).all()
 
     @pytest.mark.xfail(
         strict=True,
