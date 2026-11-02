@@ -1,3 +1,5 @@
+import warnings
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -206,11 +208,6 @@ def test_transfer_non_periodic_ignores_wrap(adata: AnnData):
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: bool column -> new_values is created as an all-True bool Series "
-    "(NaN cast), so transferred_<col> loses the source values",
-)
 def test_transfer_boolean_keeps_source_values(adata: AnnData):
     adata.obs["flag"] = [True, False, False, False, False]
 
@@ -219,6 +216,28 @@ def test_transfer_boolean_keeps_source_values(adata: AnnData):
     t = adata.obs["transferred_flag"]
     assert t.iloc[:3].tolist() == [True, False, False]
     assert not t.iloc[3]  # weighted vote 0.5 True vs 1.5 False
+    assert t.dtype == "boolean"
+    assert adata.obs["flag"].dtype == bool
+
+
+def test_transfer_boolean_under_neighbored_cells_are_na(adata: AnnData):
+    adata.obs["flag"] = [True, False, False, False, False]
+
+    # cell 3 has 3 labeled neighbors, cell 4 only 2
+    transfer_metadata(adata, "group", "s", "flag", min_neighs=3)
+
+    t = adata.obs["transferred_flag"]
+    assert t.iloc[:3].tolist() == [True, False, False]
+    assert not t.iloc[3]
+    assert pd.isna(t.iloc[4])
+
+
+def test_transfer_boolean_emits_no_future_warning(adata: AnnData):
+    adata.obs["flag"] = [True, False, False, False, False]
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", FutureWarning)
+        transfer_metadata(adata, "group", "s", "flag", min_neighs=2)
 
 
 def test_transfer_unsupported_dtype_raises(adata: AnnData):

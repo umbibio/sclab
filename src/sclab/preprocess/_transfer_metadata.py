@@ -152,6 +152,8 @@ def _propagate_metadata(
 
     assign_value_fn: Callable
     series = adata.obs[column]
+    if is_bool_dtype(series.dtype):
+        series = series.astype("boolean")  # nullable, so masked cells can be <NA>
     if isinstance(series.dtype, pd.CategoricalDtype) or is_bool_dtype(series.dtype):
         assign_value_fn = _assign_categorical
     elif is_numeric_dtype(series.dtype) and periodic:
