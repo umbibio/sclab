@@ -238,8 +238,8 @@ suppressPackageStartupMessages({
 fit_limma_model <- function(adata, group_key, cell_identity_key = "None", verbosity = 0){
 
     if (verbosity > 0){
-        cat("Group key:", group_key, "\n")
-        cat("Cell identity key:", cell_identity_key, "\n")
+        cat("Group key:", group_key, "\\n")
+        cat("Cell identity key:", cell_identity_key, "\\n")
     }
 
     # create a vector that is concatentation of condition and cell type that we will later use with contrasts
@@ -250,7 +250,7 @@ fit_limma_model <- function(adata, group_key, cell_identity_key = "None", verbos
     }
 
     if (verbosity > 1){
-        cat("Group(s):", group, "\n")
+        cat("Group(s):", group, "\\n")
     }
 
     group   <- factor(group)
@@ -271,13 +271,13 @@ fit_limma_model <- function(adata, group_key, cell_identity_key = "None", verbos
 
     # filter out genes with low counts
     if (verbosity > 1){
-        cat("Dimensions before subsetting:", dim(y), "\n")
+        cat("Dimensions before subsetting:", dim(y), "\\n")
     }
 
     keep <- filterByExpr(y, design = design)
     y <- y[keep, , keep.lib.sizes=FALSE]
     if (verbosity > 1){
-        cat("Dimensions after subsetting:", dim(y), "\n")
+        cat("Dimensions after subsetting:", dim(y), "\\n")
     }
 
     # normalize
@@ -289,7 +289,7 @@ fit_limma_model <- function(adata, group_key, cell_identity_key = "None", verbos
     # fit the linear model
     fit <- lmFit(v, design)
     ne <- limma::nonEstimable(design)
-    if (!is.null(ne) && verbosity > 0) cat("Non-estimable:", ne, "\n")
+    if (!is.null(ne) && verbosity > 0) cat("Non-estimable:", ne, "\\n")
     fit <- eBayes(fit)
 
     return(list("fit"=fit, "design"=design, "v"=v))

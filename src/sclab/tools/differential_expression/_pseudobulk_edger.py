@@ -234,8 +234,8 @@ suppressPackageStartupMessages({
 fit_edger_model <- function(adata_, group_key, cell_identity_key = "None", verbosity = 0){
 
     if (verbosity > 0){
-        cat("Group key:", group_key, "\n")
-        cat("Cell identity key:", cell_identity_key, "\n")
+        cat("Group key:", group_key, "\\n")
+        cat("Cell identity key:", cell_identity_key, "\\n")
     }
 
     # create a vector that is concatentation of condition and cell type that we will later use with contrasts
@@ -246,7 +246,7 @@ fit_edger_model <- function(adata_, group_key, cell_identity_key = "None", verbo
     }
 
     if (verbosity > 1){
-        cat("Group(s):", group, "\n")
+        cat("Group(s):", group, "\\n")
     }
 
     group   <- factor(group)
@@ -267,13 +267,13 @@ fit_edger_model <- function(adata_, group_key, cell_identity_key = "None", verbo
 
     # filter out genes with low counts
     if (verbosity > 1){
-        cat("Dimensions before subsetting:", dim(y), "\n")
+        cat("Dimensions before subsetting:", dim(y), "\\n")
     }
 
     keep <- filterByExpr(y, design = design)
     y <- y[keep, , keep.lib.sizes=FALSE]
     if (verbosity > 1){
-        cat("Dimensions after subsetting:", dim(y), "\n")
+        cat("Dimensions after subsetting:", dim(y), "\\n")
     }
 
     # normalize
