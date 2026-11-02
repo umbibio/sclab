@@ -37,11 +37,13 @@ def adata() -> AnnData:
     mu[grp == "B", :N_DE] *= 4  # first genes up in B
     X = rng.poisson(mu)
     X[:, -1] = 0  # never expressed
-    return AnnData(
+    adata = AnnData(
         csr_matrix(X),
         obs=pd.DataFrame({"grp": grp, "ct": ct}, index=[f"c{i}" for i in range(n_obs)]),
         var=pd.DataFrame(index=[f"g{i}" for i in range(n_vars)]),
     )
+    adata.layers["counts"] = adata.X.copy()
+    return adata
 
 
 def _check_recovers_de(tt: pd.DataFrame):

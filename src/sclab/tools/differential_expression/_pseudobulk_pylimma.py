@@ -6,6 +6,7 @@ from anndata import AnnData
 from scipy.sparse import issparse
 
 from ..utils import aggregate_and_filter
+from ._pseudobulk_helpers import validate_counts_layer
 
 _TOP_TABLE_COLUMNS = {
     "log_fc": "logFC",
@@ -31,7 +32,7 @@ def pseudobulk_pylimma(
     condition_group: str | list[str] | None = None,
     reference_group: str | None = None,
     cell_identity_key: str | None = None,
-    layer: str | None = None,
+    layer: str = "counts",
     replicas_per_group: int = 5,
     min_cells_per_group: int = 30,
     bootstrap_sampling: bool = False,
@@ -39,6 +40,7 @@ def pseudobulk_pylimma(
     aggregate: bool = True,
     edger_preprocessing: bool = True,
     verbosity: int = 0,
+    check_counts: bool = True,
 ) -> dict[str, pd.DataFrame]:
     """Pseudobulk differential expression analysis using limma-voom in Python.
 
@@ -66,8 +68,10 @@ def pseudobulk_pylimma(
         Column in ``adata.obs`` for stratifying contrasts by cell type or
         identity. Separate DE results are returned per identity.
         Default is None.
-    layer : str or None, optional
-        Layer containing raw counts. Uses ``adata.X`` if None. Default is None.
+    layer : str, optional
+        Layer containing the raw counts to aggregate. ``"X"`` uses
+        ``adata.X``. Passing ``None`` raises a ``ValueError``. Ignored when
+        ``aggregate=False``. Default is ``"counts"``.
     replicas_per_group : int, optional
         Number of pseudobulk replicas to create per group. Default is 5.
     min_cells_per_group : int, optional
@@ -91,6 +95,10 @@ def pseudobulk_pylimma(
         is not needed. Default is True.
     verbosity : int, optional
         Verbosity level (0 = silent). Default is 0.
+    check_counts : bool, optional
+        If True, raise a ``ValueError`` when the selected layer does not look
+        like raw counts (non-negative integers). Set to False for
+        non-integer corrected counts. Default is True.
 
     Returns
     -------
@@ -124,6 +132,7 @@ def pseudobulk_pylimma(
         )
 
     if aggregate:
+        validate_counts_layer(adata, layer, check_counts)
         aggr_adata = aggregate_and_filter(
             adata,
             group_key,

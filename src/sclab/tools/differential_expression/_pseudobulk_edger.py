@@ -4,6 +4,7 @@ import pandas as pd
 from anndata import AnnData
 
 from ..utils import aggregate_and_filter
+from ._pseudobulk_helpers import validate_counts_layer
 
 PYTHON_DEPENDENCIES = ["rpy2", "anndata2ri"]
 R_DEPENDENCIES = ["edgeR", "MAST", "SingleCellExperiment"]
@@ -19,13 +20,14 @@ def pseudobulk_edger(
     condition_group: str | list[str] | None = None,
     reference_group: str | None = None,
     cell_identity_key: str | None = None,
-    layer: str | None = None,
+    layer: str = "counts",
     replicas_per_group: int = 5,
     min_cells_per_group: int = 30,
     bootstrap_sampling: bool = False,
     use_cells: dict[str, list[str]] | None = None,
     aggregate: bool = True,
     verbosity: int = 0,
+    check_counts: bool = True,
 ) -> dict[str, pd.DataFrame]:
     """
     Fits a model using edgeR and computes top tags for a given condition vs
@@ -45,8 +47,10 @@ def pseudobulk_edger(
         is compared to the rest of the cells.
     cell_identity_key : str | None, optional
         If provided, separate contrasts will be computed for each identity. Defaults to None.
-    layer : str | None, optional
-        Layer in AnnData object to use. EdgeR requires raw counts. Defaults to None.
+    layer : str, optional
+        Layer in AnnData object to use. EdgeR requires raw counts. ``"X"`` uses
+        ``adata_.X``. Passing ``None`` raises a ``ValueError``. Ignored when
+        ``aggregate=False``. Defaults to ``"counts"``.
     replicas_per_group : int, optional
         Number of replicas to create for each group. Defaults to 10.
     min_cells_per_group : int, optional
@@ -63,6 +67,10 @@ def pseudobulk_edger(
         be aggregated. Defaults to True.
     verbosity : int, optional
         Verbosity level. Defaults to 0.
+    check_counts : bool, optional
+        If True, raise a ``ValueError`` when the selected layer does not look
+        like raw counts (non-negative integers). Set to False for non-integer
+        corrected counts. Defaults to True.
 
     Returns
     -------
@@ -105,6 +113,7 @@ def pseudobulk_edger(
     R = robjects.r
 
     if aggregate:
+        validate_counts_layer(adata_, layer, check_counts)
         aggr_adata = aggregate_and_filter(
             adata_,
             group_key,

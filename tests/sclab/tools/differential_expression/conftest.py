@@ -21,7 +21,9 @@ def _make_counts_adata(n_genes: int) -> AnnData:
         {"cond": cond, "ctype": ctype}, index=[f"c{i}" for i in range(n)]
     )
     var = pd.DataFrame(index=[f"gene{i}" for i in range(n_genes)])
-    return AnnData(csr_matrix(X), obs=obs, var=var)
+    adata = AnnData(csr_matrix(X), obs=obs, var=var)
+    adata.layers["counts"] = adata.X.copy()
+    return adata
 
 
 @pytest.fixture
@@ -55,4 +57,6 @@ def r_three_group_adata() -> AnnData:
     mu[cond == "A", :2] = 20.0
     obs = pd.DataFrame({"cond": cond}, index=[f"c{i}" for i in range(cond.size)])
     var = pd.DataFrame(index=[f"gene{i}" for i in range(200)])
-    return AnnData(csr_matrix(rng.poisson(mu).astype(float)), obs=obs, var=var)
+    adata = AnnData(csr_matrix(rng.poisson(mu).astype(float)), obs=obs, var=var)
+    adata.layers["counts"] = adata.X.copy()
+    return adata
