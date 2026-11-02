@@ -147,11 +147,6 @@ def test_multi_key_with_reference_batch_raises(adata: AnnData):
         harmony_integrate(adata, ["batch", "batch2"], reference_batch="A")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: run_harmony default nclust = round(N/30) is 1 for N < 45, and then "
-    "sigma stays a float and Harmony indexes it",
-)
 def test_small_dataset_default_nclust():
     rng = np.random.default_rng(0)
     adata = AnnData(np.zeros((40, 2)))
@@ -161,6 +156,17 @@ def test_small_dataset_default_nclust():
     harmony_integrate(adata, "batch", verbose=False)
 
     assert adata.obsm["X_pca_harmony"].shape == (40, 4)
+
+
+def test_tiny_dataset_default_nclust():
+    rng = np.random.default_rng(0)
+    adata = AnnData(np.zeros((10, 2)))
+    adata.obsm["X_pca"] = rng.normal(size=(10, 4))
+    adata.obs["batch"] = pd.Categorical(["A", "B"] * 5)
+
+    harmony_integrate(adata, "batch", verbose=False)
+
+    assert adata.obsm["X_pca_harmony"].shape == (10, 4)
 
 
 # ---------------------------------------------------------------------------
