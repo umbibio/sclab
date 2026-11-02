@@ -8,7 +8,6 @@ from sclab.tools.cellflow.utils.periodic_genes import (
     infer_dt_from_index,
     pct_power_below,
     periodic_genes,
-    periodic_genes_cosinor,
     power_spectrum_df,
 )
 
@@ -69,7 +68,7 @@ def times():
 @pytest.fixture(scope="module")
 def _fitted(times):
     adata = _make_adata(times)
-    periodic_genes_cosinor(adata, "t", tmin=0, tmax=PERIOD, n=N_BINS, alpha=0.01)
+    periodic_genes(adata, "t", tmin=0, tmax=PERIOD, n=N_BINS, alpha=0.01)
     return adata
 
 
@@ -141,9 +140,9 @@ class TestCosinorDetection:
         np.testing.assert_array_equal(v["periodic"], v["cosinor_padj"] <= 0.01)
 
     def test_alpha_controls_calls(self, adata):
-        periodic_genes_cosinor(adata, "t", tmin=0, tmax=PERIOD, n=N_BINS, alpha=1e-300)
+        periodic_genes(adata, "t", tmin=0, tmax=PERIOD, n=N_BINS, alpha=1e-300)
         strict = adata.var["periodic"].sum()
-        periodic_genes_cosinor(adata, "t", tmin=0, tmax=PERIOD, n=N_BINS, alpha=1.0)
+        periodic_genes(adata, "t", tmin=0, tmax=PERIOD, n=N_BINS, alpha=1.0)
 
         assert strict <= 6
         assert adata.var["periodic"].all()
@@ -155,7 +154,7 @@ class TestCosinorDetection:
             extra_names=["silent"],
         )
 
-        periodic_genes_cosinor(adata, "t", tmin=0, tmax=PERIOD, n=N_BINS)
+        periodic_genes(adata, "t", tmin=0, tmax=PERIOD, n=N_BINS)
 
         row = adata.var.loc["silent"]
         assert row["cosinor_r_squared"] == 0
@@ -213,7 +212,7 @@ class TestCosinorOutputs:
     def test_does_not_modify_counts(self, adata):
         X_before = adata.X.copy()
 
-        periodic_genes_cosinor(adata, "t", tmin=0, tmax=PERIOD, n=N_BINS)
+        periodic_genes(adata, "t", tmin=0, tmax=PERIOD, n=N_BINS)
 
         assert (adata.X != X_before).nnz == 0
 
@@ -221,21 +220,19 @@ class TestCosinorOutputs:
         adata.layers["counts"] = adata.X.copy()
         adata.X = adata.X * 0.5  # non-integer X must be ignored
 
-        periodic_genes_cosinor(
-            adata, "t", tmin=0, tmax=PERIOD, n=N_BINS, layer="counts"
-        )
+        periodic_genes(adata, "t", tmin=0, tmax=PERIOD, n=N_BINS, layer="counts")
 
         assert adata.var.loc["per_6", "periodic"]
 
     def test_layer_X_means_adata_X(self, adata):
-        periodic_genes_cosinor(adata, "t", tmin=0, tmax=PERIOD, n=N_BINS, layer="X")
+        periodic_genes(adata, "t", tmin=0, tmax=PERIOD, n=N_BINS, layer="X")
 
         assert adata.var.loc["per_6", "periodic"]
 
 
 class TestCosinorParameters:
     def test_default_range_inferred_from_data(self, adata):
-        periodic_genes_cosinor(adata, "t", n=N_BINS)
+        periodic_genes(adata, "t", n=N_BINS)
 
         assert adata.var.loc[list(PEAKS), "periodic"].all()
         # inferred range is [~0, ~24]; peaks should still be close
@@ -250,10 +247,10 @@ class TestCosinorParameters:
         adata = _make_adata(times, extra_cols=extra, extra_names=["harm2"])
         adata1 = adata.copy()
 
-        periodic_genes_cosinor(
+        periodic_genes(
             adata, "t", tmin=0, tmax=PERIOD, n=N_BINS, n_harmonics=2, alpha=0.01
         )
-        periodic_genes_cosinor(
+        periodic_genes(
             adata1, "t", tmin=0, tmax=PERIOD, n=N_BINS, n_harmonics=1, alpha=0.01
         )
 
@@ -270,11 +267,11 @@ class TestCosinorParameters:
 
     def test_too_few_bins_for_harmonics_raises(self, adata):
         with pytest.raises(ValueError, match="Not enough bins"):
-            periodic_genes_cosinor(adata, "t", tmin=0, tmax=PERIOD, n=4, n_harmonics=2)
+            periodic_genes(adata, "t", tmin=0, tmax=PERIOD, n=4, n_harmonics=2)
 
     def test_minimum_number_of_bins_is_accepted(self, adata):
         # 1 + 2K parameters need at least 2K + 2 bins
-        periodic_genes_cosinor(adata, "t", tmin=0, tmax=PERIOD, n=4, n_harmonics=1)
+        periodic_genes(adata, "t", tmin=0, tmax=PERIOD, n=4, n_harmonics=1)
 
         assert np.isfinite(adata.var["cosinor_pvalue"]).all()
 
@@ -282,7 +279,7 @@ class TestCosinorParameters:
         adata.layers["counts"] = adata.layers["counts"] * 0.5
 
         with pytest.raises(ValueError, match="does not look like raw counts"):
-            periodic_genes_cosinor(adata, "t", tmin=0, tmax=PERIOD, n=N_BINS)
+            periodic_genes(adata, "t", tmin=0, tmax=PERIOD, n=N_BINS)
 
     def test_normalized_input_is_rejected(self, adata):
         adata.X = adata.X.astype(float)
@@ -291,12 +288,12 @@ class TestCosinorParameters:
         adata.X.data = np.log1p(adata.X.data)
 
         with pytest.raises(ValueError, match="does not look like raw counts"):
-            periodic_genes_cosinor(adata, "t", tmin=0, tmax=PERIOD, n=N_BINS, layer="X")
+            periodic_genes(adata, "t", tmin=0, tmax=PERIOD, n=N_BINS, layer="X")
 
     def test_default_layer_is_counts(self, adata):
         adata.X = adata.X * 0.5  # would be rejected if X were used
 
-        periodic_genes_cosinor(adata, "t", tmin=0, tmax=PERIOD, n=N_BINS)
+        periodic_genes(adata, "t", tmin=0, tmax=PERIOD, n=N_BINS)
 
         assert adata.var.loc["per_6", "periodic"]
 
@@ -304,13 +301,11 @@ class TestCosinorParameters:
         del adata.layers["counts"]
 
         with pytest.raises(ValueError, match="layer 'counts' not found.*layer='X'"):
-            periodic_genes_cosinor(adata, "t", tmin=0, tmax=PERIOD, n=N_BINS)
+            periodic_genes(adata, "t", tmin=0, tmax=PERIOD, n=N_BINS)
 
     def test_explicit_period_changes_the_model(self, adata):
         # forcing a 12 h period on 24 h data removes the fit quality
-        periodic_genes_cosinor(
-            adata, "t", tmin=0, tmax=PERIOD, n=N_BINS, period=PERIOD / 2
-        )
+        periodic_genes(adata, "t", tmin=0, tmax=PERIOD, n=N_BINS, period=PERIOD / 2)
 
         assert adata.var.loc[list(PEAKS), "cosinor_r_squared"].max() < 0.5
 
@@ -318,8 +313,8 @@ class TestCosinorParameters:
         base = _make_adata(times)
         shifted = _make_adata(times + 30.0, offset=30.0)
 
-        periodic_genes_cosinor(base, "t", tmin=0, tmax=PERIOD, n=N_BINS)
-        periodic_genes_cosinor(shifted, "t", tmin=30, tmax=30 + PERIOD, n=N_BINS)
+        periodic_genes(base, "t", tmin=0, tmax=PERIOD, n=N_BINS)
+        periodic_genes(shifted, "t", tmin=30, tmax=30 + PERIOD, n=N_BINS)
 
         np.testing.assert_allclose(
             shifted.varm["profile"].values, base.varm["profile"].values
@@ -328,7 +323,7 @@ class TestCosinorParameters:
     def test_shifted_time_axis_still_recovers_peaks(self, times):
         shifted = _make_adata(times + 30.0, offset=30.0)
 
-        periodic_genes_cosinor(shifted, "t", tmin=30, tmax=30 + PERIOD, n=N_BINS)
+        periodic_genes(shifted, "t", tmin=30, tmax=30 + PERIOD, n=N_BINS)
 
         assert shifted.var.loc[list(PEAKS), "periodic"].all()
         for name, peak in PEAKS.items():
@@ -339,7 +334,7 @@ class TestCosinorParameters:
         keep = ~((times > 6) & (times < 12))
         adata = _make_adata(times[keep])
 
-        periodic_genes_cosinor(adata, "t", tmin=0, tmax=PERIOD, n=N_BINS)
+        periodic_genes(adata, "t", tmin=0, tmax=PERIOD, n=N_BINS)
 
         labels = adata.varm["profile"].columns.astype(float)
         assert len(labels) < N_BINS
@@ -355,8 +350,8 @@ class TestCosinorParameters:
         base = _make_adata(times[keep])
         shifted = _make_adata(times[keep] + 30.0, offset=30.0)
 
-        periodic_genes_cosinor(base, "t", tmin=0, tmax=PERIOD, n=N_BINS)
-        periodic_genes_cosinor(shifted, "t", tmin=30, tmax=30 + PERIOD, n=N_BINS)
+        periodic_genes(base, "t", tmin=0, tmax=PERIOD, n=N_BINS)
+        periodic_genes(shifted, "t", tmin=30, tmax=30 + PERIOD, n=N_BINS)
 
         np.testing.assert_allclose(
             shifted.varm["profile"].values, base.varm["profile"].values
@@ -368,8 +363,8 @@ class TestCosinorParameters:
         dirty.obs.loc[dirty.obs_names[:50], "t"] = np.nan
         dirty.obs.loc[dirty.obs_names[50:60], "t"] = np.inf
 
-        periodic_genes_cosinor(dirty, "t", tmin=0, tmax=PERIOD, n=N_BINS)
-        periodic_genes_cosinor(base, "t", tmin=0, tmax=PERIOD, n=N_BINS)
+        periodic_genes(dirty, "t", tmin=0, tmax=PERIOD, n=N_BINS)
+        periodic_genes(base, "t", tmin=0, tmax=PERIOD, n=N_BINS)
 
         assert dirty.varm["profile"].shape == base.varm["profile"].shape
         assert dirty.var.loc[list(PEAKS), "periodic"].all()
@@ -378,8 +373,8 @@ class TestCosinorParameters:
         base = _make_adata(times)
         wrapped = _make_adata(times + 2 * PERIOD)
 
-        periodic_genes_cosinor(base, "t", tmin=0, tmax=PERIOD, n=N_BINS)
-        periodic_genes_cosinor(wrapped, "t", tmin=0, tmax=PERIOD, n=N_BINS)
+        periodic_genes(base, "t", tmin=0, tmax=PERIOD, n=N_BINS)
+        periodic_genes(wrapped, "t", tmin=0, tmax=PERIOD, n=N_BINS)
 
         assert wrapped.varm["profile"].shape == (wrapped.n_vars, N_BINS)
         np.testing.assert_allclose(
@@ -391,35 +386,52 @@ class TestCountValidation:
     def test_cosinor_with_dense_X(self, adata):
         adata.X = adata.X.toarray()
 
-        periodic_genes_cosinor(adata, "t", tmin=0, tmax=PERIOD, n=N_BINS, layer="X")
+        periodic_genes(adata, "t", tmin=0, tmax=PERIOD, n=N_BINS, layer="X")
 
         assert adata.var.loc["per_6", "periodic"]
 
     def test_cosinor_with_dense_counts_layer(self, adata):
         adata.layers["counts"] = adata.layers["counts"].toarray()
 
-        periodic_genes_cosinor(adata, "t", tmin=0, tmax=PERIOD, n=N_BINS)
+        periodic_genes(adata, "t", tmin=0, tmax=PERIOD, n=N_BINS)
 
         assert adata.var.loc["per_6", "periodic"]
 
     def test_cosinor_with_csr_array_counts(self, adata):
         adata.layers["counts"] = csr_array(adata.layers["counts"])
 
-        periodic_genes_cosinor(adata, "t", tmin=0, tmax=PERIOD, n=N_BINS)
+        periodic_genes(adata, "t", tmin=0, tmax=PERIOD, n=N_BINS)
 
         assert adata.var.loc["per_6", "periodic"]
 
     def test_periodogram_with_dense_X(self, adata):
         adata.X = adata.X.toarray()
 
-        periodic_genes(adata, "t", 0, PERIOD, PERIOD, N_BINS, layer="X")
+        periodic_genes(
+            adata,
+            "t",
+            method="periodogram",
+            tmin=0,
+            tmax=PERIOD,
+            period=PERIOD,
+            n=N_BINS,
+            layer="X",
+        )
 
         assert adata.var.loc[list(PEAKS), "periodic"].all()
 
 
 class TestSpectralPeriodicGenes:
     def test_flags_periodic_genes(self, adata):
-        periodic_genes(adata, "t", 0, PERIOD, PERIOD, N_BINS)
+        periodic_genes(
+            adata,
+            "t",
+            method="periodogram",
+            tmin=0,
+            tmax=PERIOD,
+            period=PERIOD,
+            n=N_BINS,
+        )
 
         assert adata.var.loc[list(PEAKS), "periodic"].all()
         assert not adata.var.loc[NOISE, "periodic"].any()
@@ -428,21 +440,46 @@ class TestSpectralPeriodicGenes:
         assert pct[NOISE].max() < 0.75
 
     def test_stores_profiles_and_periodograms(self, adata):
-        periodic_genes(adata, "t", 0, PERIOD, PERIOD, N_BINS)
+        periodic_genes(
+            adata,
+            "t",
+            method="periodogram",
+            tmin=0,
+            tmax=PERIOD,
+            period=PERIOD,
+            n=N_BINS,
+        )
 
         assert adata.varm["profile"].shape == (adata.n_vars, N_BINS)
         # one-sided periodogram of N_BINS samples has N_BINS//2 + 1 frequencies
         assert adata.varm["periodogram"].shape == (adata.n_vars, N_BINS // 2 + 1)
 
     def test_threshold_controls_calls(self, adata):
-        periodic_genes(adata, "t", 0, PERIOD, PERIOD, N_BINS, min_pct_power_below=0.999)
+        periodic_genes(
+            adata,
+            "t",
+            method="periodogram",
+            tmin=0,
+            tmax=PERIOD,
+            period=PERIOD,
+            n=N_BINS,
+            min_pct_power_below=0.999,
+        )
 
         assert not adata.var["periodic"].any()
 
     def test_agrees_with_cosinor(self, adata):
         other = adata.copy()
-        periodic_genes(adata, "t", 0, PERIOD, PERIOD, N_BINS)
-        periodic_genes_cosinor(other, "t", 0, PERIOD, N_BINS, alpha=0.01)
+        periodic_genes(
+            adata,
+            "t",
+            method="periodogram",
+            tmin=0,
+            tmax=PERIOD,
+            period=PERIOD,
+            n=N_BINS,
+        )
+        periodic_genes(other, "t", tmin=0, tmax=PERIOD, n=N_BINS, alpha=0.01)
 
         np.testing.assert_array_equal(adata.var["periodic"], other.var["periodic"])
 
@@ -450,12 +487,28 @@ class TestSpectralPeriodicGenes:
         adata.layers["counts"] = adata.layers["counts"] * 0.5
 
         with pytest.raises(ValueError, match="does not look like raw counts"):
-            periodic_genes(adata, "t", 0, PERIOD, PERIOD, N_BINS)
+            periodic_genes(
+                adata,
+                "t",
+                method="periodogram",
+                tmin=0,
+                tmax=PERIOD,
+                period=PERIOD,
+                n=N_BINS,
+            )
 
     def test_default_layer_is_counts(self, adata):
         adata.X = adata.X * 0.5
 
-        periodic_genes(adata, "t", 0, PERIOD, PERIOD, N_BINS)
+        periodic_genes(
+            adata,
+            "t",
+            method="periodogram",
+            tmin=0,
+            tmax=PERIOD,
+            period=PERIOD,
+            n=N_BINS,
+        )
 
         assert adata.var.loc[list(PEAKS), "periodic"].all()
 
@@ -463,25 +516,103 @@ class TestSpectralPeriodicGenes:
         del adata.layers["counts"]
 
         with pytest.raises(ValueError, match="layer 'counts' not found"):
-            periodic_genes(adata, "t", 0, PERIOD, PERIOD, N_BINS)
+            periodic_genes(
+                adata,
+                "t",
+                method="periodogram",
+                tmin=0,
+                tmax=PERIOD,
+                period=PERIOD,
+                n=N_BINS,
+            )
 
     def test_gap_in_time_coverage_raises_naming_bins(self, times):
         keep = ~((times > 6) & (times < 12))
         adata = _make_adata(times[keep])
 
         with pytest.raises(ValueError, match=r"Bins \[.*'8\.00'.*\].*smaller `n`"):
-            periodic_genes(adata, "t", 0, PERIOD, PERIOD, N_BINS)
+            periodic_genes(
+                adata,
+                "t",
+                method="periodogram",
+                tmin=0,
+                tmax=PERIOD,
+                period=PERIOD,
+                n=N_BINS,
+            )
 
     def test_time_shift_invariance(self, times):
         base = _make_adata(times)
         shifted = _make_adata(times + 30.0, offset=30.0)
 
-        periodic_genes(base, "t", 0, PERIOD, PERIOD, N_BINS)
-        periodic_genes(shifted, "t", 30, 30 + PERIOD, PERIOD, N_BINS)
+        periodic_genes(
+            base,
+            "t",
+            method="periodogram",
+            tmin=0,
+            tmax=PERIOD,
+            period=PERIOD,
+            n=N_BINS,
+        )
+        periodic_genes(
+            shifted,
+            "t",
+            method="periodogram",
+            tmin=30,
+            tmax=30 + PERIOD,
+            period=PERIOD,
+            n=N_BINS,
+        )
 
         np.testing.assert_allclose(
             shifted.varm["profile"].values, base.varm["profile"].values
         )
+
+
+class TestEntryPoint:
+    def test_exported_from_cellflow(self):
+        from sclab.tools import cellflow
+
+        assert cellflow.periodic_genes is periodic_genes
+
+    def test_options_are_keyword_only(self, adata):
+        # the old periodogram positional order (tmin, tmax, period, n) must fail loudly
+        with pytest.raises(TypeError):
+            periodic_genes(adata, "t", 0, PERIOD, PERIOD, N_BINS)
+
+    def test_unknown_method_raises(self, adata):
+        with pytest.raises(ValueError, match="method"):
+            periodic_genes(adata, "t", method="fourier")
+
+    @pytest.mark.parametrize(
+        "method, option",
+        [
+            ("cosinor", {"min_pct_power_below": 0.5}),
+            ("periodogram", {"alpha": 0.01}),
+            ("periodogram", {"n_harmonics": 2}),
+        ],
+    )
+    def test_option_of_other_method_raises(self, adata, method, option):
+        with pytest.raises(ValueError, match="only apply|only applies"):
+            periodic_genes(adata, "t", method=method, n=N_BINS, **option)
+
+    def test_records_params(self, adata):
+        periodic_genes(adata, "t", method="periodogram", tmin=0, tmax=PERIOD, n=N_BINS)
+        params = adata.uns["periodic_genes"]["params"]
+        assert params["method"] == "periodogram"
+        assert params["period"] == PERIOD
+        assert params["min_pct_power_below"] == 0.75
+        assert "alpha" not in params
+
+    def test_time_range_defaults_to_stored_t_range(self, adata):
+        explicit = adata.copy()
+        adata.uns["t"] = {"t_range": [0.0, PERIOD]}
+
+        periodic_genes(adata, "t", n=N_BINS)
+        periodic_genes(explicit, "t", tmin=0.0, tmax=PERIOD, n=N_BINS)
+
+        assert adata.uns["periodic_genes"]["params"]["tmax"] == PERIOD
+        pd.testing.assert_frame_equal(adata.varm["profile"], explicit.varm["profile"])
 
 
 class TestSpectrumHelpers:

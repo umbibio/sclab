@@ -1,3 +1,5 @@
+from typing import Literal
+
 import numpy as np
 import pandas as pd
 from anndata import AnnData
@@ -12,23 +14,124 @@ MIN_CELLS_PER_BIN = 30
 def periodic_genes(
     adata: AnnData,
     time_key: str,
-    tmin: float,
-    tmax: float,
-    period: float,
-    n: int,
-    min_pct_power_below: float = 0.75,
+    *,
+    method: Literal["cosinor", "periodogram"] = "cosinor",
+    tmin: float | None = None,
+    tmax: float | None = None,
+    period: float | None = None,
+    n: int = 10,
     layer: str = "counts",
+    n_harmonics: int | None = None,
+    alpha: float | None = None,
+    min_pct_power_below: float | None = None,
 ):
     """
-    Detect periodic genes via the periodogram of pseudobulked profiles.
+    Detect periodic genes from pseudobulked expression profiles along time.
 
     Cells are binned by ``time_key`` into ``n`` equally spaced bins covering
     ``[tmin, tmax)`` (wrapping around), pseudobulked, normalized and
     log-transformed. Requires raw counts: ``layer`` must hold non-negative
-    integers (use ``layer="X"`` for ``adata.X``). Bins with fewer than 30 cells
-    are dropped; since the periodogram assumes equally spaced samples, this
-    raises a ``ValueError`` suggesting a smaller ``n``.
+    integers (use ``layer="X"`` for ``adata.X``). Bins with fewer than 30
+    cells are dropped.
+
+    Parameters
+    ----------
+    adata : AnnData
+        Annotated data matrix. Modified in-place.
+    time_key : str
+        Column in ``adata.obs`` with the (pseudo)time of each cell.
+    method : {"cosinor", "periodogram"}, optional
+        ``"cosinor"`` (default) fits a harmonic regression per gene and tests
+        it with an F-test (FDR-adjusted); it handles dropped bins.
+        ``"periodogram"`` flags genes whose power spectrum is concentrated
+        below ``1 / period``; it needs every bin, so dropped bins raise
+        ``ValueError``.
+    tmin, tmax : float, optional
+        Time range. Defaults to ``adata.uns[time_key]["t_range"]`` if set,
+        otherwise the data range rounded to 2 decimals.
+    period : float, optional
+        Period of the oscillation. Defaults to ``tmax - tmin``.
+    n : int, optional
+        Number of time bins. Default is 10.
+    layer : str, optional
+        Layer with raw counts, or ``"X"``. Default is ``"counts"``.
+    n_harmonics : int, optional
+        Cosinor only: number of harmonics. Default is 1.
+    alpha : float, optional
+        Cosinor only: adjusted p-value cutoff for ``var["periodic"]``.
+        Default is 0.05.
+    min_pct_power_below : float, optional
+        Periodogram only: minimum fraction of power below ``1 / period`` for
+        ``var["periodic"]``. Default is 0.75.
+
+    Returns
+    -------
+    None
+        Both methods set ``adata.var["periodic"]`` and
+        ``adata.varm["profile"]`` and record the parameters used in
+        ``adata.uns["periodic_genes"]``. Cosinor also adds ``cosinor_*``
+        columns to ``adata.var`` and ``varm["cosinor_fit"]`` /
+        ``varm["harmonic_amplitudes"]``; the periodogram adds
+        ``var["pct_power_below"]`` and ``varm["periodogram"]``.
     """
+    if method == "cosinor":
+        if min_pct_power_below is not None:
+            raise ValueError("min_pct_power_below only applies to method='periodogram'")
+        n_harmonics = 1 if n_harmonics is None else n_harmonics
+        alpha = 0.05 if alpha is None else alpha
+    elif method == "periodogram":
+        if n_harmonics is not None or alpha is not None:
+            raise ValueError("n_harmonics and alpha only apply to method='cosinor'")
+        min_pct_power_below = (
+            0.75 if min_pct_power_below is None else min_pct_power_below
+        )
+    else:
+        raise ValueError(f"method must be 'cosinor' or 'periodogram', got {method!r}")
+
+    t_range = adata.uns.get(time_key, {}).get("t_range")
+    if tmin is None:
+        tmin = t_range[0] if t_range is not None else adata.obs[time_key].min().round(2)
+    if tmax is None:
+        tmax = t_range[1] if t_range is not None else adata.obs[time_key].max().round(2)
+    if period is None:
+        period = tmax - tmin
+
+    if method == "cosinor":
+        _cosinor_genes(
+            adata, time_key, tmin, tmax, n, period, n_harmonics, alpha, layer
+        )
+        method_params = {"n_harmonics": n_harmonics, "alpha": alpha}
+    else:
+        _periodogram_genes(
+            adata, time_key, tmin, tmax, period, n, min_pct_power_below, layer
+        )
+        method_params = {"min_pct_power_below": min_pct_power_below}
+
+    adata.uns["periodic_genes"] = {
+        "params": {
+            "method": method,
+            "time_key": time_key,
+            "tmin": float(tmin),
+            "tmax": float(tmax),
+            "period": float(period),
+            "n": n,
+            "layer": layer,
+            **method_params,
+        }
+    }
+
+
+def _periodogram_genes(
+    adata: AnnData,
+    time_key: str,
+    tmin: float,
+    tmax: float,
+    period: float,
+    n: int,
+    min_pct_power_below: float,
+    layer: str,
+):
+    """Periodogram method of :func:`periodic_genes` (needs equally spaced bins)."""
     profiles, all_labels = _binned_log_profiles(adata, time_key, tmin, tmax, n, layer)
 
     present = set(profiles.index)
@@ -180,39 +283,27 @@ def pct_power_below(ps: pd.DataFrame, max_freq: float) -> pd.Series:
     return s
 
 
-def periodic_genes_cosinor(
+def _cosinor_genes(
     adata: AnnData,
     time_key: str,
-    tmin: float | None = None,
-    tmax: float | None = None,
-    n: int = 10,
-    period: float | None = None,
-    n_harmonics: int = 1,
-    alpha: float = 0.05,
-    layer: str = "counts",
+    tmin: float,
+    tmax: float,
+    n: int,
+    period: float,
+    n_harmonics: int,
+    alpha: float,
+    layer: str,
 ):
     """
-    Detect periodic genes via cosinor regression on pseudobulked profiles.
+    Cosinor method of :func:`periodic_genes`.
 
     Model per gene:
         y(t) = c + sum_{k=1..K} [ A_k cos(k*omega*t) + B_k sin(k*omega*t) ] + eps
-    where omega = 2*pi / period. K = n_harmonics. Default period = tmax - tmin.
-
-    Requires raw counts: ``layer`` must hold non-negative integers (use
-    ``layer="X"`` for ``adata.X``). Bins with fewer than 30 cells are dropped
-    and the regression is done on the remaining bin centers.
+    where omega = 2*pi / period and K = n_harmonics. Fits the surviving bin
+    centers, so dropped bins are handled.
     """
     from scipy.stats import f as f_dist
     from scipy.stats import false_discovery_control
-
-    if tmin is None:
-        tmin = adata.obs[time_key].min().round(2)
-
-    if tmax is None:
-        tmax = adata.obs[time_key].max().round(2)
-
-    if period is None:
-        period = tmax - tmin
 
     profiles, _ = _binned_log_profiles(adata, time_key, tmin, tmax, n, layer)
     labels = list(profiles.index)

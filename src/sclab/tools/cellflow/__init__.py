@@ -7,6 +7,7 @@ analyses in single-cell data, including:
 - :func:`density_dynamics` — detect density peaks/valleys along pseudotime.
 - :func:`real_time` — convert pseudotime to real time via density normalisation.
 - :func:`expression_dynamics` — compute per-cell gene turnover from expression.
+- :func:`periodic_genes` — detect periodic genes (cosinor or periodogram).
 - :func:`piecewise_rescale` — rescale pseudotime to real time using known phase
   durations.
 """
@@ -16,10 +17,12 @@ from ._density_dynamics import density_dynamics, real_time
 from ._expression_dynamics import expression_dynamics
 from ._pseudotime._pseudotime import pseudotime
 from ._pseudotime._timeseries import piecewise_rescale
+from .utils.periodic_genes import periodic_genes
 
 __all__ = [
     "expression_dynamics",
     "density_dynamics",
+    "periodic_genes",
     "piecewise_rescale",
     "pseudotime",
     "utils",

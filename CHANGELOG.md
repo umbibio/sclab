@@ -17,7 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Breaking:** remove `batch_key` from `pseudobulk_edger()` and `pseudobulk_limma()`
-- **Breaking:** `periodic_genes()` and `periodic_genes_cosinor()` default to `layer="counts"` (pass `layer="X"` to use `adata.X`) and raise `ValueError` on non-count input; `periodic_genes()` raises if time bins are dropped, while the cosinor version fits the remaining bins
+- **Breaking:** `periodic_genes()` is now a single entry point, exported from `sclab.tools.cellflow`, with `method="cosinor"` (default, F-test p-values, tolerates dropped bins) or `method="periodogram"` (the previous behavior; raises if time bins are dropped). All options after `time_key` are keyword-only; `tmin`/`tmax` default to `adata.uns[time_key]["t_range"]` or the data range, `period` to `tmax - tmin`; parameters are recorded in `adata.uns["periodic_genes"]`
+- **Breaking:** `periodic_genes()` defaults to `layer="counts"` (pass `layer="X"` to use `adata.X`) and raises `ValueError` on non-count input
 - **Breaking:** `SCLabDataset.data_dict` and `SCLabDataset.metadata` are read-only; edit `dataset.adata` and call `update_data_dict()` to refresh embeddings
 - **Breaking:** `cca_integrate()` raises `ValueError` when `reference_batch` is given (CCA is symmetric; use Harmony for reference-based integration)
 - sctype raises `ValueError` on raw-count input; its expressed-gene filter uses each gene's own minimum, so scaled data works
