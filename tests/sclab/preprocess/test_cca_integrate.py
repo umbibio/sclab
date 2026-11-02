@@ -277,25 +277,10 @@ def test_integrate_single_group_not_implemented(adata: AnnData):
         cca_integrate(adata, "one")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: cca_integrate accepts reference_batch but silently ignores it",
-)
-def test_integrate_reference_batch_is_not_silently_ignored(adata: AnnData):
-    plain = adata.copy()
-    cca_integrate(plain, "batch", n_components=3, svd_solver="full", normalize=False)
-
-    cca_integrate(
-        adata,
-        "batch",
-        reference_batch="B",
-        n_components=3,
-        svd_solver="full",
-        normalize=False,
-    )
-
-    # either an error or a different result is acceptable; identical is not
-    assert not np.allclose(adata.obsm["X_cca"], plain.obsm["X_cca"])
+def test_integrate_reference_batch_raises(adata: AnnData):
+    with pytest.raises(ValueError, match="reference_batch is not supported"):
+        cca_integrate(adata, "batch", reference_batch="B", n_components=3)
+    assert "X_cca" not in adata.obsm
 
 
 # ---------------------------------------------------------------------------

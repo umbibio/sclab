@@ -26,6 +26,18 @@ def cca_integrate(
     normalize: bool = True,
     random_state: int | None = None,
 ):
+    """Integrate two groups of cells with canonical correlation analysis.
+
+    ``reference_batch`` is accepted for API compatibility with
+    :func:`~sclab.preprocess.harmony_integrate` but is not supported: CCA is
+    symmetric, so passing one raises ``ValueError``.
+    """
+    if reference_batch:
+        raise ValueError(
+            "reference_batch is not supported by CCA integration (CCA is "
+            "symmetric); use flavor='harmony' for reference-based integration"
+        )
+
     n_groups = adata.obs[key].nunique()
     if n_groups == 2:
         cca_integrate_pair(

@@ -274,6 +274,24 @@ class TestIntegration:
         assert Z.shape[0] == emb.shape[0] and np.isfinite(Z).all()
         assert _batch_gap(Z, is_b2) < _batch_gap(emb, is_b2)
 
+    def test_cca_with_reference_batch_fails(self, dash, shifted_embedding):
+        before = set(dash.dataset.adata.obsm)
+        n_exc = len(dash.broker.exceptions_log)
+        step, ok = run_step(
+            dash,
+            "Integration",
+            use_rep="X_emb",
+            group_by="batch",
+            flavor="cca",
+            reference_batch="b1",
+            max_iters=5,
+        )
+        assert not ok
+        assert step.run_button.button_style == "danger"
+        assert set(dash.dataset.adata.obsm) == before
+        errors = dash.broker.exceptions_log[n_exc:]
+        assert any("reference_batch is not supported" in e for e in errors)
+
     def test_unknown_flavor_fails_without_side_effects(self, dash, shifted_embedding):
         before = set(dash.dataset.adata.obsm)
         hist = len(dash.processor.step_history)
