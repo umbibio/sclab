@@ -7,6 +7,7 @@ from scipy import stats
 from scipy.sparse import csr_matrix, issparse
 
 from sclab.tools.labeling.sctype import (
+    _count_above_gene_min,
     _get_classification_scores_matrix,
     classify_cells,
 )
@@ -349,6 +350,79 @@ class TestScoreMatrix:
         )
 
         assert (Xc[:, -1] == 0).all()
+
+
+class TestExpressedGeneFilter:
+    @staticmethod
+    def _scale(adata):
+        # log-normalized -> z-scored per gene (constant genes -> 0), as in sc.pp.scale
+        X = adata.X.toarray() if issparse(adata.X) else np.asarray(adata.X)
+        sd = X.std(axis=0)
+        adata.X = np.where(sd > 0, (X - X.mean(axis=0)) / np.where(sd > 0, sd, 1), 0.0)
+
+    def test_scaled_data_filters_rarely_detected_and_constant_markers(
+        self, adata, markers
+    ):
+        X = adata.X.toarray()
+        X[:, 11] = 0
+        X[:3, 11] = np.log1p(5)  # detected in 3 cells only
+        X[:, 12] = 0  # never detected -> zero variance
+        adata.X = csr_matrix(X)
+        self._scale(adata)
+        extra = markers.copy()
+        extra["cell_type"] = extra["cell_type"].astype(str)
+        extra.loc[len(extra)] = ("M", "g11", 1.0)
+        extra.loc[len(extra)] = ("T", "g12", 1.0)
+        extra["cell_type"] = pd.Categorical(extra["cell_type"], categories=TYPES)
+        markers = markers.assign(
+            cell_type=pd.Categorical(markers["cell_type"], categories=TYPES)
+        )
+
+        base = _get_classification_scores_matrix(
+            adata, markers.query("logfoldchanges > 0"), "cell_type"
+        )
+        Xc = _get_classification_scores_matrix(
+            adata, extra.query("logfoldchanges > 0"), "cell_type"
+        )
+
+        assert np.isfinite(Xc).all()
+        # both extra markers are filtered, so scores are those of the base table
+        np.testing.assert_allclose(Xc, base)
+
+    def test_scaled_data_classifies(self, adata, markers):
+        self._scale(adata)
+
+        classify_cells(adata, markers, "cell_type")
+
+        assert _accuracy(adata, "cell_type_noNA") == 1.0
+
+    @pytest.mark.parametrize("fmt", [np.asarray, csr_matrix])
+    def test_log_normalized_scores_match_global_minimum_filter(
+        self, adata, markers, fmt
+    ):
+        # on log-normalized data (zeros present in every gene) the per-gene minimum
+        # equals the global one, so scores equal the previous implementation
+        pos = markers.copy()
+        pos["cell_type"] = pd.Categorical(pos["cell_type"], categories=TYPES)
+        adata.X = fmt(adata.X.toarray())
+        weights = {"g0": 0.5, "g1": 1.0, "g2": 1.0, "g4": 1.0, "g5": 1.0, "g6": 1.0}
+        weights |= {"g8": 1.0, "g9": 1.0, "g10": 1.0}
+
+        Xc = _get_classification_scores_matrix(adata, pos, "cell_type")
+
+        np.testing.assert_allclose(Xc, _weighted_scores(adata, pos, weights))
+
+    def test_count_above_gene_min_sparse_matches_dense(self):
+        rng = np.random.default_rng(0)
+        X = rng.normal(size=(50, 7)) * (rng.random((50, 7)) < 0.4)
+        X[:, 0] = 0
+        X[:, 1] = np.abs(X[:, 1])
+        X[:, 2] = -np.abs(X[:, 2]) - 1  # no zeros stored implicitly: all negative
+
+        dense = _count_above_gene_min(X)
+
+        np.testing.assert_array_equal(_count_above_gene_min(csr_matrix(X)), dense)
+        assert dense[0] == 0
 
 
 def _weighted_scores(adata, markers, weights, key="cell_type"):

@@ -19,6 +19,24 @@ def _count_cell_types(markers: pd.DataFrame, marker_class_key: str) -> int:
     return int((markers[marker_class_key].cat.categories != "Unknown").sum())
 
 
+def _count_above_gene_min(X: NDArray | csr_matrix | csc_matrix) -> NDArray:
+    """Per gene, the number of cells whose value is above that gene's minimum."""
+    if not issparse(X):
+        return (X > X.min(axis=0)).sum(axis=0)
+
+    X = X.tocsc()
+    n_cells = X.shape[0]
+    stored = np.diff(X.indptr)
+    gene_min = X.min(axis=0).toarray().ravel()
+    above = np.bincount(
+        np.repeat(np.arange(X.shape[1]), stored),
+        weights=X.data > np.repeat(gene_min, stored),
+        minlength=X.shape[1],
+    )
+    # implicit zeros count as above the minimum only when the minimum is negative
+    return above + np.where(gene_min < 0, n_cells - stored, 0)
+
+
 def _get_classification_scores_matrix(
     adata: AnnData,
     markers: pd.DataFrame,
@@ -59,9 +77,9 @@ def _get_classification_scores_matrix(
     if n_types is None:
         n_types = _count_cell_types(markers, marker_class_key)
 
-    min_val: np.number = X.min()
-    M = X > min_val
-    n_cells = np.asarray(M.sum(axis=0)).squeeze()
+    # a gene is expressed in the cells above its own minimum; a global minimum
+    # would let nearly every gene pass on z-scored data
+    n_cells = _count_above_gene_min(X)
     mask = n_cells > 5
     print(f"using {mask.sum()} genes")
 
@@ -105,6 +123,12 @@ def _get_classification_scores_matrix(
 
     if issparse(X):
         X = np.asarray(X.todense("C"))
+
+    # constant genes would be NaN after z-scoring
+    nonconstant = X.std(axis=0) > 0
+    if not nonconstant.all():
+        markers = markers.loc[~markers["names"].isin(S.index[~nonconstant])]
+        X, S = X[:, nonconstant], S[nonconstant]
 
     Z: NDArray
     Z = stats.zscore(X, axis=0)
