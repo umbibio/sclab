@@ -319,13 +319,12 @@ class TestDensityDynamics:
         assert "density_dynamics_d1_valleys" in uns
 
     def test_first_derivative_extrema_flank_density_peaks(self, bimodal):
-        # density rises fastest before a mode and falls fastest after it;
-        # valley height is relative to max(signal), so falls need a negative one
+        # density rises fastest before a mode and falls fastest after it
         density_dynamics(
             bimodal, derivative=1, mode="peaks", find_peaks_kwargs={"height": 0.5}
         )
         density_dynamics(
-            bimodal, derivative=1, mode="valleys", find_peaks_kwargs={"height": -0.5}
+            bimodal, derivative=1, mode="valleys", find_peaks_kwargs={"height": 0.5}
         )
 
         uns = bimodal.uns["pseudotime"]

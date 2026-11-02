@@ -226,12 +226,15 @@ def density_dynamics(
     find_peaks_kwargs : dict, optional
         Extra keyword arguments forwarded to
         :func:`scipy.signal.find_peaks`. The ``'height'`` key, if present,
-        is treated as a *fraction* of the global maximum of the (derivative
-        of the) density and rescaled accordingly. For ``mode="peaks"`` it
-        defaults to ``0``; for ``mode="valleys"`` it defaults to no filter
-        (all local minima are kept), and if given only valleys whose value is
-        at most ``height * max`` are kept. Default is *None* (no extra
-        arguments).
+        is treated as a *fraction* of the global maximum and rescaled
+        accordingly. For ``mode="peaks"`` (any ``derivative``) it defaults to
+        ``0`` and peaks must be at least ``height * max(signal)``. For
+        ``mode="valleys"`` with ``derivative=0`` it defaults to no filter (all
+        local minima are kept); if given, only valleys with density at most
+        ``height * max(density)`` are kept. For ``mode="valleys"`` with
+        ``derivative >= 1`` the *negated* derivative is searched with
+        threshold ``height * max(-derivative)`` (default ``0``). Default is
+        *None* (no extra arguments).
     plot_density : bool, optional
         If *True*, plot the raw KDE. Default is *False*.
     plot_density_fit : bool, optional
@@ -253,8 +256,9 @@ def density_dynamics(
         * ``'times'`` — pseudotime positions of detected peaks.
         * ``'deltas'`` — inter-peak durations (or phase durations for
           periodic data).
-        * ``'heights'`` — density (or derivative) values at each peak or
-          valley, in the original (unnegated) units.
+        * ``'heights'`` — density (or derivative) values at each peak. For
+          density valleys (``derivative=0``) these are the density values; for
+          derivative valleys they are the values of the negated derivative.
         * ``'params'`` — KDE and peak-finding hyper-parameters.
         * ``'density_bspline_tck'`` — B-spline representation of the
           fitted density.
@@ -290,17 +294,19 @@ def density_dynamics(
     t = np.linspace(*t_range, 2**16 + 1)
     y = bspl.derivative(derivative)(t)
 
-    # height is a fraction of the max of the (unnegated) signal; peaks default
-    # to 0, valleys to no filter
     find_peaks_kwargs = dict(find_peaks_kwargs or {})
-    peak_height = find_peaks_kwargs.pop("height", None)
-    if peak_height is not None:
-        peak_height = peak_height * y.max()
-    elif mode == "peaks":
-        peak_height = 0.0
+    height = find_peaks_kwargs.pop("height", None)
 
+    # Valleys of the density itself use signal-unit thresholds on the original
+    # signal; peaks and derivative valleys threshold the searched signal.
+    density_valleys = mode == "valleys" and derivative == 0
+    if density_valleys:
+        peak_height = None if height is None else height * y.max()
+        fp_height = None if peak_height is None else -peak_height
     if mode == "valleys":
         y = -y
+    if not density_valleys:
+        peak_height = fp_height = (0.0 if height is None else height) * y.max()
 
     tmin, tmax = t_range
     tspan = tmax - tmin
@@ -311,14 +317,9 @@ def density_dynamics(
         tt = t
         yy = y
 
-    # valleys are searched as peaks of -y, so the signal-unit threshold flips sign
-    fp_height = peak_height
-    if mode == "valleys" and peak_height is not None:
-        fp_height = -peak_height
-
     peaks, _ = find_peaks(yy, height=fp_height, **find_peaks_kwargs)
     peak_times = tt[peaks]
-    peak_heights = yy[peaks] if mode == "peaks" else -yy[peaks]
+    peak_heights = -yy[peaks] if density_valleys else yy[peaks]
 
     peaks_mask = np.logical_and(peak_times >= tmin, peak_times < tmax)
     peak_times = peak_times[peaks_mask]
