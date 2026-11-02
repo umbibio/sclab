@@ -170,8 +170,7 @@ class Harmony(object):
         self.Z_corr = np.array(Z)
         self.Z_orig = np.array(Z)
 
-        self.Z_cos = self.Z_orig / self.Z_orig.max(axis=0)
-        self.Z_cos = self.Z_cos / np.linalg.norm(self.Z_cos, ord=2, axis=0)
+        self.Z_cos = self.Z_orig / np.linalg.norm(self.Z_orig, ord=2, axis=0)
 
         self.Phi = Phi
         self.Phi_moe = Phi_moe

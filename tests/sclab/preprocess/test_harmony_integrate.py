@@ -167,12 +167,6 @@ def test_small_dataset_default_nclust():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: Harmony.__init__ divides each cell by its max coordinate before "
-    "L2-normalizing, which flips the sign of cells whose coordinates are all "
-    "negative (and gives NaN when the max is 0)",
-)
 def test_cosine_normalization_preserves_direction():
     rng = np.random.default_rng(0)
     Z = rng.normal(size=(100, 4))
@@ -190,6 +184,26 @@ def test_cosine_normalization_preserves_direction():
     Z_cos = seen["Z_cos"]
     expected = Z / np.linalg.norm(Z, axis=1, keepdims=True)
     np.testing.assert_allclose(Z_cos, expected, atol=1e-8)
+
+
+def test_cosine_normalization_unchanged_when_every_max_is_positive():
+    rng = np.random.default_rng(0)
+    Z = rng.normal(size=(100, 4))
+    Z[np.arange(100), Z.argmax(axis=1)] += 1.0  # every cell's max is positive
+    assert (Z.max(axis=1) > 0).all()
+    meta = pd.DataFrame({"b": pd.Categorical(["A", "B"] * 50)})
+
+    seen = {}
+
+    def spy(data, K):
+        seen["Z_cos"] = np.array(data)
+        return data[:K].copy()
+
+    run_harmony(Z, meta, "b", verbose=False, nclust=3, cluster_fn=spy)
+
+    old = Z / Z.max(axis=1, keepdims=True)  # previous formula
+    old = old / np.linalg.norm(old, axis=1, keepdims=True)
+    np.testing.assert_allclose(seen["Z_cos"], old, atol=1e-8)
 
 
 @pytest.fixture
