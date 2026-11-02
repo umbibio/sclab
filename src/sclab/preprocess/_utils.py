@@ -78,7 +78,7 @@ def _filter_knn_matrix(
         indices[start:end] = idxs[o][oo]
         data[start:end] = vals[o][oo]
 
-    return csr_matrix((data, indices, indptr))
+    return csr_matrix((data, indices, indptr), shape=matrix.shape)
 
 
 def _symmetrize_sparse_matrix(matrix: csr_matrix) -> csr_matrix:

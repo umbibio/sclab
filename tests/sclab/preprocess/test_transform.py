@@ -212,11 +212,6 @@ def test_pool_neighbors_n_neighbors_truncates_graph():
     np.testing.assert_allclose(np.asarray(adata.layers["full"]).ravel(), 1.5)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: _filter_knn_matrix builds csr_matrix without shape=; "
-    "shape is inferred from max column index",
-)
 def test_pool_neighbors_n_neighbors_when_last_cell_not_selected():
     # cell 3 is far from everyone, so it is nobody's nearest neighbor and the
     # truncated adjacency loses its last column
