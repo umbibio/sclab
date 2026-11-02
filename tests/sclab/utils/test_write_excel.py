@@ -122,16 +122,11 @@ class TestGuessFormat:
         assert fmt == "text"
         assert we._guess_column_width(s, fmt) >= 10
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: datetime column guessed as 'text' -> _guess_column_width raises "
-        "AttributeError (.str accessor) which write_excel does not catch",
-    )
     def test_datetime_column_width(self):
         s = pd.Series(pd.to_datetime(["2020-01-01", "2020-01-02"]), name="when")
         fmt = we._guess_column_format(s)
-        # must not raise
-        we._guess_column_width(s, fmt)
+        assert fmt == "text"
+        assert we._guess_column_width(s, fmt) >= 10
 
 
 class TestGuessWidth:
@@ -354,6 +349,20 @@ class TestWriteExcel:
             bool_rules[0][4]["type"] == "cell" and bool_rules[0][4]["value"] == "TRUE"
         )
         assert (bool_rules[0][0], bool_rules[0][2]) == (0, 3)
+
+    def test_datetime_and_all_nan_object_columns(self, fake_excel, tmp_path):
+        d = pd.DataFrame(
+            {
+                "when": pd.to_datetime(["2020-01-01", "2020-01-02"]),
+                "empty": pd.Series([np.nan, np.nan], dtype=object),
+                "mixed": ["a", 12345678901234567890],
+            }
+        )
+        write_excel(d, tmp_path / "o.xlsx")
+        ws = fake_excel.last.sheets["Sheet1"]
+        assert ws.columns[1][0] == int(np.ceil(len("2020-01-01") * 1.4))
+        assert ws.columns[2][0] == 10
+        assert ws.columns[3][0] == int(np.ceil(len("12345678901234567890") * 1.4))
 
     def test_header_and_autofilter(self, fake_excel, df, tmp_path):
         write_excel(df, tmp_path / "o.xlsx")

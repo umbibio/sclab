@@ -373,7 +373,7 @@ def _guess_column_width(
 
     match column_format:
         case "text":
-            max_len = int(column.str.len().max())
+            max_len = int(column.astype(str).str.len().max())
             return _round_width(max(max_len, colname_len), step, min_width, max_width)
 
         case "number" | "nodecimal" | "scientific" | "boolean":
