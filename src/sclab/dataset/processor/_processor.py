@@ -347,7 +347,21 @@ class Processor(EventClient):
         accordion.children = tuple(children)
         accordion.set_title(len(children) - 1, title)
 
+    def _active_selection_values(self) -> dict:
+        # same notion of "active" as dspr_selection_values_change_callback
+        return {
+            column: control.value
+            for column, control in self.selection_controls_dict.items()
+            if (
+                bool(control.value)
+                if isinstance(control, SelectMultiple)
+                else control.value[1] > control.value[0]
+            )
+        }
+
     def _make_selection_controls(self, *args, **kwargs):
+        before = self._active_selection_values()
+
         for column in self.dataset.metadata.columns:
             if column in self.selection_controls_dict:
                 self.update_column_selection_control(column)
@@ -357,6 +371,15 @@ class Processor(EventClient):
         for column in list(self.selection_controls_dict):
             if column not in self.dataset.metadata.columns:
                 self.remove_column_selection_control(column)
+
+        after = self._active_selection_values()
+        if any(
+            after.get(c) != v
+            for c, v in before.items()
+            if c in self.selection_controls_dict
+        ):
+            # called directly: publishing is disabled while dset_metadata_change runs
+            self.dspr_selection_values_change_callback("", None)
 
     def _make_selection_buttons(self):
         """
@@ -692,13 +715,15 @@ class Processor(EventClient):
         allna = series.isna().all()
         dtype = series.dtype
         if isinstance(dtype, CategoricalDtype):
-            control.options = series.cat.categories
-            control.value = tuple()
+            old_value = control.value
+            control.options = series.cat.categories  # resets value
+            control.value = tuple(v for v in old_value if v in series.cat.categories)
 
         elif is_bool_dtype(dtype):
-            control.value = tuple()
+            pass
 
         elif is_integer_dtype(dtype):
+            old_value = control.value
             if allna:
                 min_value, max_value = 0.0, 0.0
             else:
@@ -712,9 +737,10 @@ class Processor(EventClient):
                 except TraitError:
                     pass
 
-            control.value = (control.min, control.min)
+            self._restore_slider_value(control, old_value)
 
         elif is_float_dtype(dtype):
+            old_value = control.value
             dtype = series.dtype
             eps = np.finfo(dtype).eps
             min_value, max_value = series.min() - eps, series.max() + eps
@@ -731,10 +757,20 @@ class Processor(EventClient):
                     control.step = step
                 except TraitError:
                     pass
-            control.value = (control.min, control.min)
+            self._restore_slider_value(control, old_value)
 
         else:
             raise TypeError(f"Unsupported dtype: {series.dtype}")
+
+    @staticmethod
+    def _restore_slider_value(control, old_value):
+        # inactive (no range selected) stays inactive; active range is clipped to the new bounds
+        lo, hi = old_value
+        if hi > lo:
+            lo, hi = (min(max(v, control.min), control.max) for v in (lo, hi))
+            control.value = (lo, hi)
+        else:
+            control.value = (control.min, control.min)
 
     def remove_column_selection_control(self, column: str):
         if column not in self.selection_controls_dict:

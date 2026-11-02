@@ -437,6 +437,66 @@ class TestSelectionControls:
         assert dash.dataset._selected_rows is None
         assert dash.broker.exceptions_log[n:] == []
 
+    def test_active_filters_survive_unrelated_metadata_change(self, proc, dash):
+        c = proc.selection_controls_dict
+        c["cat"].value = ("a", "b")
+        c["num_i"].value = (2, 20)
+        c["num_f"].value = (1.0, 8.0)
+        expected = dash.dataset.selected_rows.copy()
+        n = len(dash.broker.exceptions_log)
+        dash.dataset.adata.obs["extra"] = np.arange(40) * 0.5
+        proc._make_selection_controls()
+        assert c["cat"].value == ("a", "b")
+        assert c["num_i"].value == (2, 20)
+        assert c["num_f"].value == (1.0, 8.0)
+        assert dash.dataset.selected_rows.equals(expected)
+        assert dash.broker.exceptions_log[n:] == []
+
+    def test_inactive_controls_stay_inactive(self, proc, dash):
+        c = proc.selection_controls_dict
+        dash.dataset.adata.obs["num_i"] = np.arange(40) + 100
+        proc._make_selection_controls()
+        assert c["cat"].value == () and c["flag"].value == ()
+        assert c["num_i"].value == (100, 100)
+        assert c["num_f"].value == (c["num_f"].min, c["num_f"].min)
+        assert dash.dataset._selected_rows is None
+
+    def test_clipped_numeric_range_recomputes_selection(self, proc, dash):
+        proc.selection_controls_dict["num_i"].value = (5, 30)
+        n = len(dash.broker.exceptions_log)
+        dash.dataset.adata.obs["num_i"] = np.arange(40).clip(max=20)
+        proc._make_selection_controls()
+        assert proc.selection_controls_dict["num_i"].value == (5, 20)
+        # values >= 5 after clipping: rows 5..39 (rows 20..39 all equal 20)
+        assert dash.dataset.selected_rows.tolist() == [
+            f"c{i:02d}" for i in range(5, 40)
+        ]
+        assert dash.broker.exceptions_log[n:] == []
+
+    def test_removed_category_is_dropped_from_filter(self, proc, dash):
+        c = proc.selection_controls_dict
+        c["cat"].value = ("a", "b")
+        n = len(dash.broker.exceptions_log)
+        obs = dash.dataset.adata.obs
+        obs["cat"] = pd.Categorical(
+            obs["cat"].astype(str).replace({"b": "c"}), categories=["a", "c", "d"]
+        )
+        proc._make_selection_controls()
+        assert list(c["cat"].options) == ["a", "c", "d"]
+        assert c["cat"].value == ("a",)
+        assert dash.dataset.selected_rows.tolist() == [
+            f"c{i:02d}" for i in range(0, 40, 4)
+        ]
+        assert dash.broker.exceptions_log[n:] == []
+
+    def test_all_selected_categories_removed_clears_selection(self, proc, dash):
+        c = proc.selection_controls_dict
+        c["cat"].value = ("b",)
+        dash.dataset.adata.obs["cat"] = pd.Categorical(["a", "c"] * 20)
+        proc._make_selection_controls()
+        assert c["cat"].value == ()
+        assert dash.dataset._selected_rows is None
+
 
 # --------------------------------------------------------------------------
 # callbacks that refresh step controls
