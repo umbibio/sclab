@@ -33,6 +33,13 @@ def density_nd(
     bounds: tuple[tuple[float, float], ...] | None = None,
     normalize: bool = False,
 ) -> DensityResult:
+    """
+    Kernel density estimate of `data` on a regular grid.
+
+    If `periodic`, the returned `kde` was fit on 3**ndims shifted copies of the
+    data, so it scores against the stacked copies; `density` is rescaled by
+    3**ndims to integrate to one over `bounds`.
+    """
     if data.ndim == 1:
         data = data.reshape(-1, 1)
 
@@ -75,6 +82,8 @@ def density_nd(
     )
     grid = np.vstack([x.ravel() for x in grid]).T
     d = np.exp(kde.score_samples(grid))
+    if periodic:
+        d *= 3**ndims  # the KDE was fit on 3**ndims copies of the data
 
     if normalize and ndims == 1:
         scale = trapezoid(d, grid.reshape(-1))

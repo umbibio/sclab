@@ -128,11 +128,6 @@ class TestDensityNd:
         assert periodic.density[0] > 1.5 * plain.density[0]
         assert periodic.periodic is True
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: periodic=True fits the KDE on 3 stacked copies of the data, so "
-        "without normalize=True the returned density integrates to 1/3",
-    )
     def test_periodic_unnormalized_density_integrates_to_one(self, rng):
         data = rng.uniform(0, 1, size=(500, 1))
 
@@ -145,6 +140,21 @@ class TestDensityNd:
         )
 
         assert trapezoid(rslt.density, rslt.grid[:, 0]) == pytest.approx(1.0, rel=0.05)
+
+    def test_periodic_unnormalized_2d_density_integrates_to_one(self, rng):
+        data = rng.uniform(0, 1, size=(400, 2))
+
+        rslt = density_nd(
+            data,
+            bounds=((0.0, 1.0), (0.0, 1.0)),
+            bandwidth=0.05,
+            grid_size=(41, 41),
+            periodic=True,
+        )
+
+        # left-corner Riemann sum over the unit square (periodic: no edge loss)
+        d = rslt.density.reshape(41, 41)[:-1, :-1]
+        assert d.sum() * (1 / 40) ** 2 == pytest.approx(1.0, rel=0.05)
 
     def test_periodic_density_is_translation_equivariant(self, rng):
         data = rng.uniform(0, 1, size=(200, 1)) ** 2
