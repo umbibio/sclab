@@ -261,11 +261,6 @@ class TestDensityDynamics:
         assert len(res["times"]) == 1
         assert min(res["times"][0], 1 - res["times"][0]) < 0.03
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: with a single periodic peak the cyclic delta is (t - t) % span "
-        "= 0 instead of the full period",
-    )
     def test_periodic_single_peak_delta_is_full_period(self):
         rng = np.random.default_rng(0)
         t = np.concatenate([rng.normal(0.0, 0.05, 1500), rng.normal(1.0, 0.05, 1500)])
@@ -275,6 +270,13 @@ class TestDensityDynamics:
 
         res = adata.uns["pseudotime"]["density_dynamics_d0_peaks"]
         assert res["deltas"][0] == pytest.approx(1.0)
+
+    @pytest.mark.parametrize("periodic", [False, True])
+    def test_no_peaks_gives_empty_results(self, bimodal, periodic):
+        density_dynamics(bimodal, periodic=periodic, find_peaks_kwargs={"height": 10.0})
+
+        res = bimodal.uns["pseudotime"]["density_dynamics_d0_peaks"]
+        assert len(res["times"]) == len(res["deltas"]) == len(res["heights"]) == 0
 
     def test_height_is_fraction_of_maximum(self, bimodal):
         density_dynamics(bimodal, find_peaks_kwargs={"height": 0.5})

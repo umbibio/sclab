@@ -327,6 +327,8 @@ def density_dynamics(
     timepoints = peak_times - tmin
     if periodic:
         deltas = (timepoints - np.roll(timepoints, 1)) % tspan
+        if len(timepoints) == 1:  # a lone peak is one full period from itself
+            deltas = np.array([tspan])
     else:
         timepoints = np.insert(timepoints, 0, 0)
         deltas = timepoints[1:] - timepoints[:-1]
