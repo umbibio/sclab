@@ -1,5 +1,4 @@
 from functools import lru_cache
-from itertools import product
 from typing import Literal, NamedTuple
 
 import numpy as np
@@ -7,7 +6,6 @@ import pandas as pd
 import plotly.graph_objects as go
 from numpy import float64
 from numpy.typing import NDArray
-from scipy.integrate import trapezoid
 from scipy.interpolate import BSpline, make_smoothing_spline
 from sklearn.neighbors import KernelDensity
 
@@ -52,7 +50,6 @@ class DensityResult(NamedTuple):
     bounds: tuple
     grid: NDArray
     density: NDArray
-    scale: float
 
 
 def _density_nd(
@@ -64,16 +61,13 @@ def _density_nd(
     metric: str = "euclidean",
     grid_size: tuple | None = None,
     max_grid_size: int = 2**5 + 1,
-    periodic: bool = False,
     bounds: tuple[tuple[float, float]] | None = None,
-    normalize: bool = False,
 ) -> DensityResult:
     if data.ndim == 1:
         data = data.reshape(-1, 1)
 
     nsamples, ndims = data.shape
     if bounds is None:
-        assert not periodic, "bounds must be specified if periodic=True"
         lower, upper = data.min(axis=0), data.max(axis=0)
         span = upper - lower
         margins = span / 10
@@ -81,15 +75,7 @@ def _density_nd(
     assert len(bounds) == ndims, "must provide bounds for each dimension"
     bounds = np.array(bounds)
 
-    if periodic:
-        offsets = np.array(list(product([-1, 0, 1], repeat=ndims)))
-        offsets = offsets * np.diff(bounds).T
-        dat = np.empty((nsamples * 3**ndims, ndims))
-        for i, offset in enumerate(offsets):
-            dat[i * nsamples : (i + 1) * nsamples] = data + offset[None, :]
-    else:
-        dat = data
-    dat = (dat - bounds.min(axis=1)) / (bounds.max(axis=1) - bounds.min(axis=1))
+    dat = (data - bounds.min(axis=1)) / (bounds.max(axis=1) - bounds.min(axis=1))
 
     if bandwidth is None:
         bandwidth = bandwidth_factor
@@ -109,24 +95,9 @@ def _density_nd(
     grid = np.vstack([x.ravel() for x in grid]).T
     d = np.exp(kde.score_samples(grid))
 
-    if normalize and ndims == 1:
-        scale = trapezoid(d, grid.reshape(-1))
-    elif normalize:
-        # perform simple Riemmann sum for higher dimensions
-        deltas = np.diff(bounds).T / (np.array(grid_size) - 1)
-        tmp = d.reshape(grid_size).copy()
-        for i, s in enumerate(grid_size):
-            # take left corners for the sum
-            tmp = tmp.take(np.arange(s - 1), axis=i)
-        scale = tmp.sum() * np.prod(deltas)
-    else:
-        scale = 1
-
-    d /= scale
-
     grid = (grid * (bounds.max(axis=1) - bounds.min(axis=1))) + bounds.min(axis=1)
 
-    return DensityResult(kde, grid_size, bounds, grid, d, scale)
+    return DensityResult(kde, grid_size, bounds, grid, d)
 
 
 @lru_cache

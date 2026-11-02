@@ -2,7 +2,6 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import pytest
-from scipy.integrate import trapezoid
 
 from sclab.dataset.plotter import _utils as pu
 from sclab.dataset.plotter._utils import (
@@ -219,27 +218,11 @@ class TestPeriodicSpline:
 # density estimation
 # --------------------------------------------------------------------------
 class TestDensityND:
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: 1D normalize=True normalizes in unit-scaled coordinates, so the "
-        "returned density integrates to the bounds span over the returned grid "
-        "(2D branch normalizes in data units -> integral 1)",
-    )
-    def test_1d_normalized_integrates_to_one_in_data_units(self):
+    def test_1d_grid_bounds(self):
         data = np.random.default_rng(0).normal(size=200)
-        res = _density_nd(data, bandwidth=0.1, normalize=True, grid_size=(101,))
-        assert trapezoid(res.density, res.grid[:, 0]) == pytest.approx(1.0, abs=1e-3)
-
-    def test_1d_normalized_grid_bounds_and_unit_integral(self):
-        rng = np.random.default_rng(0)
-        data = rng.normal(size=200)
-        res = _density_nd(data, bandwidth=0.1, normalize=True, grid_size=(101,))
+        res = _density_nd(data, bandwidth=0.1, grid_size=(101,))
         xs = res.grid[:, 0]
         assert res.density.shape == (101,)
-        # whatever the unit system, density * scale must equal the raw KDE
-        raw = _density_nd(data, bandwidth=0.1, grid_size=(101,))
-        np.testing.assert_allclose(res.density * res.scale, raw.density)
-        assert res.scale != 1
         span = data.max() - data.min()
         assert xs[0] == pytest.approx(data.min() - span / 10)
         assert xs[-1] == pytest.approx(data.max() + span / 10)
@@ -250,45 +233,15 @@ class TestDensityND:
         res = _density_nd(data, bandwidth=0.05, grid_size=(201,))
         assert res.grid[np.argmax(res.density), 0] == pytest.approx(3.0, abs=0.3)
 
-    def test_unnormalized_scale_is_one(self):
+    def test_2d_grid_and_density_shapes(self):
         data = np.random.default_rng(0).normal(size=(50, 2))
         res = _density_nd(data, bandwidth=0.1, grid_size=(9, 9))
-        assert res.scale == 1
         assert res.grid.shape == (81, 2) and res.density.shape == (81,)
-
-    def test_2d_normalized_riemann_sum(self):
-        data = np.random.default_rng(0).normal(size=(100, 2))
-        res = _density_nd(data, bandwidth=0.1, normalize=True, grid_size=(21, 21))
-        # normalized density: left-corner Riemann sum equals 1
-        D = res.density.reshape(21, 21)[:-1, :-1]
-        deltas = np.diff(res.bounds).T[0] / 20
-        assert D.sum() * deltas.prod() == pytest.approx(1.0, rel=1e-9)
 
     def test_default_grid_size_from_max_grid_size(self):
         data = np.random.default_rng(0).normal(size=(30, 2))
         res = _density_nd(data, bandwidth=0.2, max_grid_size=7)
         assert res.grid_size == (7, 7)
-
-    def test_periodic_density_is_symmetric_across_seam(self):
-        # a point cluster right at the upper bound must produce equal density
-        # at the lower bound when periodic
-        data = np.array([0.99, 1.0, 0.98]).reshape(-1, 1) * 2 * np.pi
-        res = _density_nd(
-            data,
-            bandwidth=0.05,
-            periodic=True,
-            bounds=((0.0, 2 * np.pi),),
-            grid_size=(101,),
-        )
-        assert res.density[0] == pytest.approx(res.density[-1], rel=1e-6)
-        nonper = _density_nd(
-            data, bandwidth=0.05, bounds=((0.0, 2 * np.pi),), grid_size=(101,)
-        )
-        assert nonper.density[0] < 0.01 * nonper.density[-1]
-
-    def test_periodic_requires_bounds(self):
-        with pytest.raises(AssertionError, match="bounds must be specified"):
-            _density_nd(np.arange(5.0), periodic=True)
 
     def test_bounds_must_match_dimension(self):
         with pytest.raises(AssertionError, match="bounds for each dimension"):
