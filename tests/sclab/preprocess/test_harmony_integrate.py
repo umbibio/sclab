@@ -134,16 +134,17 @@ def test_unknown_key_raises(adata: AnnData):
         harmony_integrate(adata, "nope")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: harmony_integrate(key=[...], reference_batch=...) raises a numpy "
-    "broadcast error because adata.obs[[key]].values is 2-D",
-)
 def test_list_key_with_reference_batch(adata: AnnData, batch_idx: np.ndarray):
     harmony_integrate(adata, ["batch"], reference_batch="A", verbose=False)
 
     E = adata.obsm["X_pca_harmony"]
     np.testing.assert_allclose(E[batch_idx == 0], adata.obsm["X_pca"][batch_idx == 0])
+
+
+def test_multi_key_with_reference_batch_raises(adata: AnnData):
+    adata.obs["batch2"] = adata.obs["batch"]
+    with pytest.raises(ValueError, match="single batch key"):
+        harmony_integrate(adata, ["batch", "batch2"], reference_batch="A")
 
 
 @pytest.mark.xfail(

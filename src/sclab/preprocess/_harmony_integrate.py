@@ -76,9 +76,12 @@ def harmony_integrate(
         reference_batch = [reference_batch]
 
     if reference_batch is not None:
+        keys = [key] if isinstance(key, str) else list(key)
+        if len(keys) != 1:
+            raise ValueError("reference_batch requires a single batch key")
         reference_values = np.zeros(adata.n_obs, dtype=bool)
         for batch in reference_batch:
-            reference_values |= adata.obs[key].values == batch
+            reference_values |= adata.obs[keys[0]].values == batch
         kwargs["reference_values"] = reference_values
 
     X = adata.obsm[basis].astype(np.float64)
