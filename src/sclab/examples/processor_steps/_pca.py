@@ -4,6 +4,7 @@ from ipywidgets import Button, Checkbox, Dropdown, IntText
 
 from sclab.dataset.processor import Processor
 from sclab.dataset.processor.step import ProcessorStepBase
+from sclab.preprocess import pca
 from sclab.utils import looks_like_raw_counts
 
 
@@ -74,10 +75,7 @@ class PCA(ProcessorStepBase):
         reference_batch: str | None = None,
         zero_center: bool = False,
     ):
-        import scanpy as sc
-
         adata = self.parent.dataset.adata
-        counts_layer = self.parent.dataset.counts_layer
 
         if looks_like_raw_counts(adata.X):
             raise ValueError(
@@ -85,39 +83,15 @@ class PCA(ProcessorStepBase):
                 "raw counts. Run the Preprocess step first."
             )
 
-        if reference_batch:
-            batch_key = self.parent.batch_key
-
-            obs_mask = adata.obs[batch_key] == reference_batch
-            adata_ref = adata[obs_mask].copy()
-            if mask_var == "highly_variable":
-                sc.pp.highly_variable_genes(
-                    adata_ref, layer=f"{counts_layer}_log1p", flavor="seurat"
-                )
-                hvg_seurat = adata_ref.var["highly_variable"]
-                sc.pp.highly_variable_genes(
-                    adata_ref,
-                    layer=counts_layer,
-                    flavor="seurat_v3_paper",
-                    n_top_genes=hvg_seurat.sum(),
-                )
-                hvg_seurat_v3 = adata_ref.var["highly_variable"]
-                adata_ref.var["highly_variable"] = hvg_seurat | hvg_seurat_v3
-            sc.pp.pca(
-                adata_ref, n_comps=n_comps, mask_var=mask_var, svd_solver="arpack"
-            )
-            uns_pca = adata_ref.uns["pca"]
-            uns_pca["reference_batch"] = reference_batch
-            PCs = adata_ref.varm["PCs"]
-            adata.obsm["X_pca"] = adata.X.dot(PCs)
-            adata.uns["pca"] = uns_pca
-            adata.varm["PCs"] = PCs
-        else:
-            sc.pp.pca(adata, n_comps=n_comps, mask_var=mask_var, svd_solver="arpack")
-            adata.obsm["X_pca"] = adata.X.dot(adata.varm["PCs"])
-
-        if zero_center:
-            adata.obsm["X_pca"] -= adata.obsm["X_pca"].mean(axis=0, keepdims=True)
+        pca(
+            adata,
+            n_comps=n_comps,
+            mask_var=mask_var,
+            batch_key=self.parent.batch_key,
+            reference_batch=reference_batch,
+            zero_center=zero_center,
+            counts_layer=self.parent.dataset.counts_layer,
+        )
 
         self.plot_variance_ratio_button.disabled = False
         self.broker.publish(

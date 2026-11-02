@@ -12,10 +12,12 @@ import scanpy as sc
 from anndata import AnnData
 
 from sclab import SCLabDashboard
+from sclab.preprocess import pca as library_pca
 from sclab.examples.processor_steps._differential_expression import (
     _rank_genes_groups_df,
 )
 
+from ..test_utils import run_step as strict_run_step
 from ..test_utils import simple_loop_adata
 
 
@@ -143,6 +145,49 @@ class TestPCA:
         assert adata.varm["PCs"].shape == (adata.n_vars, 5)
         # loadings are zero outside the (recomputed) HVG union
         assert (np.abs(adata.varm["PCs"]).sum(axis=1) == 0).any()
+
+    def test_reference_batch_hvg_without_log1p_layer(self):
+        d = SCLabDashboard(make_adata())
+        for name in ["QC", "Preprocess"]:
+            strict_run_step(d, name)
+        adata = d.dataset.adata
+        del adata.layers["counts_log1p"]
+
+        strict_run_step(
+            d, "PCA", n_comps=5, mask_var="highly_variable", reference_batch="b1"
+        )
+        assert adata.uns["pca"]["reference_batch"] == "b1"
+        assert "counts_log1p" not in adata.layers
+
+    @pytest.mark.parametrize("reference_batch", [None, "b1"])
+    @pytest.mark.parametrize("mask_var", [None, "highly_variable"])
+    def test_matches_library_pca(self, mask_var, reference_batch):
+        d = SCLabDashboard(make_adata())
+        for name in ["QC", "Preprocess"]:
+            strict_run_step(d, name)
+        adata = d.dataset.adata
+        expected = adata.copy()
+        library_pca(
+            expected,
+            n_comps=5,
+            mask_var=mask_var,
+            batch_key="batch",
+            reference_batch=reference_batch,
+            zero_center=True,
+        )
+
+        strict_run_step(
+            d,
+            "PCA",
+            n_comps=5,
+            mask_var=mask_var,
+            reference_batch=reference_batch,
+            zero_center=True,
+        )
+
+        np.testing.assert_allclose(adata.obsm["X_pca"], expected.obsm["X_pca"])
+        np.testing.assert_allclose(adata.varm["PCs"], expected.varm["PCs"])
+        assert adata.uns["pca"].get("reference_batch") == reference_batch
 
     def test_plot_variance_ratio_publishes_figure(self, dash):
         step = dash.processor.steps["PCA"]

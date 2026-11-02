@@ -148,3 +148,87 @@ def test_reference_batch_layer_embedding_is_projection_of_layer(adata: AnnData):
     L = adata.layers["alt"]
     expected = (L - L.mean(axis=0)) @ adata.varm["PCs"]
     np.testing.assert_allclose(adata.obsm["X_pca"], expected, atol=1e-8)
+
+
+@pytest.fixture
+def counts_adata() -> AnnData:
+    """Normalized ``X`` plus a raw ``counts`` layer, no ``counts_log1p`` layer.
+
+    Big enough for the ``seurat`` HVG flavor (loess fit) to run.
+    """
+    rng = np.random.default_rng(1)
+    n_obs, n_vars = 60, 300
+    counts = rng.negative_binomial(
+        2, 2 / (2 + rng.gamma(2, 2, n_vars)), (n_obs, n_vars)
+    )
+    adata = AnnData(np.log1p(counts.astype(float)))
+    adata.layers["counts"] = counts.astype(float)
+    adata.obs["batch"] = ["ref"] * (n_obs // 2) + ["other"] * (n_obs // 2)
+    adata.var["highly_variable"] = True
+    return adata
+
+
+def test_reference_batch_highly_variable_with_default_counts_layer(
+    counts_adata: AnnData,
+):
+    pca(
+        counts_adata,
+        n_comps=3,
+        mask_var="highly_variable",
+        batch_key="batch",
+        reference_batch="ref",
+    )
+
+    assert counts_adata.obsm["X_pca"].shape == (counts_adata.n_obs, 3)
+    assert counts_adata.uns["pca"]["reference_batch"] == "ref"
+    assert "counts_log1p" not in counts_adata.layers  # user's adata untouched
+    assert (np.abs(counts_adata.varm["PCs"]).sum(axis=1) == 0).any()  # HVGs recomputed
+    np.testing.assert_allclose(
+        counts_adata.obsm["X_pca"], counts_adata.X @ counts_adata.varm["PCs"]
+    )
+
+
+def test_reference_batch_highly_variable_uses_existing_log1p_layer(
+    counts_adata: AnnData,
+):
+    kwargs = dict(
+        n_comps=3, mask_var="highly_variable", batch_key="batch", reference_batch="ref"
+    )
+    fresh = counts_adata.copy()
+    pca(fresh, **kwargs)
+
+    counts_adata.layers["counts_log1p"] = np.log1p(counts_adata.layers["counts"])
+    pca(counts_adata, **kwargs)
+
+    np.testing.assert_allclose(counts_adata.varm["PCs"], fresh.varm["PCs"])
+
+
+def test_reference_batch_highly_variable_custom_counts_layer(counts_adata: AnnData):
+    counts_adata.layers["raw"] = counts_adata.layers.pop("counts")
+    pca(
+        counts_adata,
+        n_comps=3,
+        mask_var="highly_variable",
+        batch_key="batch",
+        reference_batch="ref",
+        counts_layer="raw",
+    )
+    assert counts_adata.uns["pca"]["reference_batch"] == "ref"
+
+
+def test_reference_batch_highly_variable_missing_counts_layer_raises(adata: AnnData):
+    adata.var["highly_variable"] = True
+    with pytest.raises(ValueError, match="counts_layer"):
+        pca(
+            adata,
+            n_comps=3,
+            mask_var="highly_variable",
+            batch_key="batch",
+            reference_batch="ref",
+        )
+
+
+def test_counts_layer_not_needed_without_reference_batch(adata: AnnData):
+    adata.var["highly_variable"] = True
+    pca(adata, n_comps=3, mask_var="highly_variable")
+    assert adata.obsm["X_pca"].shape == (N_OBS, 3)

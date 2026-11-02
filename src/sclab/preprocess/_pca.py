@@ -9,6 +9,7 @@ def pca(
     batch_key: str | None = None,
     reference_batch: str | None = None,
     zero_center: bool = False,
+    counts_layer: str = "counts",
 ):
     """Compute principal components and project all cells onto the PCA space.
 
@@ -38,6 +39,15 @@ def pca(
     zero_center : bool, optional
         If True, subtract the mean of the PC coordinates so that the
         embedding is centred at the origin. Default is False.
+    counts_layer : str, optional
+        Layer with raw counts. Only used when ``reference_batch`` is set and
+        ``mask_var="highly_variable"``: highly variable genes are then
+        recomputed on the reference cells as the union of the ``seurat``
+        flavor (on ``log1p`` of the counts, taken from the layer
+        ``"{counts_layer}_log1p"`` if present, else computed on the fly) and
+        the ``seurat_v3_paper`` flavor (on the counts). Raises ``ValueError``
+        if the layer is missing. ``layer`` remains the input to PCA. Default
+        is ``"counts"``.
 
     Returns
     -------
@@ -64,13 +74,21 @@ def pca(
         obs_mask = adata.obs[batch_key] == reference_batch
         adata_ref = adata[obs_mask].copy()
         if mask_var == "highly_variable":
-            sc.pp.highly_variable_genes(
-                adata_ref, layer=f"{layer if layer else 'X'}_log1p", flavor="seurat"
-            )
+            if counts_layer not in adata_ref.layers:
+                raise ValueError(
+                    f"counts_layer {counts_layer!r} not found in adata.layers; it is "
+                    "required to recompute highly variable genes on the reference batch."
+                )
+            log1p_layer = f"{counts_layer}_log1p"
+            if log1p_layer not in adata_ref.layers:  # adata_ref is a copy
+                adata_ref.layers[log1p_layer] = sc.pp.log1p(
+                    adata_ref.layers[counts_layer].copy()
+                )
+            sc.pp.highly_variable_genes(adata_ref, layer=log1p_layer, flavor="seurat")
             hvg_seurat = adata_ref.var["highly_variable"]
             sc.pp.highly_variable_genes(
                 adata_ref,
-                layer=layer,
+                layer=counts_layer,
                 flavor="seurat_v3_paper",
                 n_top_genes=hvg_seurat.sum(),
             )
