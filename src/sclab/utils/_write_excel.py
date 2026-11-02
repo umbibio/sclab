@@ -39,8 +39,9 @@ def write_excel(
     sortby : str or None, optional
         Column name to sort the data by. If specified, applies 3-color scale conditional formatting
         to the sorted column. Default is None.
-    sort_ascending : bool, optional
-        Sort order when sortby is specified. Default is True.
+    sort_ascending : bool or list[bool], optional
+        Sort order when sortby is specified. A single bool applies to every sortby column;
+        a list must match the length of sortby. Default is True.
     autofilter : bool, optional
         Whether to add filter buttons to column headers. Default is True.
     guess_formats : bool, optional
@@ -79,6 +80,12 @@ def write_excel(
     if not isinstance(sort_ascending, list):
         sort_ascending = [sort_ascending]
 
+    if len(sort_ascending) == 1:
+        sort_ascending = sort_ascending * len(sortby)
+
+    if len(sort_ascending) != len(sortby):
+        raise ValueError("sort_ascending must be a bool or match the length of sortby")
+
     if column_formats is None:
         column_formats = {}
     else:
@@ -102,11 +109,9 @@ def write_excel(
         for sheet_name, df in dataframes.items():
             df = df.reset_index()
 
-            _sortby = [c for c in sortby if c in df.columns]
-            _sort_ascending = [a for a in sort_ascending if a]
-            if not _sort_ascending:
-                _sort_ascending = True
-            if _sortby:
+            pairs = [(c, a) for c, a in zip(sortby, sort_ascending) if c in df.columns]
+            if pairs:
+                _sortby, _sort_ascending = map(list, zip(*pairs))
                 df = df.sort_values(by=_sortby, ascending=_sort_ascending)
 
             df.to_excel(

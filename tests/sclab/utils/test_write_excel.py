@@ -433,19 +433,10 @@ class TestWriteExcel:
         )
         assert fake_excel.last.frames["Sheet1"]["count"].tolist() == [1, 2, 3]
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: sort_ascending=False is dropped by `[a for a in sort_ascending if a]`, "
-        "so sorting is always ascending",
-    )
     def test_sort_descending(self, fake_excel, df, tmp_path):
         write_excel(df, tmp_path / "o.xlsx", sortby="count", sort_ascending=False)
         assert fake_excel.last.frames["Sheet1"]["count"].tolist() == [3, 2, 1]
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: per-column sort_ascending list loses its False entries",
-    )
     def test_sort_mixed_directions(self, fake_excel, tmp_path):
         d = pd.DataFrame({"a": [1, 1, 2, 2], "b": [1, 2, 1, 2]})
         write_excel(
@@ -453,6 +444,23 @@ class TestWriteExcel:
         )
         out = fake_excel.last.frames["Sheet1"]
         assert out[["a", "b"]].values.tolist() == [[1, 2], [1, 1], [2, 2], [2, 1]]
+
+    def test_missing_sort_column_keeps_flags_aligned(self, fake_excel, tmp_path):
+        d = pd.DataFrame({"a": [1, 1, 2, 2], "b": [1, 2, 1, 2]})
+        write_excel(
+            d,
+            tmp_path / "o.xlsx",
+            sortby=["missing", "a", "b"],
+            sort_ascending=[True, False, True],
+        )
+        out = fake_excel.last.frames["Sheet1"]
+        assert out[["a", "b"]].values.tolist() == [[2, 1], [2, 2], [1, 1], [1, 2]]
+
+    def test_sort_ascending_length_mismatch_raises(self, fake_excel, df, tmp_path):
+        with pytest.raises(ValueError, match="sort_ascending must be a bool"):
+            write_excel(
+                df, tmp_path / "o.xlsx", sortby=["count"], sort_ascending=[True, False]
+            )
 
     def test_verbose_prints_table(self, fake_excel, df, tmp_path, capsys):
         write_excel(df, tmp_path / "o.xlsx", verbose=True)
