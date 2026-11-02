@@ -80,11 +80,6 @@ def test_assign_numerical_periodic_wraps_around_boundary():
     assert 0.0 <= mean < 1.0
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: _assign_numerical_periodic centers on the median, which fails "
-    "when points straddle the wrap boundary (returns the antipode)",
-)
 @pytest.mark.parametrize("pair", [(0.95, 0.05), (0.95, 0.10)])
 def test_assign_numerical_periodic_two_points_straddling_boundary(pair):
     mean, _ = _assign_numerical_periodic(
@@ -94,6 +89,20 @@ def test_assign_numerical_periodic_two_points_straddling_boundary(pair):
     expected = (pair[0] + (pair[1] + 1 - pair[0]) / 2) % 1.0  # 0.0 and 0.025
     d = abs(mean - expected) % 1.0
     assert min(d, 1 - d) < 1e-9
+
+
+def test_assign_numerical_periodic_balanced_straddle():
+    values = pd.Series([0.90, 0.95, 0.02, 0.05])
+    mean, _ = _assign_numerical_periodic(values, np.ones(4), vmin=0.0, vmax=1.0)
+
+    assert mean == pytest.approx(0.98, abs=1e-2)
+
+
+def test_assign_numerical_periodic_uniform_spread_is_nan():
+    values = pd.Series([0.0, 0.25, 0.5, 0.75])
+    mean, err = _assign_numerical_periodic(values, np.ones(4), vmin=0.0, vmax=1.0)
+
+    assert np.isnan(mean) and np.isnan(err)
 
 
 # ---------------------------------------------------------------------------

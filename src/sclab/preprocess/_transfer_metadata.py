@@ -268,7 +268,15 @@ def _assign_numerical_periodic(
     vspan = vmax - vmin
 
     values = values - vmin
-    offset = np.median(values)
+
+    # weighted circular mean as the center; the median fails across the wrap
+    theta = 2 * np.pi * np.asarray(values, dtype=float) / vspan
+    sin_w = (weights * np.sin(theta)).sum()
+    cos_w = (weights * np.cos(theta)).sum()
+    if np.hypot(sin_w, cos_w) / weights.sum() < 1e-12:
+        return np.nan, np.nan  # no preferred direction
+    offset = np.arctan2(sin_w, cos_w) * vspan / (2 * np.pi)
+
     values = values - offset + vspan / 2
     values = values % vspan
     assigned_value, assigned_value_err = _assign_numerical(values, weights)
