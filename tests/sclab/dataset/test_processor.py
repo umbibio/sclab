@@ -411,17 +411,31 @@ class TestSelectionControls:
         proc._make_selection_controls()
         assert "dt" not in proc.selection_controls_dict
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: _processor.py remove_column_selection_control calls "
-        "all_controls_list.remove(control) but selection controls live in "
-        "selection_controls_list -> ValueError when an obs column disappears",
-    )
     def test_removed_obs_column_removes_control(self, proc, dash):
         del dash.dataset.adata.obs["num_i"]
         proc._make_selection_controls()
         assert "num_i" not in proc.selection_controls_dict
         assert all(c.description != "num_i" for c in proc.selection_controls_list)
+
+    def test_removed_column_keeps_other_filters(self, proc, dash):
+        c = proc.selection_controls_dict
+        c["num_i"].value = (5, 9)
+        c["cat"].value = ("a",)
+        n = len(dash.broker.exceptions_log)
+        proc.remove_column_selection_control("num_i")
+        assert "num_i" not in c
+        assert dash.dataset.selected_rows.tolist() == [
+            f"c{i:02d}" for i in range(0, 40, 4)
+        ]
+        assert dash.broker.exceptions_log[n:] == []
+
+    def test_removed_only_active_column_clears_selection(self, proc, dash):
+        proc.selection_controls_dict["num_i"].value = (5, 9)
+        n = len(dash.broker.exceptions_log)
+        del dash.dataset.adata.obs["num_i"]
+        proc._make_selection_controls()
+        assert dash.dataset._selected_rows is None
+        assert dash.broker.exceptions_log[n:] == []
 
 
 # --------------------------------------------------------------------------

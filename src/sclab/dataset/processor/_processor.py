@@ -354,7 +354,7 @@ class Processor(EventClient):
             else:
                 self.add_column_selection_control(column)
 
-        for column in self.selection_controls_dict.keys():
+        for column in list(self.selection_controls_dict):
             if column not in self.dataset.metadata.columns:
                 self.remove_column_selection_control(column)
 
@@ -741,8 +741,17 @@ class Processor(EventClient):
             return
 
         control = self.selection_controls_dict.pop(column)
-        self.all_controls_list.remove(control)
+        self.selection_controls_list.remove(control)
+        if isinstance(control, SelectMultiple):
+            was_filtering = bool(control.value)
+        else:
+            was_filtering = control.value[1] > control.value[0]
+        control.close()
         self._make_selection_controls_container()
+
+        if was_filtering:
+            # called directly: publishing is disabled while dset_metadata_change runs
+            self.dspr_selection_values_change_callback(column, None)
 
     def append_to_step_history(self, step_description: str, params: dict):
         params_ = {}
