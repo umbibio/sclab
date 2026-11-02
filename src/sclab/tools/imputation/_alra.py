@@ -24,38 +24,25 @@ def _alra_on_ndarray(
     data_alra : NDArray
         Imputed data.
     """
-    # import anndata2ri
     import rpy2.robjects as robjects
-    import rpy2.robjects.numpy2ri
-
-    # from rpy2.robjects.conversion import localconverter
+    from rpy2.robjects import numpy2ri
+    from rpy2.robjects.conversion import localconverter
     from rpy2.robjects.packages import importr
 
-    rpy2.robjects.numpy2ri.activate()
     R = robjects.r
     alra = importr("ALRA")
 
     if issparse(data):
         data = np.ascontiguousarray(data.todense("C"), dtype=np.float32)
 
-    # with localconverter(anndata2ri.converter):
-    #     # convert to R object
-    #     r_X = R.matrix(data, nrow=data.shape[0], ncol=data.shape[1])
-    #     # run ALRA
-    #     r_res = alra.alra(r_X, 0, 10, 0.001)
-
-    # convert to R object
-    r_X = R.matrix(data, nrow=data.shape[0], ncol=data.shape[1])
-    # run ALRA
-    r_res = alra.alra(r_X, 0, 10, 0.001)
-    # retrieve imputed data
-    r_K = r_res[0]  # rank k
-    r_T = r_res[1]  # rank k thresholded
-    r_S = r_res[2]  # rank k thresholded scaled
-    # convert back to numpy array
-    data_aprx = np.array(r_K, dtype=float32)
-    data_thrs = np.array(r_T, dtype=float32)
-    data_alra = np.array(r_S, dtype=float32)
+    with localconverter(robjects.default_converter + numpy2ri.converter):
+        r_X = R.matrix(data, nrow=data.shape[0], ncol=data.shape[1])
+        r_res = alra.alra(r_X, 0, 10, 0.001)
+        # rank k, rank k thresholded, rank k thresholded scaled
+        r_K, r_T, r_S = r_res[0], r_res[1], r_res[2]
+        data_aprx = np.array(r_K, dtype=float32)
+        data_thrs = np.array(r_T, dtype=float32)
+        data_alra = np.array(r_S, dtype=float32)
 
     # clean up
     del (r_X, r_res, r_K, r_T, r_S)

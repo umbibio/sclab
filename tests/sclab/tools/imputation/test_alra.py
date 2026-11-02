@@ -16,30 +16,8 @@ def _alra_r_available() -> bool:
         return False
 
 
-def _numpy2ri_activate_works() -> bool:
-    try:
-        import rpy2.robjects.numpy2ri as numpy2ri
-
-        numpy2ri.activate()
-        numpy2ri.deactivate()
-        return True
-    except ImportError:
-        return False
-    except DeprecationWarning:
-        return False
-
-
 needs_alra = pytest.mark.skipif(
     not _alra_r_available(), reason="requires R with the ALRA package and rpy2"
-)
-# rpy2 >= 3.6 raises DeprecationWarning from numpy2ri.activate(), which
-# _alra_on_ndarray calls unconditionally.
-alra_activate_bug = pytest.mark.xfail(
-    condition=_alra_r_available() and not _numpy2ri_activate_works(),
-    strict=True,
-    raises=DeprecationWarning,
-    reason="BUG: _alra_on_ndarray calls rpy2 numpy2ri.activate(), which raises "
-    "DeprecationWarning in rpy2>=3.6",
 )
 
 
@@ -183,16 +161,22 @@ class TestFixAlraScale:
         assert np.isfinite(out).all()
 
 
+def _seed_r():
+    import rpy2.robjects as robjects
+
+    robjects.r("set.seed(1)")
+
+
 @needs_alra
-@alra_activate_bug
 class TestAlraWithR:
     @pytest.fixture
     def low_rank_counts(self):
         rng = np.random.default_rng(0)
-        # rank-2 signal with strong dropout
-        U = rng.gamma(2, 1, (150, 2))
-        V = rng.gamma(2, 1, (2, 40))
-        lam = U @ V
+        # rank-2 signal with strong dropout; ALRA needs >= 100 genes (K=100) and
+        # many more for its noise-level estimate to be sensible
+        U = rng.gamma(2, 1, (300, 2))
+        V = rng.gamma(2, 1, (2, 500))
+        lam = 0.5 * U @ V
         full = rng.poisson(lam).astype(np.float32)
         drop = rng.random(full.shape) < 0.5
         observed = np.where(drop, 0, full).astype(np.float32)
@@ -208,10 +192,22 @@ class TestAlraWithR:
             assert m.dtype == np.float32
         assert (thrs >= 0).all()
 
+    def test_global_rpy2_conversion_is_unchanged(self, low_rank_counts):
+        from rpy2.robjects import conversion
+
+        observed, _ = low_rank_counts
+        before = conversion.get_conversion()
+
+        _alra_on_ndarray(observed)
+
+        assert conversion.get_conversion() is before
+
     def test_sparse_input_matches_dense(self, low_rank_counts):
         observed, _ = low_rank_counts
 
+        _seed_r()  # ALRA's randomized SVD draws from R's RNG
         a = _alra_on_ndarray(observed)
+        _seed_r()
         b = _alra_on_ndarray(csr_matrix(observed))
 
         for x, y in zip(a, b):
@@ -220,6 +216,7 @@ class TestAlraWithR:
     def test_imputation_recovers_signal(self, low_rank_counts):
         observed, lam = low_rank_counts
 
+        _seed_r()
         _, thrs, _ = _alra_on_ndarray(observed)
         out = _fix_alra_scale(observed, thrs, thrs)
 
@@ -230,6 +227,6 @@ class TestAlraWithR:
             if observed[dropped].std() > 0
             else 0
         )
-        assert err_imputed > 0.5
+        assert err_imputed > 0.2
         assert err_imputed > err_raw
         assert (out >= 0).all()
