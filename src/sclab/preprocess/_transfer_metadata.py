@@ -21,6 +21,7 @@ def transfer_metadata(
     vmin: float = 0,
     vmax: float = 1,
     min_neighs: int = 5,
+    max_distance: float | None = None,
     weight_by: Literal["connectivity", "distance", "constant"] = "connectivity",
 ):
     """Transfer a metadata column from a source group to the rest of the cells.
@@ -53,6 +54,11 @@ def transfer_metadata(
     min_neighs : int, optional
         Minimum number of labeled neighbors required to assign a value.
         Cells with fewer labeled neighbors are left as NaN. Default is 5.
+    max_distance : float or None, optional
+        Neighbors at distance ``>= max_distance`` (from
+        ``adata.obsp["distances"]``) are ignored. They do not count toward
+        ``min_neighs``, so cells left with fewer than ``min_neighs`` usable
+        neighbors stay unassigned. Default is None (no cutoff).
     weight_by : {"connectivity", "distance", "constant"}, optional
         How to weight neighbors when aggregating values. ``"connectivity"``
         uses the connectivity matrix; ``"distance"`` uses inverse distances;
@@ -73,6 +79,7 @@ def transfer_metadata(
         vmin=vmin,
         vmax=vmax,
         min_neighs=min_neighs,
+        max_distance=max_distance,
         weight_by=weight_by,
         mask=adata.obs[group_key] != source_group,
     )
@@ -88,6 +95,7 @@ def propagate_metadata(
     vmin: float = 0,
     vmax: float = 1,
     min_neighs: int = 5,
+    max_distance: float | None = None,
     weight_by: Literal["connectivity", "distance", "constant"] = "connectivity",
 ):
     """Fill missing values in a metadata column by propagation through the neighbor graph.
@@ -113,6 +121,11 @@ def propagate_metadata(
     min_neighs : int, optional
         Minimum number of labeled neighbors required to assign a value.
         Default is 5.
+    max_distance : float or None, optional
+        Neighbors at distance ``>= max_distance`` (from
+        ``adata.obsp["distances"]``) are ignored. They do not count toward
+        ``min_neighs``, so cells left with fewer than ``min_neighs`` usable
+        neighbors stay unassigned. Default is None (no cutoff).
     weight_by : {"connectivity", "distance", "constant"}, optional
         Neighbor weighting scheme. Default is ``"connectivity"``.
 
@@ -130,6 +143,7 @@ def propagate_metadata(
         vmin=vmin,
         vmax=vmax,
         min_neighs=min_neighs,
+        max_distance=max_distance,
         weight_by=weight_by,
     )
 
@@ -145,6 +159,7 @@ def _propagate_metadata(
     vmin: float = 0,
     vmax: float = 1,
     min_neighs: int = 5,
+    max_distance: float | None = None,
     weight_by: Literal["connectivity", "distance", "constant"] = "connectivity",
     mask: np.ndarray | pd.Series | None = None,
 ) -> tuple[pd.Series, pd.Series]:
@@ -185,6 +200,8 @@ def _propagate_metadata(
 
         values: pd.Series = meta_values.iloc[neighs]
         msk = pd.notna(values)
+        if max_distance is not None:
+            msk = msk & (d.data < max_distance)
         if msk.sum() < min_neighs:
             continue
 
@@ -245,14 +262,14 @@ def _assign_numerical(values: pd.Series, weights: NDArray):
     if sum_w == 0:
         return np.nan, np.nan
 
-    sum2_w: float = sum_w ** 2
+    sum2_w: float = sum_w**2
     sum_w2: float = (weights**2).sum()
     n_eff: float = sum2_w / sum_w2
 
     mean_x: float = (values * weights).sum() / sum_w
 
     var_denom = sum2_w - sum_w2
-    
+
     # If effective sample size is 1, variance is undefined (denominator is 0)
     # We use <= 0 to handle potential floating point inaccuracies
     if var_denom <= 0:

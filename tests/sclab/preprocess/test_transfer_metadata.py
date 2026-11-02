@@ -284,6 +284,32 @@ def test_transfer_with_scanpy_neighbors_graph():
     assert (adata.obs["transferred_cluster_proportion"].dropna() == 1.0).all()
 
 
+def test_transfer_max_distance_excludes_far_neighbors(adata: AnnData):
+    # cell 3 neighbor distances are 1, 2, 4; cutoff 3 drops cell 2 (value 4)
+    transfer_metadata(
+        adata, "group", "s", "num", min_neighs=2, max_distance=3.0, weight_by="constant"
+    )
+
+    assert adata.obs["transferred_num"].iloc[3] == pytest.approx(1.5)
+
+
+def test_transfer_max_distance_is_exclusive(adata: AnnData):
+    transfer_metadata(
+        adata, "group", "s", "num", min_neighs=3, max_distance=4.0, weight_by="constant"
+    )
+    assert np.isnan(adata.obs["transferred_num"].iloc[3])  # d == 4 is dropped
+
+
+def test_transfer_max_distance_counts_toward_min_neighs(adata: AnnData):
+    transfer_metadata(adata, "group", "s", "num", min_neighs=3, max_distance=3.0)
+    assert np.isnan(adata.obs["transferred_num"].iloc[3])  # 2 usable < 3
+
+
+def test_transfer_max_distance_none_keeps_results(adata: AnnData):
+    transfer_metadata(adata, "group", "s", "num", min_neighs=2, max_distance=None)
+    assert adata.obs["transferred_num"].iloc[3] == pytest.approx(2.75)
+
+
 # ---------------------------------------------------------------------------
 # propagate_metadata
 # ---------------------------------------------------------------------------
@@ -359,3 +385,20 @@ def test_propagate_unsupported_dtype_raises(adata: AnnData):
 def test_propagate_unknown_column_raises(adata: AnnData):
     with pytest.raises(KeyError):
         propagate_metadata(adata, "missing")
+
+
+def test_propagate_max_distance_excludes_far_neighbors(adata: AnnData):
+    propagate_metadata(
+        adata, "num", min_neighs=2, max_distance=3.0, weight_by="constant"
+    )
+    assert adata.obs["num"].iloc[3] == pytest.approx(1.5)
+
+
+def test_propagate_max_distance_leaves_nan_below_min_neighs(adata: AnnData):
+    propagate_metadata(adata, "num", min_neighs=3, max_distance=3.0)
+    assert adata.obs["num"].iloc[3:].isna().all()
+
+
+def test_propagate_max_distance_none_keeps_results(adata: AnnData):
+    propagate_metadata(adata, "num", min_neighs=2, max_distance=None)
+    assert adata.obs["num"].iloc[3] == pytest.approx(2.75)
