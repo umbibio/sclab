@@ -87,6 +87,15 @@ def pseudobulk_limma(
         - ``B`` — log-odds of differential expression.
         - ``pct_expr_cnd`` / ``pct_expr_ref`` — fraction of expressing
           cells in condition/reference group.
+
+    Notes
+    -----
+    When ``replicas_per_group=1`` (or when the aggregated data contains only
+    one sample per group), the ``replica`` covariate is automatically dropped
+    from the design matrix. Variance estimation then relies entirely on
+    limma's empirical-Bayes shrinkage across genes. This is valid but less
+    powerful than a multi-replicate design; results should be interpreted
+    with additional caution.
     """
     _try_imports()
     import anndata2ri
@@ -245,10 +254,16 @@ fit_limma_model <- function(adata, group_key, cell_identity_key = "None", verbos
     }
 
     group   <- factor(group)
-    replica <- factor(colData(adata)$replica)
 
-    # create a design matrix
-    design <- model.matrix(~ 0 + group + replica)
+    # create a design matrix; the replica term is not estimable with a single replica
+    has_replica <- ("replica" %in% colnames(colData(adata))) && (length(unique(colData(adata)$replica)) > 1)
+    if (has_replica){
+        replica <- factor(colData(adata)$replica)
+        design <- model.matrix(~ 0 + group + replica)
+    } else {
+        if (verbosity > 0) cat("Single replicate detected - dropping replica term from design.\\n")
+        design <- model.matrix(~ 0 + group)
+    }
     colnames(design) <- make.names(colnames(design))
 
     # create an edgeR object with counts and grouping factor

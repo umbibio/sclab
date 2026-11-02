@@ -85,6 +85,15 @@ def pseudobulk_edger(
             Percentage of cells in condition group expressing the gene.
         * pct_expr_ref : float
             Percentage of cells in reference group expressing the gene.
+
+    Notes
+    -----
+    When ``replicas_per_group=1`` (or when the aggregated data contains only
+    one sample per group), the ``replica`` covariate is automatically dropped
+    from the design matrix. Variance estimation then relies entirely on
+    edgeR's quasi-likelihood shrinkage across genes. This is valid but less
+    powerful than a multi-replicate design; results should be interpreted
+    with additional caution.
     """
     _try_imports()
     import anndata2ri  # noqa: F401
@@ -241,10 +250,16 @@ fit_edger_model <- function(adata_, group_key, cell_identity_key = "None", verbo
     }
 
     group   <- factor(group)
-    replica <- factor(colData(adata_)$replica)
 
-    # create a design matrix
-    design <- model.matrix(~ 0 + group + replica)
+    # create a design matrix; the replica term is not estimable with a single replica
+    has_replica <- ("replica" %in% colnames(colData(adata_))) && (length(unique(colData(adata_)$replica)) > 1)
+    if (has_replica){
+        replica <- factor(colData(adata_)$replica)
+        design <- model.matrix(~ 0 + group + replica)
+    } else {
+        if (verbosity > 0) cat("Single replicate detected - dropping replica term from design.\\n")
+        design <- model.matrix(~ 0 + group)
+    }
     colnames(design) <- make.names(colnames(design))
 
     # create an edgeR object with counts and grouping factor

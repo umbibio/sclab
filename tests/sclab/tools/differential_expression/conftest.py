@@ -39,3 +39,20 @@ def r_counts_adata() -> AnnData:
     """
     random.seed(0)  # aggregate_and_filter shuffles cells into replicas
     return _make_counts_adata(200)
+
+
+@pytest.fixture
+def r_three_group_adata() -> AnnData:
+    """Three conditions, 200 genes; genes 0-1 up in A.
+
+    With one replica per group, "A vs rest" has three samples and two
+    coefficients, so one residual degree of freedom remains.
+    """
+    random.seed(0)
+    rng = np.random.default_rng(0)
+    cond = np.repeat(["A", "B", "C"], 45)
+    mu = np.full((cond.size, 200), 5.0)
+    mu[cond == "A", :2] = 20.0
+    obs = pd.DataFrame({"cond": cond}, index=[f"c{i}" for i in range(cond.size)])
+    var = pd.DataFrame(index=[f"gene{i}" for i in range(200)])
+    return AnnData(csr_matrix(rng.poisson(mu).astype(float)), obs=obs, var=var)

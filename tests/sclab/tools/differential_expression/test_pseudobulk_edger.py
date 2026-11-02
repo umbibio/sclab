@@ -1,3 +1,4 @@
+import numpy as np
 import pytest
 
 from sclab.tools.differential_expression import (
@@ -284,3 +285,17 @@ class TestWithR:
         assert "ctype:x|A_vs_rest" in res
         tt = res["ctype:x|A_vs_rest"]
         assert tt.loc["gene0", "logFC"] > 0
+
+    def test_single_replicate_drops_replica_term(self, r_three_group_adata):
+        res = pseudobulk_edger(
+            r_three_group_adata,
+            "cond",
+            condition_group="A",
+            replicas_per_group=1,
+            min_cells_per_group=10,
+            verbosity=2,  # also exercises the R-side cat() calls
+        )
+
+        tt = res["A_vs_rest"]
+        assert np.isfinite(tt["PValue"]).all()
+        assert set(tt.sort_values("PValue").index[:2]) == {"gene0", "gene1"}
