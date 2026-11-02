@@ -112,18 +112,16 @@ def pool_neighbors(
     if copy:
         return pooled
 
-    if key_added is not None:
-        adata.layers[key_added] = pooled
-        return
+    name = key_added if key_added is not None else f"{key}_pooled"
 
     if key_type == "X":
-        adata.layers[f"{key}_pooled"] = pooled
+        adata.layers[name] = pooled
 
     elif key_type == "obsm":
-        adata.obsm[f"{key}_pooled"] = pooled
+        adata.obsm[name] = pooled
 
     elif key_type == "obs":
-        adata.obs[[f"{key}_pooled"]] = pooled
+        adata.obs[[name]] = pooled
 
 
 def periodic_pooling(W: spmatrix, X: ndarray, xmin: float, xmax: float) -> ndarray:

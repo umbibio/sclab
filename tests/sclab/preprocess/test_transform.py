@@ -120,17 +120,23 @@ def test_pool_neighbors_key_added():
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: key_added always writes to adata.layers, even for obsm keys "
-    "whose width differs from n_vars",
-)
 def test_pool_neighbors_key_added_with_obsm_key():
     adata = chain_adata([1.0, 2.0, 4.0])
     adata.obsm["X_emb"] = np.eye(3)[:, :2]
     pool_neighbors(adata, key="X_emb", key_added="custom")
 
     assert "custom" in adata.obsm
+    assert "custom" not in adata.layers
+
+
+def test_pool_neighbors_key_added_with_obs_key():
+    adata = chain_adata([1.0, 2.0, 4.0])
+    adata.obs["score"] = [1.0, 2.0, 4.0]
+    pool_neighbors(adata, key="score", key_added="custom")
+
+    assert "custom" in adata.obs
+    assert "custom" not in adata.layers
+    np.testing.assert_allclose(adata.obs["custom"], [1.5, 7 / 3, 3.0])
 
 
 def test_pool_neighbors_copy_returns_without_writing():
