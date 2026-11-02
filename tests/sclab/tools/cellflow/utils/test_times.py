@@ -69,3 +69,19 @@ class TestGuessTrange:
             span = hi - lo
             assert abs(tmin - lo) <= 0.02 * span
             assert abs(tmax - hi) <= 0.02 * span
+
+    @pytest.mark.parametrize("s1", [0.001, 0.01, 0.1, 1, 10, 100, 1000])
+    @pytest.mark.parametrize("s2", [1, 2, 3, 5, 7])
+    @pytest.mark.parametrize("lw, hg", [(-2, -1), (-0.5, 0.5), (1, 2)])
+    def test_range_recovered_across_scales(self, s1, s2, lw, hg):
+        # moved from the in-package test_guess_trange sweep (fewer repeats, seeded)
+        rng = np.random.default_rng(0)
+        lo, hi = lw * s1 * s2, hg * s1 * s2
+        span = hi - lo
+        hits = []
+        for _ in range(20):
+            g_min, g_max = guess_trange(rng.uniform(lo, hi, 1000))
+            hits.append(
+                abs(g_min - lo) <= 0.01 * span and abs(g_max - hi) <= 0.01 * span
+            )
+        assert np.mean(hits) > 0.95

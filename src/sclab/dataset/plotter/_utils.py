@@ -391,18 +391,3 @@ def rotate_multiple_steps(
 
     X.columns = colnames
     return X
-
-
-def rotate_and_project_traces(
-    X: pd.DataFrame,
-    figure_data: list[go.Scatter | go.Scattergl | go.Scatter3d],
-    alpha: float,
-    beta: float,
-    gamma: float,
-):
-    X = (Rxyz(alpha, beta, gamma) @ X.T).T
-    for trace in figure_data:
-        marker_ids = trace.hovertext
-        if not isinstance(marker_ids, np.ndarray | list):
-            continue
-        trace.x, trace.y = X.loc[marker_ids].values[:, :2].T

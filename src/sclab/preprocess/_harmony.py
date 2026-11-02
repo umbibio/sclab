@@ -229,7 +229,7 @@ class Harmony(object):
             random_state=random_state,
         )
         model.fit(data)
-        km_centroids, km_labels = model.cluster_centers_, model.labels_
+        km_centroids = model.cluster_centers_
         logger.info("sklearn.KMeans initialization complete.")
         return km_centroids
 
@@ -363,7 +363,7 @@ class Harmony(object):
             for i in range(self.window_size):
                 obj_old += self.objective_kmeans[okl - 2 - i]
                 obj_new += self.objective_kmeans[okl - 1 - i]
-            if (score := (abs(obj_old - obj_new) / abs(obj_old))) < self.epsilon_kmeans:
+            if abs(obj_old - obj_new) / abs(obj_old) < self.epsilon_kmeans:
                 return True
             # logger.info("Score: {} >= {}".format(score, self.epsilon_kmeans))
             return False
@@ -371,9 +371,7 @@ class Harmony(object):
         if i_type == 1:
             obj_old = self.objective_harmony[-2]
             obj_new = self.objective_harmony[-1]
-            if (
-                score := (abs(obj_old - obj_new) / abs(obj_old))
-            ) < self.epsilon_harmony:
+            if abs(obj_old - obj_new) / abs(obj_old) < self.epsilon_harmony:
                 # logger.info("Score: {} >= {}".format(score, self.epsilon_harmony))
                 return True
             # logger.info("Score: {} >= {}".format(score, self.epsilon_harmony))

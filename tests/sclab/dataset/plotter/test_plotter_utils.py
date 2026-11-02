@@ -14,7 +14,6 @@ from sclab.dataset.plotter._utils import (
     _get_color_sequence,
     _make_density_heatmap,
     make_periodic_smoothing_spline,
-    rotate_and_project_traces,
     rotate_multiple_steps,
     rotate_xyz,
 )
@@ -115,47 +114,6 @@ class TestRotateMultipleSteps:
     def test_empty_string_is_identity(self, X3):
         out = rotate_multiple_steps(X3, "")
         np.testing.assert_allclose(out.values, X3.values)
-
-
-class TestRotateAndProjectTraces:
-    def test_updates_xy_per_trace_by_hovertext(self, X3):
-        t1 = go.Scatter(x=[0, 0], y=[0, 0], hovertext=np.array(["u", "w"]))
-        t2 = go.Scatter(x=[0], y=[0], hovertext=np.array(["z"]))
-        rotate_and_project_traces(X3, [t1, t2], 20, 30, 40)
-        full = (Rxyz(20, 30, 40) @ X3.values.T).T
-        np.testing.assert_allclose(t1.x, full[[0, 2], 0])
-        np.testing.assert_allclose(t1.y, full[[0, 2], 1])
-        np.testing.assert_allclose(t2.x, full[[5], 0])
-        np.testing.assert_allclose(t2.y, full[[5], 1])
-
-    def test_traces_without_hovertext_ids_are_untouched(self, X3):
-        t = go.Scatter(x=[1, 2], y=[3, 4], hovertext="single string")
-        rotate_and_project_traces(X3, [t], 20, 30, 40)
-        assert list(t.x) == [1, 2] and list(t.y) == [3, 4]
-        t = go.Scatter(x=[1, 2], y=[3, 4])
-        rotate_and_project_traces(X3, [t], 20, 30, 40)
-        assert list(t.x) == [1, 2]
-
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: plotly stores list hovertext as tuple; "
-        "`isinstance(marker_ids, np.ndarray | list)` skips such traces",
-    )
-    def test_list_hovertext_is_supported(self, X3):
-        t = go.Scatter(x=[0, 0], y=[0, 0], hovertext=["u", "w"])
-        rotate_and_project_traces(X3, [t], 20, 30, 40)
-        assert list(t.x) != [0, 0]
-
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG (unused function): (Rxyz @ X.T).T == X @ Rxyz.T, i.e. the inverse "
-        "rotation of rotate_xyz/rotate_multiple_steps",
-    )
-    def test_same_rotation_convention_as_rotate_xyz(self, X3):
-        t = go.Scatter(x=[0] * 6, y=[0] * 6, hovertext=np.array(list(X3.index)))
-        rotate_and_project_traces(X3, [t], 20, 30, 40)
-        expected = rotate_xyz(X3, 20, 30, 40).values[:, :2]
-        np.testing.assert_allclose(np.c_[t.x, t.y], expected)
 
 
 # --------------------------------------------------------------------------
