@@ -335,18 +335,19 @@ class TestSelectionControls:
         proc.selection_controls_dict["cat"].value = ()
         assert dash.dataset._selected_rows is None
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="BUG: _processor.py dspr_selection_values_change_callback ignores a later "
-        "control whose subset is empty (`elif not subset.empty`), so AND-ing a "
-        "satisfiable control with an unsatisfiable one still returns the first's rows",
-    )
     def test_empty_later_subset_empties_selection(self, proc, dash):
         proc.selection_controls_dict["cat"].value = ("a",)
         assert len(dash.dataset.selected_rows) == 10
         # num_f takes values k * 10/39 = 0, 0.256, ...: nothing lies in (0.05, 0.2)
         proc.selection_controls_dict["num_f"].value = (0.05, 0.2)
         assert len(dash.dataset.selected_rows) == 0
+
+    def test_empty_first_subset_empties_selection(self, proc, dash):
+        # num_f precedes cat in control order: an empty earlier result must stay empty
+        proc.selection_controls_dict["num_f"].value = (0.05, 0.2)
+        proc.selection_controls_dict["cat"].value = ("a",)
+        assert len(dash.dataset.selected_rows) == 0
+        assert dash.dataset._selected_rows is not None
 
     def test_clear_selection_resets_controls(self, proc, dash):
         c = proc.selection_controls_dict

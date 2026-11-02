@@ -892,41 +892,31 @@ class Processor(EventClient):
 
     def dspr_selection_values_change_callback(self, column_changed: str, new_value):
         row_names = self.dataset.metadata.index
-        selected_rows = pd.Index([])
-
-        # we will check if we intended to make a selection
-        selection_attempted = False
+        # None means no active control; an empty Index means active but nothing matched
+        selected_rows = None
         for column, value in self.selection_values.items():
             series = self.dataset.metadata[column]
-            subset = pd.Index([])
+            subset = None
 
             if is_numeric_dtype(series) and not is_bool_dtype(series):
                 # this must be a range slider with value = tuple(min, max)
                 min_value, max_value = value
                 if max_value > min_value:
                     subset = row_names[(series >= min_value) & (series <= max_value)]
-                    selection_attempted = True
 
             elif value:
                 # this must be a select multiple with value = tuple(selected_values)
                 subset = row_names[series.isin(value)]
-                selection_attempted = True
 
+            if subset is None:
+                continue
+
+            selected_rows = (
+                subset if selected_rows is None else selected_rows.intersection(subset)
+            )
             if selected_rows.empty:
-                # we found the first non-empty subset, initialize selected_rows
-                selected_rows = subset
+                break
 
-            elif not subset.empty:
-                # we found another non-empty subset, intersect with previously selected_rows
-                selected_rows = selected_rows.intersection(subset)
-
-                if selected_rows.empty:
-                    # control values don't intersect, we will return an empty selection
-                    break
-
-        # if no selection was attempted, we will set None
-        # if a selection was attempted but no rows were selected, we will set an empty index
-        selected_rows = selected_rows if selection_attempted else None
         self.dataset.selected_rows = selected_rows
 
     def dspr_clear_selection_click_callback(self):
