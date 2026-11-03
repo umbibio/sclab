@@ -20,6 +20,7 @@ from ipywidgets.widgets import (
     SelectMultiple,
     Tab,
     Text,
+    ToggleButton,
     VBox,
 )
 from ipywidgets.widgets.valuewidget import ValueWidget
@@ -35,10 +36,15 @@ from traitlets import TraitError
 
 from ..._methods_registry import get_sclab_methods
 from ...event import EventBroker, EventClient
-from ...utils import layer_keys, set_options_keep_value, text_or_category_columns
+from ...utils import (
+    CodeActions,
+    layer_keys,
+    set_options_keep_value,
+    text_or_category_columns,
+)
 from .._dataset import SCLabDataset
 from ..plotter import Plotter
-from . import _history
+from . import _codegen, _history
 from ._results_panel import ResultsPanel
 
 logger = logging.getLogger(__name__)
@@ -120,8 +126,10 @@ class Processor(EventClient):
         plotter: Plotter,
         *,
         batch_key: str | None = None,
+        source: str | None = None,
     ):
         self.dataset = dataset
+        self.source = source  # path or URL the data was loaded from, for the script
         self.plotter = plotter
         self.results_panel = ResultsPanel(self.dataset.broker)
         self.broker = self.dataset.broker
@@ -134,7 +142,18 @@ class Processor(EventClient):
         # a dataset saved by sclab carries its history; summarized, display-only
         self.step_history = _history.loads_uns(self.dataset.adata)
         self.history_table = HTML()
-        self.history_panel = VBox([self.history_table])
+        self.code_toggle = ToggleButton(description="Show code", icon="code")
+        self.code_actions = CodeActions()
+        self.code_view = HTML(layout=dict(display="none"))  # <pre>: selectable
+        self.code_toggle.observe(self._toggle_code_view, "value")
+        self.history_panel = VBox(
+            [
+                self.history_table,
+                HBox([self.code_toggle, self.code_actions]),
+                self.code_view,
+            ]
+        )
+        self._update_code = self.broker.coalesce(self._render_code)
         self._render_step_history()
 
         def update_category_control_visibility_callback(change):
@@ -208,6 +227,7 @@ class Processor(EventClient):
 
         registered_methods = get_sclab_methods()
         self.add_steps(registered_methods)
+        self._update_code()  # the steps' code generators are known now
 
     @property
     def step_groups(self) -> dict[str, Accordion]:
@@ -826,6 +846,33 @@ class Processor(EventClient):
         uns = self.dataset.adata.uns.setdefault(_history.UNS_KEY, {})
         uns["history"] = _history.dumps_uns(self.step_history)
         self._render_step_history()
+        self._update_code()
+
+    def generate_code(self, header: bool = True) -> str:
+        """Python script reproducing the successful steps of ``step_history``.
+
+        See :func:`sclab.dataset.processor._codegen.history_to_code`.
+        """
+        return _codegen.history_to_code(
+            self.step_history,
+            steps=self.steps,
+            header=header,
+            source=self.source,
+            counts_layer=self.dataset.counts_layer,
+            batch_key=self.batch_key,
+        )
+
+    def _render_code(self):
+        code = self.generate_code()
+        self.code_actions.text = code
+        self.code_view.value = (
+            "<pre style='font-family:monospace;font-size:12px;user-select:text;"
+            f"white-space:pre;overflow:auto'>{html.escape(code)}</pre>"
+        )
+
+    def _toggle_code_view(self, change: dict):
+        self.code_view.layout.display = "" if change["new"] else "none"
+        self.code_toggle.description = "Hide code" if change["new"] else "Show code"
 
     def _render_step_history(self):
         header = ["#", "Step", "Params", "Status", "Time", "Shape after"]

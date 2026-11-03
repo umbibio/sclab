@@ -80,6 +80,7 @@ class SCLabDashboard(GridBox):
         batch_key: str | None = None,
         copy: bool = False,
     ):
+        self.source = None  # path or URL, for the generated script's load line
         if adata_or_filepath_or_url is None:
             adata = None
 
@@ -89,10 +90,12 @@ class SCLabDashboard(GridBox):
         elif is_valid_url(adata_or_filepath_or_url):
             url = adata_or_filepath_or_url
             adata = load_adata_from_url(url)
+            self.source = url
 
         elif isinstance(adata_or_filepath_or_url, str):
             filepath = adata_or_filepath_or_url
             adata = read_adata(filepath)
+            self.source = filepath
 
         self.name = name
         self.counts_layer = counts_layer
@@ -144,6 +147,7 @@ class SCLabDashboard(GridBox):
             self.dataset,
             self.plotter,
             batch_key=self.batch_key,
+            source=self.source,
         )
 
         self.main_content = Tab(
@@ -170,6 +174,10 @@ class SCLabDashboard(GridBox):
             self.main_content,
         )
         self.layout = self.dashboard_layout
+
+    def generate_code(self, header: bool = True) -> str:
+        """Python script reproducing the steps applied in the dashboard."""
+        return self.processor.generate_code(header=header)
 
     @property
     def ds(self):
@@ -208,6 +216,7 @@ class DataLoader(VBox):
 
     def __init__(self, dashboard: SCLabDashboard):
         self.dashboard = dashboard
+        self.source = None  # path or URL of self.adata, if loaded from one
 
         self.upload_row_label = Label("Load from file:", layout=Layout(width="120px"))
         self.upload = FileUpload(layout=Layout(width="200px"))
@@ -278,6 +287,7 @@ class DataLoader(VBox):
             display(self.continue_button)
 
         self.adata = adata
+        self.source = None
 
     def on_upload(self, *args, **kwargs):
         files = self.upload.value
@@ -313,14 +323,17 @@ class DataLoader(VBox):
             display(self.continue_button)
 
         self.adata = adata
+        self.source = None  # uploaded bytes: no path to load from
 
     def on_load_url(self, *args, **kwargs):
         self.progress_output.clear_output()
         with self.progress_output:
             self.adata = load_adata_from_url(self.url.value)
+            self.source = self.url.value
             display(self.continue_button)
 
     def on_continue(self, *args, **kwargs):
+        self.dashboard.source = self.source
         self.dashboard._load(self.adata)
         self.adata = None
         self.defined_adatas_dict = {}

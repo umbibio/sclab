@@ -1,5 +1,6 @@
 import anywidget
 from ipywidgets import Dropdown
+from traitlets import Unicode
 
 
 def set_options_keep_value(dropdown: Dropdown, options) -> None:
@@ -39,6 +40,50 @@ class ResizeNotifier(anywidget.AnyWidget):
         });
         ro.observe(el);
         return () => ro.disconnect();
+      },
+    };
+    """
+
+
+class CodeActions(anywidget.AnyWidget):
+    """Copy code and Download .py buttons for the script in ``text``.
+
+    Copy uses the browser Clipboard API (needs a secure context: https or
+    localhost); download saves ``text`` as ``filename`` via a Blob URL.
+    """
+
+    text = Unicode("").tag(sync=True)
+    filename = Unicode("sclab_analysis.py").tag(sync=True)
+
+    _esm = """
+    export default {
+      render({ model, el }) {
+        const button = (label, onclick) => {
+          const b = document.createElement("button");
+          b.className = "jupyter-button widget-button";
+          b.style.width = "auto";
+          b.textContent = label;
+          b.onclick = onclick;
+          el.appendChild(b);
+          return b;
+        };
+        const copy = button("Copy code", async () => {
+          try {
+            await navigator.clipboard.writeText(model.get("text"));
+            copy.textContent = "Copied";
+          } catch {
+            copy.textContent = "Copy failed: select the code below";
+          }
+          setTimeout(() => (copy.textContent = "Copy code"), 2000);
+        });
+        button("Download .py", () => {
+          const blob = new Blob([model.get("text")], { type: "text/x-python" });
+          const a = document.createElement("a");
+          a.href = URL.createObjectURL(blob);
+          a.download = model.get("filename");
+          a.click();
+          setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+        });
       },
     };
     """

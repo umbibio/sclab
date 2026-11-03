@@ -149,6 +149,19 @@ class ProcessorStepBase(EventClient):
         }
         return {**params, **defaults}
 
+    def to_code(self, params: dict) -> str | None:
+        """Python code reproducing a run of this step with ``params``.
+
+        ``params`` are the recorded params of a history entry (see
+        :meth:`resolved_params`); values equal to the dashboard's counts layer
+        or batch key arrive as the variable names ``counts_layer`` /
+        ``batch_key`` (see :mod:`sclab.dataset.processor._codegen`, whose
+        ``call`` helper renders a call with explicit keyword arguments). Return
+        None if the step does not change the data (e.g. a plot). Steps that do
+        not override this get a "no code available" comment in the script.
+        """
+        return None
+
     def run(self, **extra_params):
         # one flush of coalesced renders after the whole step
         with self.broker.batch():
