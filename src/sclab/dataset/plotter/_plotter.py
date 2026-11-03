@@ -10,7 +10,6 @@ from ipywidgets.widgets import (
     GridBox,
     Layout,
 )
-from numpy.typing import NDArray
 from pandas.api.types import is_any_real_numeric_dtype, is_bool_dtype
 from plotly.graph_objs.scatter import Marker as Marker2D
 from plotly.graph_objs.scatter3d import Marker as Marker3D
@@ -392,6 +391,8 @@ class Plotter(GridBox, EventClient):
                 contours,
                 "rgba(255, 255, 255, 0)",
             )
+            # plotly>=6 turns numeric arrays into typed-array dicts once in the widget
+            self.state["density_z_range"] = (trace.z.min(), trace.z.max())
             fig.add_trace(trace)
 
         height = self.controls.plot_height.value
@@ -648,13 +649,9 @@ class Plotter(GridBox, EventClient):
 
     def ctrl_density_contours_change_callback(self, new_value):
         if self.controls.show_density.value:
-            trace: go.Contour = next(
-                self.g.select_traces(selector=dict(type="contour"))
-            )
-
-            z_values: NDArray = trace.z
-            start = z_values.min() + 0.0001
-            end = z_values.max() + 0.0001
+            z_min, z_max = self.state["density_z_range"]
+            start = z_min + 0.0001
+            end = z_max + 0.0001
             size = (end - start) / new_value
             contours = dict(start=start, end=end, size=size)
 
