@@ -312,6 +312,9 @@ class GuidedPseudotime(ProcessorStepBase):
         self.broker.publish("dplt_plot_figure_request", figure=fig)
 
     def close_signal_plot(self, *args, **kwargs):
+        if self.plot_signal.description == "Plot Signal":
+            return  # no signal plot open: nothing to close or redraw
+
         self.plot_signal.description = "Plot Signal"
         self.plot_signal.button_style = "info"
         self.broker.publish("dplt_plot_figure_request", figure=None)

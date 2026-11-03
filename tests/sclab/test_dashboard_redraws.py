@@ -86,3 +86,21 @@ def test_fitted_pseudotime_curve_survives_the_deferred_redraw(coalesced):
     _, states = coalesced
     names = [trace.get("name") for trace in states["Guided Pseudotime"]["data"]]
     assert "pseudotime" in names
+
+
+def test_use_rep_update_without_open_signal_plot_requests_no_figure():
+    dash = SCLabDashboard(simple_loop_adata(n_obs=300))
+    run_step(dash, "QC")
+    run_step(dash, "Preprocess")
+    requests = []
+    dash.broker.subscribe("dplt_plot_figure_request", lambda **kw: requests.append(kw))
+    gp = dash.processor.steps["Guided Pseudotime"]
+
+    run_step(dash, "PCA")  # sets Guided Pseudotime's use_rep to X_pca
+    assert gp.variable_controls["use_rep"].value == "X_pca"
+    assert requests == []
+
+    gp.plot_signal.description = "Close Signal Plot"  # as if a signal plot is open
+    gp.variable_controls["roughness"].value = 2
+    assert requests == [{"figure": None}]
+    assert gp.plot_signal.description == "Plot Signal"
