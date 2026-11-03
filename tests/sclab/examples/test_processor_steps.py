@@ -655,16 +655,17 @@ class TestGeneExpression:
         assert meta.index.equals(adata.obs.index)
         assert messages[-1] == "Showing gene: var_0003"
 
-    def test_selected_cells_restrict_the_plotted_rows(self, gene_dash):
+    def test_selected_cells_do_not_restrict_the_metadata_sent(self, gene_dash):
+        # the plotter highlights/filters the selection itself and needs every row
         calls = capture(gene_dash, "dplt_plot_figure_request")
         step = gene_dash.processor.steps["Gene Expression"]
         c = step.variable_controls
         c["layer"].value = "counts"
-        sel = gene_dash.dataset.metadata.index[:7]
-        gene_dash.dataset.selected_rows = sel
+        gene_dash.dataset.selected_rows = gene_dash.dataset.metadata.index[:7]
         c["gene_input"].value = c["gene_input"].options[0]
         meta = calls[-1][1]["metadata"]
-        assert meta.index.equals(sel)
+        assert meta.index.equals(gene_dash.dataset.adata.obs.index)
+        assert meta["is_selected"].sum() == 7
 
     def test_time_axis_makes_scatter_vs_metadata(self, gene_dash):
         calls = capture(gene_dash, "dplt_plot_figure_request")
@@ -692,6 +693,25 @@ class TestGeneExpression:
         step.run()
         assert step.run_button.button_style == "success"
         assert len(calls) == n + 1
+
+    @pytest.mark.parametrize("time_key", [None, "time"])
+    def test_plot_with_active_selection(self, gene_dash, time_key):
+        dash = gene_dash
+        ctrl = dash.processor.steps["Gene Expression"].variable_controls
+        dash.plotter.controls.data_key.value = "Y_array2"
+        dash.dataset.selected_rows = dash.dataset.row_names[::2]
+        n = len(dash.broker.exceptions_log)
+
+        ctrl["layer"].value = "counts"
+        ctrl["time_key"].value = time_key
+        ctrl["gene_input"].value = "var_0005 - G4 - desc 4"
+
+        assert dash.broker.exceptions_log[n:] == []
+        g = dash.plotter.g
+        ids = np.concatenate([np.asarray(t.hovertext) for t in g.data])
+        assert set(ids) == set(dash.dataset.row_names)  # all cells, not a subset
+        sizes = np.concatenate([np.asarray(t.marker.size) for t in g.data])
+        assert set(sizes) == {0.5, 3.0}  # selection highlighted by the plotter
 
 
 # --------------------------------------------------------------------------

@@ -95,7 +95,6 @@ class GeneExpression(ProcessorStepBase):
     def send_plot(self, change: dict):
         adata = self.parent.dataset.adata
         metadata = self.parent.dataset.metadata
-        selected_cells = self.parent.dataset.selected_rows
 
         gene_input: str = self.variable_controls["gene_input"].value
         layer: str = self.variable_controls["layer"].value
@@ -123,9 +122,8 @@ class GeneExpression(ProcessorStepBase):
         # self.variable_controls["gene_input"].value = ""
 
         df = pd.DataFrame({gene_id: E}, index=adata.obs.index)
+        # keep all cells: the plotter highlights (2D) or filters (1D/3D) the selection
         metadata = metadata.join(df)
-        if selected_cells.size > 0:
-            metadata = metadata.loc[selected_cells]
 
         if time_key is None:
             self.broker.publish(
@@ -142,7 +140,7 @@ class GeneExpression(ProcessorStepBase):
             y=gene_id,
             color=gene_id,
             color_continuous_scale=colorscale,
-            hover_name=adata.obs.index,
+            hover_name=metadata.index,
             title=f"Gene: {gene_id}, Layer: {layer}",
         )
         self.broker.publish("dplt_plot_figure_request", figure=fig)
