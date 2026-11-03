@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Expanded test suite, including headless dashboard/widget tests
 - `max_distance` parameter on `transfer_metadata()` and `propagate_metadata()`: neighbors at distance `>= max_distance` are ignored and do not count toward `min_neighs`
 - `counts_layer` parameter on `sclab.preprocess.pca()` (default `"counts"`), used to recompute highly variable genes on the reference batch
+- `sclab.utils.layer_keys()`: layer names of an AnnData without the `None` key that anndata>=0.13 uses for `X`
 - `check_counts` parameter on `pseudobulk_pylimma()`, `pseudobulk_limma()` and `pseudobulk_edger()` (default `True`) to reject non-count input
 
 ### Changed
@@ -24,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** `pydeseq2` is no longer a core dependency (it was unused)
 - R `pseudobulk_limma()` / `pseudobulk_edger()` drop the non-estimable `replica` term from the design when there is a single replica, as `pseudobulk_pylimma()` does
 - Dashboard PCA step delegates to `sclab.preprocess.pca()`
+- Support current anndata (0.13), plotly (6/7) and itables (2.9) releases while staying compatible with older ones; remove the `plotly<6.0` and `itables<2.4` pins
 - **Breaking:** `periodic_genes()` is now a single entry point, exported from `sclab.tools.cellflow`, with `method="cosinor"` (default, F-test p-values, tolerates dropped bins) or `method="periodogram"` (the previous behavior; raises if time bins are dropped). All options after `time_key` are keyword-only; `tmin`/`tmax` default to `adata.uns[time_key]["t_range"]` or the data range, `period` to `tmax - tmin`; parameters are recorded in `adata.uns["periodic_genes"]`
 - **Breaking:** `periodic_genes()` defaults to `layer="counts"` (pass `layer="X"` to use `adata.X`) and raises `ValueError` on non-count input
 - **Breaking:** `SCLabDataset.data_dict` and `SCLabDataset.metadata` are read-only; edit `dataset.adata` and call `update_data_dict()` to refresh embeddings
@@ -42,6 +44,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Callbacks crashing on dataset changes (differential expression, integration, neighbors, gene expression)
     - Selection filters wiped on every metadata change while the old selection stayed active; still-valid filters are now kept (ranges clipped to new bounds) and the selection is recomputed when a filter changes
     - PCA step with a reference batch failing when the `{counts}_log1p` layer is missing
+    - With anndata>=0.13, `None` appearing as a layer option and the QC step crashing after Preprocess
+    - With plotly>=6, the density contours slider failing (`'dict' object has no attribute 'min'`)
+- `scdblfinder()` removing `X` along with the layers of its working copy under anndata>=0.13
 - `sclab.preprocess.pca()` reference-batch mode with `mask_var="highly_variable"` raising `KeyError` ("X_log1p") and using the PCA input layer as counts
 - Embedded R scripts receiving literal newlines instead of `\n` escapes in `cat()` messages
     - Selection filters now AND together correctly when one of them matches no cells
