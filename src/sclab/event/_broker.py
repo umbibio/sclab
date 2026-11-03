@@ -1,3 +1,4 @@
+import functools
 import traceback
 from contextlib import contextmanager
 from uuid import uuid4
@@ -37,6 +38,11 @@ class EventBroker:
         self._subscribers = {}
         self._disabled_events = []
         self.depth = 0
+        # False makes coalesced functions run immediately, e.g. to compare final states
+        self.coalescing = True
+        self.max_flush_calls = 1000
+        self._batch_depth = 0
+        self._pending: dict[callable, tuple[callable, tuple, dict]] = {}
         self.std_output = Output(layout=Layout(width="auto", height="500px"))
         self.execution_log = []
         self.execution_output = LogOutput()
@@ -111,6 +117,10 @@ class EventBroker:
         if event not in self.available_events:
             raise ValueError(f"Event '{event}' is not available.")
 
+        with self.batch():
+            self._publish(event, *args, **kwargs)
+
+    def _publish(self, event: str, *args, **kwargs):
         try:
             self.depth += 1
             tab = " " * self.depth * 4
@@ -154,20 +164,95 @@ class EventBroker:
 
                         callback(*args, **kwargs)
         except Exception as e:
-            msg = f"{tab}    Exception: {e}"
-            self.execution_log.append(msg)
-            with self.execution_output.output:
-                display(HTML(f"<pre>{msg}</pre>"))
-
-            msg = f"{msg}{tab}    Exception: {e}"
-            msg += f"\n\n{traceback.format_exc()}"
-            self.exceptions_log.append(msg)
-
-            with self.exceptions_output.output:
-                display(HTML(f"<pre>{traceback.format_exc()}</pre>"))
+            self._log_exception(e, tab)
 
         finally:
             self.depth -= 1
+
+    def _log_exception(self, e: Exception, tab: str = ""):
+        msg = f"{tab}    Exception: {e}"
+        self.execution_log.append(msg)
+        with self.execution_output.output:
+            display(HTML(f"<pre>{msg}</pre>"))
+
+        msg = f"{msg}{tab}    Exception: {e}"
+        msg += f"\n\n{traceback.format_exc()}"
+        self.exceptions_log.append(msg)
+
+        with self.exceptions_output.output:
+            display(HTML(f"<pre>{traceback.format_exc()}</pre>"))
+
+    @contextmanager
+    def batch(self):
+        """Defer calls to coalesced functions until the outermost batch exits.
+
+        Re-entrant. Every :meth:`publish` runs inside a batch. On exit of the
+        outermost batch, each pending coalesced function runs once with the
+        arguments of its latest call, in the order it was first called. Calls
+        made while flushing (directly or through events) are queued and run in
+        the same flush.
+        """
+        self._batch_depth += 1
+        try:
+            yield
+        finally:
+            try:
+                if self._batch_depth == 1:
+                    self.flush()
+            finally:
+                self._batch_depth -= 1
+
+    def coalesce(self, fn: callable) -> callable:
+        """Wrap ``fn`` so that, inside a :meth:`batch`, it only records its call.
+
+        Outside a batch (or with ``coalescing = False``) the wrapper calls ``fn``
+        immediately. Inside one, it returns None and ``fn`` runs when the batch
+        ends (see :meth:`batch`), or earlier through :meth:`flush`. Exceptions
+        raised by deferred calls go to ``exceptions_log``.
+        """
+
+        @functools.wraps(fn)
+        def wrapper(*args, **kwargs):
+            if not self.coalescing or not self._batch_depth:
+                return fn(*args, **kwargs)
+            self._pending[wrapper] = (fn, args, kwargs)  # keeps first-seen position
+
+        if hasattr(fn, "__self__"):
+            wrapper.__self__ = fn.__self__  # for the event log
+        return wrapper
+
+    def flush(self, coalesced: callable = None):
+        """Run pending coalesced calls now.
+
+        With ``coalesced`` (a function returned by :meth:`coalesce`), run only its
+        pending call, if any. Use it before code that depends on that call's
+        result, e.g. before modifying a figure a pending call would replace.
+        """
+        if coalesced is not None:
+            if coalesced in self._pending:
+                self._run_pending(coalesced)
+            return
+
+        for _ in range(self.max_flush_calls):
+            if not self._pending:
+                return
+            self._run_pending(next(iter(self._pending)))
+        if not self._pending:
+            return
+
+        pending = [getattr(f, "__name__", f) for f in self._pending]
+        self._pending.clear()
+        try:
+            raise RuntimeError(f"Coalesced calls did not settle; dropped: {pending}")
+        except RuntimeError as e:
+            self._log_exception(e)
+
+    def _run_pending(self, key: callable):
+        fn, args, kwargs = self._pending.pop(key)
+        try:
+            fn(*args, **kwargs)
+        except Exception as e:
+            self._log_exception(e)
 
     def disable_event(self, event: str):
         self._disabled_events.append(event)
@@ -188,14 +273,3 @@ class EventBroker:
         finally:
             for event in events:
                 self.enable_event(event)
-
-    @contextmanager
-    def delay(self, events: str | list[str]):
-        if isinstance(events, str):
-            events = [events]
-
-        # TODO: implement delay context manager
-        # the idea is to catch these events and execute them after the current event is done
-        # if the delayed event is duplicated, it should be executed only once
-        # we could generate a execution tree and execute the events in the correct order
-        pass

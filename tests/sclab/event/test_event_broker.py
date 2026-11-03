@@ -136,3 +136,147 @@ def test_preemption(broker: EventBroker, test_client: TheEventClient) -> None:
     assert any(
         "Disabled Event: another_event" in str(msg) for msg in broker.execution_log
     )
+
+
+def test_coalesce_runs_immediately_outside_batch(broker: EventBroker) -> None:
+    calls = []
+    render = broker.coalesce(lambda x: calls.append(x) or "done")
+
+    assert render(1) == "done"
+    assert calls == [1]
+
+
+def test_batch_coalesces_with_latest_args_in_first_seen_order(
+    broker: EventBroker,
+) -> None:
+    calls = []
+    a = broker.coalesce(lambda *args, **kw: calls.append(("a", args, kw)))
+    b = broker.coalesce(lambda *args, **kw: calls.append(("b", args, kw)))
+
+    with broker.batch():
+        a(1)
+        b(2)
+        with broker.batch():  # nested: only the outermost exit flushes
+            a(3, k=4)
+        assert calls == []
+
+    assert calls == [("a", (3,), {"k": 4}), ("b", (2,), {})]
+
+
+def test_coalesce_keys_per_bound_instance(broker: EventBroker) -> None:
+    calls = []
+
+    class Thing:
+        def __init__(self, name):
+            self.name = name
+            self.render = broker.coalesce(self.render)
+
+        def render(self):
+            calls.append(self.name)
+
+    x, y = Thing("x"), Thing("y")
+    with broker.batch():
+        x.render()
+        y.render()
+        x.render()
+
+    assert calls == ["x", "y"]
+    assert x.render.__self__ is x
+
+
+def test_publish_opens_a_batch(broker: EventBroker) -> None:
+    calls = []
+    render = broker.coalesce(lambda: calls.append("render"))
+
+    class Client(EventClient):
+        events = ["outer", "inner"]
+
+        def outer_callback(self):
+            render()
+            self.broker.publish("inner")
+            assert calls == []
+
+        def inner_callback(self):
+            render()
+
+    client = Client(broker)  # noqa: F841 - keep subscribed
+    broker.publish("outer")
+    assert calls == ["render"]
+    assert not broker.exceptions_log
+
+
+def test_flush_exception_is_logged_and_others_still_run(broker: EventBroker) -> None:
+    calls = []
+
+    def boom():
+        raise RuntimeError("boom")
+
+    with broker.batch():
+        broker.coalesce(boom)()
+        broker.coalesce(lambda: calls.append("ok"))()
+
+    assert calls == ["ok"]
+    assert len(broker.exceptions_log) == 1
+    assert "boom" in broker.exceptions_log[0]
+
+
+def test_calls_made_during_flush_run_in_the_same_flush(broker: EventBroker) -> None:
+    calls = []
+    second = broker.coalesce(lambda: calls.append("second"))
+
+    def first():
+        calls.append("first")
+        with broker.batch():  # e.g. a publish from inside a render
+            second()
+        assert calls == ["first"]
+
+    with broker.batch():
+        broker.coalesce(first)()
+
+    assert calls == ["first", "second"]
+    assert not broker.exceptions_log
+    assert broker._batch_depth == 0
+
+
+def test_self_requeueing_flush_stops_and_logs(broker: EventBroker) -> None:
+    broker.max_flush_calls = 5
+    calls = []
+
+    def loop():
+        calls.append(1)
+        render()
+
+    render = broker.coalesce(loop)
+    with broker.batch():
+        render()
+
+    assert len(calls) == 5
+    assert not broker._pending
+    assert "did not settle" in broker.exceptions_log[-1]
+
+
+def test_flush_runs_one_pending_call_early(broker: EventBroker) -> None:
+    calls = []
+    a = broker.coalesce(lambda: calls.append("a"))
+    b = broker.coalesce(lambda: calls.append("b"))
+
+    with broker.batch():
+        b()
+        a()
+        broker.flush(a)
+        assert calls == ["a"]
+        broker.flush(a)  # nothing pending: no-op
+        assert calls == ["a"]
+
+    assert calls == ["a", "b"]
+
+
+def test_coalescing_disabled_runs_immediately(broker: EventBroker) -> None:
+    broker.coalescing = False
+    calls = []
+    render = broker.coalesce(lambda: calls.append(1))
+
+    with broker.batch():
+        render()
+        render()
+        assert calls == [1, 1]
