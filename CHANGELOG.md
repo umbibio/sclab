@@ -26,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - R `pseudobulk_limma()` / `pseudobulk_edger()` drop the non-estimable `replica` term from the design when there is a single replica, as `pseudobulk_pylimma()` does
 - Dashboard PCA step delegates to `sclab.preprocess.pca()`
 - Support current anndata (0.13), plotly (6/7) and itables (2.9) releases while staying compatible with older ones; remove the `plotly<6.0` and `itables<2.4` pins
+- Support pandas 3 (copy-on-write, default `str` dtype for text columns, microsecond datetimes) while staying compatible with pandas 2
+- Gene Expression plots show all cells with the active selection highlighted, instead of only the selected cells
 - **Breaking:** `periodic_genes()` is now a single entry point, exported from `sclab.tools.cellflow`, with `method="cosinor"` (default, F-test p-values, tolerates dropped bins) or `method="periodogram"` (the previous behavior; raises if time bins are dropped). All options after `time_key` are keyword-only; `tmin`/`tmax` default to `adata.uns[time_key]["t_range"]` or the data range, `period` to `tmax - tmin`; parameters are recorded in `adata.uns["periodic_genes"]`
 - **Breaking:** `periodic_genes()` defaults to `layer="counts"` (pass `layer="X"` to use `adata.X`) and raises `ValueError` on non-count input
 - **Breaking:** `SCLabDataset.data_dict` and `SCLabDataset.metadata` are read-only; edit `dataset.adata` and call `update_data_dict()` to refresh embeddings
@@ -46,6 +48,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - PCA step with a reference batch failing when the `{counts}_log1p` layer is missing
     - With anndata>=0.13, `None` appearing as a layer option and the QC step crashing after Preprocess
     - With plotly>=6, the density contours slider failing (`'dict' object has no attribute 'min'`)
+    - With plotly>=6, the plot overflowing its container on first render (the figure is now responsive)
+    - Gene Expression "Plot Expression" failing while a selection is active
+    - Box/lasso selection crashing while density contours are shown
+    - Category dropdowns (Selection Criteria, Results) losing their value when options refresh
+    - Plotter `dplt_add_vline_request` / `dplt_add_hline_request` events raising instead of adding lines
+- `infer_dt_from_index()` assuming nanosecond datetimes (wrong `dt` with pandas 3's microsecond default)
+- Text (`str` dtype) and plain `bool` metadata columns missing from the dashboard with pandas 3
 - `scdblfinder()` removing `X` along with the layers of its working copy under anndata>=0.13
 - `sclab.preprocess.pca()` reference-batch mode with `mask_var="highly_variable"` raising `KeyError` ("X_log1p") and using the PCA input layer as counts
 - Embedded R scripts receiving literal newlines instead of `\n` escapes in `cat()` messages
