@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- Dashboard History tab listing applied steps; the history is also stored in `adata.uns["sclab"]["history"]` and shown when a dashboard is built from an AnnData that has one
 - `pseudobulk_pylimma()`, a pure-Python limma-voom pseudobulk DE method (pylimma, optional edgePython TMM preprocessing) that matches R limma results
 - `de` optional extra (`edgepython`, `pylimma`); `xlsxwriter` is now a core dependency
 - `check_raw_counts()` / `looks_like_raw_counts()` input validators in `sclab.utils`
@@ -30,6 +31,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Gene Expression plots show all cells with the active selection highlighted, instead of only the selected cells
 - Dashboard plot and obs/var tables redraw once per step or action instead of once per event (new `EventBroker.batch()`, `coalesce()` and `flush()`)
 - Results panel "Category" dropdown selects the first result automatically
+- **Breaking:** the dashboard QC and Preprocess steps call `sclab.preprocess.qc()` / `sclab.preprocess.preprocess()`; Preprocess with *Group by* + *Scale* now really scales per group (previously a silent no-op)
+- **Breaking:** step history entries use `step` instead of `step_description` and record the parameters actually used (including counts layer / batch key), status, error, time, data shapes and package versions; failed runs are recorded (and skipped on replay); `step_history_hash` values change
+- Main plot keeps a 400px minimum width; the dashboard scrolls horizontally instead of collapsing it
 - **Breaking:** `periodic_genes()` is now a single entry point, exported from `sclab.tools.cellflow`, with `method="cosinor"` (default, F-test p-values, tolerates dropped bins) or `method="periodogram"` (the previous behavior; raises if time bins are dropped). All options after `time_key` are keyword-only; `tmin`/`tmax` default to `adata.uns[time_key]["t_range"]` or the data range, `period` to `tmax - tmin`; parameters are recorded in `adata.uns["periodic_genes"]`
 - **Breaking:** `periodic_genes()` defaults to `layer="counts"` (pass `layer="X"` to use `adata.X`) and raises `ValueError` on non-count input
 - **Breaking:** `SCLabDataset.data_dict` and `SCLabDataset.metadata` are read-only; edit `dataset.adata` and call `update_data_dict()` to refresh embeddings
