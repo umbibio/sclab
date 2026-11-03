@@ -67,6 +67,8 @@ class Plotter(GridBox, EventClient):
             broker = dataset.broker
 
         EventClient.__init__(self, broker)
+        # one redraw per batch (publish, step run) instead of one per event
+        self.make_new_figure = self.broker.coalesce(self.make_new_figure)
 
         self.modebar = dict(
             add=[],
@@ -598,6 +600,7 @@ class Plotter(GridBox, EventClient):
         return hovertemplate
 
     def dplt_point_click_callback(self, row_name, device_state, **kwargs):
+        self.broker.flush(self.make_new_figure)  # draw on the pending figure
         ndims = self.controls.n_dimensions.value
         if ndims == "1D":
             return
@@ -773,6 +776,7 @@ class Plotter(GridBox, EventClient):
             return
 
         self.controls.dict["n_dimensions"].value = "2D"
+        self.broker.flush(self.make_new_figure)  # draw on the pending figure
         self.state["drawing"] = True
         self.state["previous_dragmode"] = self.get_dragmode()
         for control_name in [
@@ -947,6 +951,7 @@ class Plotter(GridBox, EventClient):
             )
             return
 
+        self.broker.flush(self.make_new_figure)  # draw on the pending figure
         if colorby in self.controls.color.options:
             self.controls.color.value = colorby
         else:
@@ -965,10 +970,12 @@ class Plotter(GridBox, EventClient):
             self.g.plotly_relayout({"dragmode": False})
 
     def dplt_add_trace_request_callback(self, trace: go.Scatter | go.Scattergl):
+        self.broker.flush(self.make_new_figure)  # draw on the pending figure
         with self.g.batch_update():
             self.g.add_trace(trace)
 
     def dplt_add_vline_request_callback(self, vlines: float | list[float], **kwargs):
+        self.broker.flush(self.make_new_figure)  # draw on the pending figure
         if not isinstance(vlines, list):
             vlines = [vlines]
 
@@ -977,6 +984,7 @@ class Plotter(GridBox, EventClient):
             self.g.add_vline(x=vline, **kwargs)
 
     def dplt_add_hline_request_callback(self, hlines: float | list[float], **kwargs):
+        self.broker.flush(self.make_new_figure)  # draw on the pending figure
         if not isinstance(hlines, list):
             hlines = [hlines]
 
@@ -990,6 +998,7 @@ class Plotter(GridBox, EventClient):
         if data_key != self.dataset._selected_data_key:
             return
 
+        self.broker.flush(self.make_new_figure)  # draw on the pending figure
         ndims = self.controls.n_dimensions.value
         col_x: str = self.controls.selected_axes.children[0].value
         col_y: str = self.controls.selected_axes.children[1].value

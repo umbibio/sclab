@@ -107,36 +107,40 @@ class BasicProcessorStep(EventClient):
         self.run()
 
     def run(self, **extra_params):
-        try:
-            # extra params will override fixed and variable params
-            params = {**self.fixed_params, **self.variable_params, **extra_params}
+        # one flush of coalesced renders after the whole step
+        with self.broker.batch():
+            try:
+                # extra params will override fixed and variable params
+                params = {**self.fixed_params, **self.variable_params, **extra_params}
 
-            if self.use_run_button:
-                self.run_button.disabled = True
-                self.run_button.button_style = "warning"
-                self.run_button.description = "Running..."
-            self.broker.publish(f"step_{self.function_name}_started")
+                if self.use_run_button:
+                    self.run_button.disabled = True
+                    self.run_button.button_style = "warning"
+                    self.run_button.description = "Running..."
+                self.broker.publish(f"step_{self.function_name}_started")
 
-            self.function(**params)
-            self.parent.append_to_step_history(self.description, params)
+                self.function(**params)
+                self.parent.append_to_step_history(self.description, params)
 
-            if self.use_run_button:
-                self.run_button.button_style = "success"
+                if self.use_run_button:
+                    self.run_button.button_style = "success"
 
-            self.broker.publish(f"step_{self.function_name}_ended", status="success")
+                self.broker.publish(
+                    f"step_{self.function_name}_ended", status="success"
+                )
 
-        except Exception as e:
-            if self.use_run_button:
-                self.run_button.button_style = "danger"
+            except Exception as e:
+                if self.use_run_button:
+                    self.run_button.button_style = "danger"
 
-            info = dict(status="failed", error=e, traceback=traceback.format_exc())
-            self.broker.publish(f"step_{self.function_name}_ended", **info)
-            self.broker.exceptions_log.append(traceback.format_exc())
+                info = dict(status="failed", error=e, traceback=traceback.format_exc())
+                self.broker.publish(f"step_{self.function_name}_ended", **info)
+                self.broker.exceptions_log.append(traceback.format_exc())
 
-            with self.broker.exceptions_output.output:
-                display(HTML(f"<pre>{traceback.format_exc()}</pre>"))
+                with self.broker.exceptions_output.output:
+                    display(HTML(f"<pre>{traceback.format_exc()}</pre>"))
 
-        finally:
-            if self.use_run_button:
-                self.run_button.description = "Run"
-                self.run_button.disabled = False
+            finally:
+                if self.use_run_button:
+                    self.run_button.description = "Run"
+                    self.run_button.disabled = False

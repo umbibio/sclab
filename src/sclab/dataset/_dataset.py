@@ -202,6 +202,8 @@ class SCLabDataset(EventClient):
         update_obs_table(self.adata.obs)
         update_var_table(self.adata.var)
 
+        update_obs_table = broker.coalesce(update_obs_table)
+        update_var_table = broker.coalesce(update_var_table)
         broker.subscribe("dset_metadata_change", update_obs_table)
         broker.subscribe("dset_total_rows_change", update_obs_table)
 

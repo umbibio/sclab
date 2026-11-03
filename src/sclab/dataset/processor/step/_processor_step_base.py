@@ -133,35 +133,37 @@ class ProcessorStepBase(EventClient):
         raise NotImplementedError
 
     def run(self, **extra_params):
-        self.output.clear_output(wait=False)
-        try:
-            # extra params will override fixed and variable params
-            params = {**self.fixed_params, **self.variable_params, **extra_params}
+        # one flush of coalesced renders after the whole step
+        with self.broker.batch():
+            self.output.clear_output(wait=False)
+            try:
+                # extra params will override fixed and variable params
+                params = {**self.fixed_params, **self.variable_params, **extra_params}
 
-            self.run_button.disabled = True
-            self.run_button.button_style = "warning"
-            self.run_button.description = "..."
+                self.run_button.disabled = True
+                self.run_button.button_style = "warning"
+                self.run_button.description = "..."
 
-            self.broker.publish(f"step_{self.name}_started")
-            self.function(**params)
+                self.broker.publish(f"step_{self.name}_started")
+                self.function(**params)
 
-            self.parent.append_to_step_history(self.description, params)
-            info = dict(status="success")
-            self.run_button.button_style = "success"
+                self.parent.append_to_step_history(self.description, params)
+                info = dict(status="success")
+                self.run_button.button_style = "success"
 
-        except Exception as e:
-            self.run_button.button_style = "danger"
+            except Exception as e:
+                self.run_button.button_style = "danger"
 
-            info = dict(status="failed", error=e, traceback=traceback.format_exc())
-            self.broker.exceptions_log.append(traceback.format_exc())
-            with self.broker.exceptions_output.output:
-                display(HTML(f"<pre>{traceback.format_exc()}</pre>"))
-            self.update_output(f"{type(e)}: {e}")
+                info = dict(status="failed", error=e, traceback=traceback.format_exc())
+                self.broker.exceptions_log.append(traceback.format_exc())
+                with self.broker.exceptions_output.output:
+                    display(HTML(f"<pre>{traceback.format_exc()}</pre>"))
+                self.update_output(f"{type(e)}: {e}")
 
-        finally:
-            self.run_button.description = self.run_button_description
-            self.run_button.disabled = False
-            self.broker.publish(f"step_{self.name}_ended", **info)
+            finally:
+                self.run_button.description = self.run_button_description
+                self.run_button.disabled = False
+                self.broker.publish(f"step_{self.name}_ended", **info)
 
     def update_output(self, message: str | Any | None, clear: bool = True):
         if clear:
