@@ -236,6 +236,24 @@ class TestStepHistory:
         col = d2.dataset.adata.obs["lab"]
         assert col.loc["c00"] == "A" and col.loc["c01"] == "B"
 
+    def test_apply_on_matching_prefix_with_tuple_params_from_json(self, tmp_path):
+        def make_dash():
+            d = SCLabDashboard(make_adata())
+            d.processor.add_step_func("Dims", lambda dims: None)
+            d.processor.steps["Dims"].run(dims=(1, 10))  # JSON loads this as a list
+            return d
+
+        d1 = make_dash()
+        label_step(d1.processor, ["c01"], "lab", "B")
+        p = tmp_path / "h.json"
+        d1.processor.save_step_history(p)
+
+        d2 = make_dash()
+        d2.processor.load_step_history(p)
+        d2.processor.apply_step_history()
+        assert len(d2.processor.step_history) == 2
+        assert d2.dataset.adata.obs["lab"].loc["c01"] == "B"
+
     def test_apply_detects_mismatch_and_missing_history(self, tmp_path):
         d1 = SCLabDashboard(make_adata())
         label_step(d1.processor, ["c00"], "lab", "A")

@@ -850,6 +850,10 @@ class Processor(EventClient):
         for i, (present_step, incoming_step) in enumerate(
             zip(current_step_history, new_step_history)
         ):
+            # compare as JSON would store them: a loaded history has lists for tuples
+            present_step, incoming_step = json.loads(
+                json.dumps([present_step, incoming_step], default=str)
+            )
             assert present_step == incoming_step, "Step history mismatch"
             step_description = present_step["step_description"]
             logger.info(f"Step {i + 1: 2d}/{N} already applied: {step_description}")
