@@ -102,7 +102,7 @@ class TestMetadata:
         assert md["is_selected"].isna().all()
         assert md["is_selected"].dtype == "boolean"
         # source obs is not modified by the conversion
-        assert ds.adata.obs["few_str"].dtype == object
+        assert not isinstance(ds.adata.obs["few_str"].dtype, pd.CategoricalDtype)
         assert "many_str" in ds.adata.obs
 
     def test_is_selected_reflects_selection(self, ds):

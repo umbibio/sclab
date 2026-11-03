@@ -236,7 +236,7 @@ def _binned_log_profiles(
 def infer_dt_from_index(idx: pd.Index) -> float:
     # Works for numeric or datetime indexes
     if isinstance(idx, pd.DatetimeIndex):
-        dt = np.median(np.diff(idx.view("i8"))) / 1e9  # seconds
+        dt = np.median(np.diff(idx.as_unit("ns").asi8)) / 1e9  # seconds
     else:
         dt = float(np.median(np.diff(idx.values.astype(float))))
     return dt

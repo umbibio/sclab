@@ -9,6 +9,7 @@ from ipywidgets import GridBox, Layout, Output
 from numpy.typing import NDArray
 
 from ..event import EventBroker, EventClient
+from ..utils import text_columns
 from ._exceptions import InvalidRowSubset
 
 itables.options.maxBytes = "50MB"
@@ -332,15 +333,16 @@ class SCLabDataset(EventClient):
         # Retain only numerical, categorical and string columns.
         # If a column has object dtype (string) and there are no more than 10 unique values,
         # convert it to categorical.
-        metadata = self._metadata.select_dtypes(
-            include=["number", "object", "category", "boolean"]
-        ).copy()
-        for col in metadata.columns:
-            if metadata[col].dtype == "object":
-                if metadata[col].nunique() <= 10:
-                    metadata[col] = metadata[col].astype("category")
-                else:
-                    metadata.drop(col, axis=1, inplace=True)
+        obs = self._metadata
+        keep = obs.select_dtypes(include=["number", "category", "bool"]).columns
+        metadata = obs.loc[
+            :, obs.columns.isin(keep) | obs.columns.isin(text_columns(obs))
+        ].copy()
+        for col in text_columns(metadata):
+            if metadata[col].nunique() <= 10:
+                metadata[col] = metadata[col].astype("category")
+            else:
+                metadata.drop(col, axis=1, inplace=True)
 
         # is_selected may be a boolean column or a column of NaNs
         # if it is a boolean column, a selection has been defined (possible all False)

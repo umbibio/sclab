@@ -34,7 +34,7 @@ from traitlets import TraitError
 
 from ..._methods_registry import get_sclab_methods
 from ...event import EventBroker, EventClient
-from ...utils import layer_keys
+from ...utils import layer_keys, text_or_category_columns
 from .._dataset import SCLabDataset
 from ..plotter import Plotter
 from ._results_panel import ResultsPanel
@@ -1032,8 +1032,10 @@ class Processor(EventClient):
         ctrl: Dropdown = self.selection_labeling_controls_dict["existing_metadata_key"]
         ctrl.options = [""] + df.columns.to_list()
 
-        metadata = self.dataset._metadata.select_dtypes(include=["object", "category"])
-        options = {"": None, **{c: c for c in metadata.columns}}
+        options = {
+            "": None,
+            **{c: c for c in text_or_category_columns(self.dataset._metadata)},
+        }
         for control in self.all_controls_list:
             if not isinstance(control, Dropdown):
                 continue

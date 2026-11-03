@@ -2,6 +2,7 @@ from ipywidgets import Dropdown, IntText
 
 from sclab.dataset.processor import Processor
 from sclab.dataset.processor.step import ProcessorStepBase
+from sclab.utils import text_or_category_columns
 
 
 class Integration(ProcessorStepBase):
@@ -26,10 +27,10 @@ class Integration(ProcessorStepBase):
     description: str = "Integration"
 
     def __init__(self, parent: Processor) -> None:
-        cat_metadata = parent.dataset._metadata.select_dtypes(
-            include=["object", "category"]
-        )
-        cat_options = {"": None, **{c: c for c in cat_metadata.columns}}
+        cat_options = {
+            "": None,
+            **{c: c for c in text_or_category_columns(parent.dataset._metadata)},
+        }
 
         variable_controls = dict(
             use_rep=Dropdown(

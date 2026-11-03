@@ -117,7 +117,7 @@ def aggregate_and_filter(
         meta[cell_identity_key] = meta[cell_identity_key].astype(cell_identity_dtype)
 
     aggr_adata = AnnData(
-        data.values,
+        data.to_numpy(copy=True),
         obs=meta,
         var=var_dataframe,
     )

@@ -14,7 +14,7 @@ from packaging.version import Version
 from sclab.dataset import SCLabDataset
 from sclab.dataset.processor import Processor
 from sclab.dataset.processor.step import ProcessorStepBase
-from sclab.utils import layer_keys
+from sclab.utils import layer_keys, text_or_category_columns
 
 
 class DifferentialExpressionResults(VBox):
@@ -154,10 +154,9 @@ class DifferentialExpression(ProcessorStepBase):
         except ImportError:
             raise ImportError("Please install scanpy: `pip install scanpy`")
 
-        metadata = parent.dataset._metadata.select_dtypes(
-            include=["object", "category"]
+        groupby_options = (None,) + tuple(
+            text_or_category_columns(parent.dataset._metadata)
         )
-        groupby_options = (None,) + tuple(metadata.columns)
 
         variable_controls: dict[str, DescriptionWidget | ValueWidget]
         variable_controls = dict(

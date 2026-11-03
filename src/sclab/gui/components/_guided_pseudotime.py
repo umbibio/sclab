@@ -369,9 +369,9 @@ class GuidedPseudotime(ProcessorStepBase):
         t = t[t_mask]
 
         X_path = self.parent.dataset.adata.obsm[f"{key_added}_path"]
-        data = self.parent.dataset.data.copy()
-        data.values[:] = X_path
-        data: pd.DataFrame = data.loc[t_mask]
+        template = self.parent.dataset.data
+        data = pd.DataFrame(X_path, index=template.index, columns=template.columns)
+        data = data.loc[t_mask]
         data = data.iloc[t.argsort()]
         self.broker.publish(
             "dplt_add_data_as_line_trace_request",

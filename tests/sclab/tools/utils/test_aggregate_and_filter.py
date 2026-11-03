@@ -132,7 +132,9 @@ class TestAggregation:
 
         pd.testing.assert_frame_equal(adata.obs, obs_before)
         assert (adata.X != X_before).nnz == 0
-        assert adata.obs["batch"].dtype == object  # not converted in place
+        assert not isinstance(
+            adata.obs["batch"].dtype, pd.CategoricalDtype
+        )  # not converted in place
 
     def test_bootstrap_resamples_with_replacement(self, adata):
         res = aggregate_and_filter(
