@@ -1,17 +1,19 @@
 from ipywidgets import Dropdown, IntRangeSlider, IntText
 
 from sclab.dataset.processor import Processor
+from sclab.dataset.processor._codegen import ADATA, call
 from sclab.dataset.processor.step import ProcessorStepBase
+from sclab.preprocess import neighbors
 
 
 class Neighbors(ProcessorStepBase):
     """k-nearest-neighbor graph construction step.
 
-    Builds the cell neighborhood graph using a selected embedding
-    (``use_rep``) and a specified range of dimensions. Supports standard
-    k-NN (via :func:`scanpy.pp.neighbors`) and batch-aware BBKNN graph
-    construction when ``group_by_batch`` is enabled and the dashboard has a
-    ``batch_key``.
+    Runs :func:`sclab.preprocess.neighbors`: builds the cell neighborhood
+    graph using a selected embedding (``use_rep``) and a specified range of
+    dimensions. Supports standard k-NN (via :func:`scanpy.pp.neighbors`) and
+    batch-aware BBKNN graph construction when ``group_by_batch`` is enabled
+    and the dashboard has a ``batch_key``.
 
     Requires ``scanpy`` to be installed.
     """
@@ -67,6 +69,18 @@ class Neighbors(ProcessorStepBase):
     def resolved_params(self, params: dict) -> dict:
         return {**super().resolved_params(params), "batch_key": self.parent.batch_key}
 
+    def to_code(self, params: dict) -> str:
+        return call(
+            "sclab.preprocess.neighbors",
+            ADATA,
+            use_rep=params["use_rep"],
+            dims=tuple(params["dims"]),
+            n_neighbors=params["n_neighbors"],
+            metric=params["metric"],
+            batch_key=params["batch_key"] if params["group_by_batch"] else None,
+            random_state=params["random_state"],
+        )
+
     def function(
         self,
         n_neighbors: int = 20,
@@ -74,36 +88,16 @@ class Neighbors(ProcessorStepBase):
         dims: tuple[int, int] = (1, 10),
         metric: str = "euclidean",
         group_by_batch: bool = False,
+        random_state: int = 0,
     ):
-        import scanpy as sc
-
-        adata = self.parent.dataset.adata
-        min_dim, max_dim = dims
-        min_dim = min_dim - 1
-
-        if min_dim > 0:
-            adata.obsm[use_rep + "_trimmed"] = adata.obsm[use_rep][:, min_dim:max_dim]
-            use_rep = use_rep + "_trimmed"
-        n_dims = max_dim - min_dim
-
-        if group_by_batch and self.parent.batch_key:
-            group_by = self.parent.batch_key
-            sc.external.pp.bbknn(
-                adata,
-                batch_key=group_by,
-                use_rep=use_rep,
-                n_pcs=n_dims,
-                use_annoy=False,
-                metric=metric,
-                neighbors_within_batch=n_neighbors,
-            )
-        else:
-            sc.pp.neighbors(
-                adata,
-                n_neighbors=n_neighbors,
-                use_rep=use_rep,
-                n_pcs=n_dims,
-                metric=metric,
-            )
+        neighbors(
+            self.parent.dataset.adata,
+            use_rep=use_rep,
+            dims=dims,
+            n_neighbors=n_neighbors,
+            metric=metric,
+            batch_key=self.parent.batch_key if group_by_batch else None,
+            random_state=random_state,
+        )
 
         self.broker.publish("dset_anndata_neighbors_change")

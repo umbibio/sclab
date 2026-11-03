@@ -4,6 +4,7 @@ from ipywidgets import BoundedIntText, Checkbox, Dropdown, FloatText
 from pandas.api.types import is_numeric_dtype
 
 from sclab.dataset.processor import Processor
+from sclab.dataset.processor._codegen import ADATA, call
 from sclab.dataset.processor.step import ProcessorStepBase
 
 
@@ -152,6 +153,20 @@ class TransferMetadata(ProcessorStepBase):
     def _show_control(self, control):
         control.layout.visibility = "visible"
         control.layout.height = "28px"
+
+    def to_code(self, params: dict) -> str:
+        return call(
+            "sclab.preprocess.transfer_metadata",
+            ADATA,
+            group_key=params["group_key"],
+            source_group=params["source_group"],
+            column=params["column"],
+            periodic=params["periodic"],
+            vmin=params["vmin"],
+            vmax=params["vmax"],
+            min_neighs=params["min_neighs"],
+            weight_by=params["weight_by"],
+        )
 
     def function(
         self,

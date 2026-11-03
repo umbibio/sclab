@@ -1,6 +1,7 @@
 from ipywidgets import FloatSlider
 
 from sclab.dataset.processor import Processor
+from sclab.dataset.processor._codegen import ADATA, call
 from sclab.dataset.processor.step import ProcessorStepBase
 
 
@@ -18,6 +19,7 @@ class Cluster(ProcessorStepBase):
     parent: Processor
     name: str = "cluster"
     description: str = "Cluster"
+    leiden_kwargs = dict(flavor="igraph", n_iterations=2, directed=False)
 
     def __init__(self, parent: Processor) -> None:
         try:
@@ -37,7 +39,16 @@ class Cluster(ProcessorStepBase):
             variable_controls=variable_controls,
         )
 
-    def function(self, resolution: float = 1.0):
+    def to_code(self, params: dict) -> str:
+        return call(
+            "sc.tl.leiden",
+            ADATA,
+            resolution=params["resolution"],
+            **self.leiden_kwargs,
+            random_state=params["random_state"],
+        )
+
+    def function(self, resolution: float = 1.0, random_state: int = 0):
         import scanpy as sc
 
         dataset = self.parent.dataset
@@ -45,9 +56,8 @@ class Cluster(ProcessorStepBase):
         sc.tl.leiden(
             adata,
             resolution=resolution,
-            flavor="igraph",
-            n_iterations=2,
-            directed=False,
+            **self.leiden_kwargs,
+            random_state=random_state,
         )
 
         self.broker.publish("dset_metadata_change", dataset.metadata, "leiden")

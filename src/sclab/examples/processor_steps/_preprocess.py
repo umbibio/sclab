@@ -1,6 +1,7 @@
 from ipywidgets import Checkbox, Dropdown
 
 from sclab.dataset.processor import Processor
+from sclab.dataset.processor._codegen import ADATA, call
 from sclab.dataset.processor.step import ProcessorStepBase
 from sclab.preprocess import preprocess
 from sclab.utils import layer_keys, text_or_category_columns
@@ -84,6 +85,20 @@ class Preprocess(ProcessorStepBase):
         if resolved.get("layer") is None:
             resolved["layer"] = self.parent.dataset.counts_layer
         return resolved
+
+    def to_code(self, params: dict) -> str:
+        method = NORMALIZATION_METHODS[params["normalization_method"]]
+        return call(
+            "sclab.preprocess.preprocess",
+            ADATA,
+            counts_layer=params["layer"],
+            group_by=params["group_by"],
+            regress_total_counts=params["regress_total_counts"],
+            regress_n_genes=params["regress_n_genes"],
+            normalization_method=method,
+            log1p=params["log1p"],
+            scale=params["scale"],
+        )
 
     def function(
         self,

@@ -8,6 +8,7 @@ from numpy.typing import NDArray
 from plotly.subplots import make_subplots
 
 from sclab.dataset.processor import Processor
+from sclab.dataset.processor._codegen import ADATA, call
 from sclab.dataset.processor.step import ProcessorStepBase
 
 # TODO: remove self.drawn_path and self.drawn_path_residue from the class
@@ -318,6 +319,32 @@ class GuidedPseudotime(ProcessorStepBase):
         self.plot_signal.description = "Plot Signal"
         self.plot_signal.button_style = "info"
         self.broker.publish("dplt_plot_figure_request", figure=None)
+
+    def resolved_params(self, params: dict) -> dict:
+        resolved = super().resolved_params(params)
+        resolved["periodic"] = self.parent.dataset.adata.uns["drawn_path"][
+            "path_is_closed"
+        ]
+        return resolved
+
+    def to_code(self, params: dict) -> str:
+        code = call(
+            "sclab.tools.cellflow.pseudotime",
+            ADATA,
+            use_rep=params["use_rep"],
+            t_key="drawn_path",
+            t_range=(0.0, 1.0),
+            min_snr=params["min_snr"],
+            periodic=params["periodic"],
+            method="splines",
+            roughness=params["roughness"],
+            key_added=params["key_added"],
+        )
+        return (
+            '# needs adata.obs["drawn_path"], the path drawn in the dashboard: it\n'
+            "# cannot be regenerated from code, save it with the data to rerun this\n"
+            + code
+        )
 
     def function(
         self,

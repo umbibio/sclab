@@ -13,6 +13,7 @@ from packaging.version import Version
 
 from sclab.dataset import SCLabDataset
 from sclab.dataset.processor import Processor
+from sclab.dataset.processor._codegen import ADATA, call
 from sclab.dataset.processor.step import ProcessorStepBase
 from sclab.utils import layer_keys, text_or_category_columns
 
@@ -186,6 +187,35 @@ class DifferentialExpression(ProcessorStepBase):
             results=results,
         )
 
+    def _key_added(self, name: str | None) -> str:
+        """``differential_expression[_{name}]``, numbered if already in uns."""
+        key_added = "differential_expression"
+        if name:
+            key_added = f"{key_added}_{name}"
+
+        uns: dict[str, Any] = self.parent.dataset.adata.uns
+        if key_added in uns:
+            related_names = list(filter(lambda x: x.startswith(key_added), uns.keys()))
+            key_added = f"{key_added}_{len(related_names) + 1}"
+        return key_added
+
+    def resolved_params(self, params: dict) -> dict:
+        resolved = super().resolved_params(params)
+        resolved["key_added"] = self._key_added(resolved.get("name"))
+        return resolved
+
+    def to_code(self, params: dict) -> str:
+        return call(
+            "sc.tl.rank_genes_groups",
+            ADATA,
+            groupby=params["groupby"],
+            groups=params["groups"] or "all",
+            reference=params["reference"],
+            layer=params["layer"],
+            key_added=params["key_added"],
+            pts=True,
+        )
+
     def function(
         self,
         groupby: str,
@@ -201,18 +231,9 @@ class DifferentialExpression(ProcessorStepBase):
         if not groups:
             groups = "all"
 
-        key_added = "differential_expression"
-        if name:
-            key_added = f"{key_added}_{name}"
-
-        adata = self.parent.dataset.adata
-        uns: dict[str, Any] = adata.uns
-        if key_added in adata.uns:
-            related_names = list(filter(lambda x: x.startswith(key_added), uns.keys()))
-            key_added = f"{key_added}_{len(related_names) + 1}"
-
+        key_added = self._key_added(name)
         sc.tl.rank_genes_groups(
-            adata,
+            self.parent.dataset.adata,
             groupby,
             groups=groups,
             reference=reference,

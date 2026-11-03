@@ -1,6 +1,7 @@
 from ipywidgets import Checkbox, Dropdown
 
 from sclab.dataset.processor import Processor
+from sclab.dataset.processor._codegen import ADATA, call
 from sclab.dataset.processor.step import ProcessorStepBase
 from sclab.tools.doublet_detection import (
     doubletdetection,
@@ -8,6 +9,20 @@ from sclab.tools.doublet_detection import (
     scrublet,
 )
 from sclab.utils import layer_keys
+
+# flavor -> (sclab.tools.doublet_detection function name, its extra kwargs)
+FLAVORS = {
+    "scDblFinder": ("scdblfinder", dict(clusters_col="leiden")),
+    "doubletdetection": (
+        "doubletdetection",
+        dict(
+            pseudocount=1,
+            clustering_algorithm="leiden",
+            clustering_kwargs=dict(resolution=5.0),
+        ),
+    ),
+    "scrublet": ("scrublet", {}),
+}
 
 
 class DoubletDetection(ProcessorStepBase):
@@ -80,34 +95,46 @@ class DoubletDetection(ProcessorStepBase):
             resolved["layer"] = self.parent.dataset.counts_layer
         return resolved
 
+    def to_code(self, params: dict) -> str:
+        function, extra = FLAVORS[params["flavor"]]
+        return call(
+            f"sclab.tools.doublet_detection.{function}",
+            ADATA,
+            layer=params["layer"],
+            key_added=params["flavor"],
+            **extra,
+            random_state=params["random_state"],
+        )
+
     def function(
-        self, flavor: str, override_layer: bool = False, layer: str | None = None
+        self,
+        flavor: str,
+        override_layer: bool = False,
+        layer: str | None = None,
+        random_state: int = 0,
     ):
         adata = self.parent.dataset.adata
         if not override_layer:
             layer = self.parent.dataset.counts_layer
 
-        kvargs = {"adata": adata, "layer": layer, "key_added": flavor}
+        if flavor not in FLAVORS:
+            raise ValueError(f"Unknown flavor: {flavor}")
+        function, extra = FLAVORS[flavor]
+        functions = dict(
+            scdblfinder=scdblfinder,
+            doubletdetection=doubletdetection,
+            scrublet=scrublet,
+        )
 
         self.broker.std_output.clear_output(wait=False)
         with self.broker.std_output:
-            match flavor:
-                case "scDblFinder":
-                    scdblfinder(**kvargs, clusters_col="leiden")
-
-                case "doubletdetection":
-                    doubletdetection(
-                        **kvargs,
-                        pseudocount=1,
-                        clustering_algorithm="leiden",
-                        clustering_kwargs=dict(resolution=5.0),
-                    )
-
-                case "scrublet":
-                    scrublet(**kvargs)
-
-                case _:
-                    raise ValueError(f"Unknown flavor: {flavor}")
+            functions[function](
+                adata=adata,
+                layer=layer,
+                key_added=flavor,
+                **extra,
+                random_state=random_state,
+            )
 
         self.broker.publish(
             "dset_metadata_change",

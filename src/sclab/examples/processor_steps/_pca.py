@@ -3,6 +3,7 @@ import plotly.express as px
 from ipywidgets import Button, Checkbox, Dropdown, IntText
 
 from sclab.dataset.processor import Processor
+from sclab.dataset.processor._codegen import ADATA, call
 from sclab.dataset.processor.step import ProcessorStepBase
 from sclab.preprocess import pca
 from sclab.utils import looks_like_raw_counts
@@ -75,12 +76,26 @@ class PCA(ProcessorStepBase):
             "counts_layer": self.parent.dataset.counts_layer,
         }
 
+    def to_code(self, params: dict) -> str:
+        return call(
+            "sclab.preprocess.pca",
+            ADATA,
+            n_comps=params["n_comps"],
+            mask_var=params["mask_var"],
+            batch_key=params["batch_key"],
+            reference_batch=params["reference_batch"],
+            zero_center=params["zero_center"],
+            counts_layer=params["counts_layer"],
+            random_state=params["random_state"],
+        )
+
     def function(
         self,
         n_comps: int = 30,
         mask_var: str | None = None,
         reference_batch: str | None = None,
         zero_center: bool = False,
+        random_state: int = 0,
     ):
         adata = self.parent.dataset.adata
 
@@ -98,6 +113,7 @@ class PCA(ProcessorStepBase):
             reference_batch=reference_batch,
             zero_center=zero_center,
             counts_layer=self.parent.dataset.counts_layer,
+            random_state=random_state,
         )
 
         self.plot_variance_ratio_button.disabled = False

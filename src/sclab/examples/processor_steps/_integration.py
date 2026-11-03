@@ -1,6 +1,7 @@
 from ipywidgets import Dropdown, IntText
 
 from sclab.dataset.processor import Processor
+from sclab.dataset.processor._codegen import ADATA, call
 from sclab.dataset.processor.step import ProcessorStepBase
 from sclab.utils import text_or_category_columns
 
@@ -87,6 +88,38 @@ class Integration(ProcessorStepBase):
 
         update_reference_batch()
 
+    @staticmethod
+    def _kwargs(
+        use_rep, group_by, flavor, reference_batch, max_iters, random_state
+    ) -> dict:
+        basis = use_rep or "X"
+        kwargs = dict(key=group_by, basis=basis, adjusted_basis=f"{basis}_{flavor}")
+        if flavor == "cca":
+            kwargs.update(reference_batch=reference_batch, random_state=random_state)
+        elif flavor == "harmony":
+            kwargs.update(
+                reference_batch=reference_batch,
+                max_iter_harmony=max_iters,
+                random_state=random_state,
+            )
+        return kwargs
+
+    def to_code(self, params: dict) -> str:
+        functions = {
+            "cca": "sclab.preprocess.cca_integrate",
+            "harmony": "sclab.preprocess.harmony_integrate",
+            "scanorama": "sc.external.pp.scanorama_integrate",
+        }
+        kwargs = self._kwargs(
+            params["use_rep"],
+            params["group_by"],
+            params["flavor"],
+            params["reference_batch"],
+            params["max_iters"],
+            params["random_state"],
+        )
+        return call(functions[params["flavor"]], ADATA, **kwargs)
+
     def function(
         self,
         use_rep: str | None,
@@ -94,19 +127,12 @@ class Integration(ProcessorStepBase):
         flavor: str,
         reference_batch: str | None,
         max_iters: int,
+        random_state: int = 0,
     ):
         adata = self.parent.dataset.adata
-
-        if use_rep is None:
-            use_rep = "X"
-
-        key_added = f"{use_rep}_{flavor}"
-        kvargs = {
-            "adata": adata,
-            "key": group_by,
-            "basis": use_rep,
-            "adjusted_basis": key_added,
-        }
+        kwargs = self._kwargs(
+            use_rep, group_by, flavor, reference_batch, max_iters, random_state
+        )
 
         self.broker.std_output.clear_output(wait=False)
         with self.broker.std_output:
@@ -114,29 +140,22 @@ class Integration(ProcessorStepBase):
                 case "cca":
                     from sclab.preprocess import cca_integrate
 
-                    cca_integrate(
-                        **kvargs,
-                        reference_batch=reference_batch,
-                    )
+                    cca_integrate(adata, **kwargs)
 
                 case "harmony":
                     from sclab.preprocess import harmony_integrate
 
-                    harmony_integrate(
-                        **kvargs,
-                        reference_batch=reference_batch,
-                        max_iter_harmony=max_iters,
-                    )
+                    harmony_integrate(adata, **kwargs)
 
                 case "scanorama":
                     from scanpy.external.pp import scanorama_integrate
 
-                    scanorama_integrate(**kvargs)
+                    scanorama_integrate(adata, **kwargs)
                 case _:
                     raise ValueError(f"Unknown flavor: {flavor}")
 
         self.broker.publish(
             "dset_data_dict_change",
             self.parent.dataset.data_dict,
-            key_added,
+            kwargs["adjusted_basis"],
         )

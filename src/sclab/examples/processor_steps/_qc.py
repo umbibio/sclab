@@ -1,6 +1,7 @@
 from ipywidgets import Dropdown, IntText
 
 from sclab.dataset.processor import Processor
+from sclab.dataset.processor._codegen import ADATA, call
 from sclab.dataset.processor.step import ProcessorStepBase
 from sclab.preprocess import qc
 from sclab.utils import layer_keys
@@ -61,6 +62,17 @@ class QC(ProcessorStepBase):
         if resolved.get("layer") is None:
             resolved["layer"] = self.parent.dataset.counts_layer
         return resolved
+
+    def to_code(self, params: dict) -> str:
+        return call(
+            "sclab.preprocess.qc",
+            ADATA,
+            counts_layer=params["layer"],
+            min_counts=params["min_counts"],
+            min_genes=params["min_genes"],
+            min_cells=params["min_cells"],
+            max_rank=params["max_rank"],
+        )
 
     def function(
         self,

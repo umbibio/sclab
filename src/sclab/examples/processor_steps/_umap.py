@@ -1,15 +1,16 @@
-import numpy as np
 from ipywidgets import Checkbox, IntText
 
 from sclab.dataset.processor import Processor
+from sclab.dataset.processor._codegen import ADATA, call
 from sclab.dataset.processor.step import ProcessorStepBase
+from sclab.tools.embedding import umap
 
 
 class UMAP(ProcessorStepBase):
     """UMAP dimensionality reduction step.
 
-    Computes a 2D or 3D UMAP embedding using the precomputed neighbor graph
-    and stores it in ``adata.obsm`` under the key ``X_{n_components}Dumap``
+    Runs :func:`sclab.tools.embedding.umap`: computes a 2D or 3D UMAP
+    embedding using the precomputed neighbor graph and stores it in ``adata.obsm`` under the key ``X_{n_components}Dumap``
     (e.g. ``"X_2Dumap"``). Optionally zero-centers the embedding. The
     plotter is updated to display the new embedding.
 
@@ -37,22 +38,27 @@ class UMAP(ProcessorStepBase):
             variable_controls=variable_controls,
         )
 
+    def to_code(self, params: dict) -> str:
+        return call(
+            "sclab.tools.embedding.umap",
+            ADATA,
+            n_components=params["n_components"],
+            zero_center=params["zero_center"],
+            random_state=params["random_state"],
+        )
+
     def function(
         self,
         n_components: int = 2,
         zero_center: bool = True,
+        random_state: int = 0,
     ):
-        import scanpy as sc
-
         dataset = self.parent.dataset
-        adata = self.parent.dataset.adata
-
-        sc.tl.umap(adata, n_components=n_components)
-        X: np.ndarray = adata.obsm.pop("X_umap")
-        if zero_center:
-            X = X - X.mean(axis=0, keepdims=True)
-
-        key = f"X_{n_components}Dumap"
-        adata.obsm[key] = X
+        key = umap(
+            dataset.adata,
+            n_components=n_components,
+            zero_center=zero_center,
+            random_state=random_state,
+        )
 
         self.broker.publish("dset_data_dict_change", dataset.data_dict, key)

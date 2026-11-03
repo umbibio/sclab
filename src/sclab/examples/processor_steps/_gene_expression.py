@@ -89,6 +89,9 @@ class GeneExpression(ProcessorStepBase):
         else:
             control.value = ""
 
+    def to_code(self, params: dict) -> None:
+        return None  # plot only: the data is unchanged
+
     def function(self, *pargs, **kwargs):
         self.send_plot({})
 
