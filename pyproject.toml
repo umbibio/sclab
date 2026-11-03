@@ -20,7 +20,7 @@ dependencies = [
     "anywidget",
     "bbknn>=1.6.0",
     "ipywidgets",
-    "itables<2.4",
+    "itables",
     "matplotlib",
     "numpy",
     "pandas",
