@@ -119,6 +119,7 @@ class SCLabDashboard(GridBox):
             grid_template_columns="350px auto",
             grid_template_areas=""" "processor plotter" """,
             border="0px solid black",
+            overflow="auto",  # scroll to the plot settings if the plot hits its min width
         )
 
         self.data_loader = DataLoader(self)

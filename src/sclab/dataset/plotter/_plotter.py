@@ -90,7 +90,8 @@ class Plotter(GridBox, EventClient):
             [self.graph_box, self.controls],
             layout=Layout(
                 width="100%",
-                grid_template_columns="auto 350px",
+                # a bare `auto` plot column collapses to a few px on narrow viewports
+                grid_template_columns="minmax(400px, 1fr) 350px",
                 grid_template_areas=""" "graph controls" """,
                 border="0px solid black",
             ),
