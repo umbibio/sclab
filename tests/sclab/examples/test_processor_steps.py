@@ -44,7 +44,7 @@ def run_step(dash: SCLabDashboard, step_name: str, **params):
     ok = step.run_button.button_style == "success"
     if ok:
         assert len(dash.processor.step_history) == n_hist + 1
-        assert dash.processor.step_history[-1]["step_description"] == name
+        assert dash.processor.step_history[-1]["step"] == name
     return step, ok
 
 
@@ -98,6 +98,11 @@ def test_layer_dropdown_options_never_include_none(dash):
 # PCA
 # --------------------------------------------------------------------------
 class TestPCA:
+    def test_history_records_implicit_inputs(self, dash):
+        (entry,) = [e for e in dash.processor.step_history if e["step"] == "PCA"]
+        assert entry["params"]["batch_key"] == "batch"
+        assert entry["params"]["counts_layer"] == "counts"
+
     def test_default_run_projects_and_enables_plot_button(self, dash):
         adata = dash.dataset.adata
         step = dash.processor.steps["PCA"]
@@ -372,7 +377,11 @@ class TestIntegration:
         assert not ok
         assert step.run_button.button_style == "danger"
         assert set(dash.dataset.adata.obsm) == before
-        assert len(dash.processor.step_history) == hist  # failed run not recorded
+        assert len(dash.processor.step_history) == hist + 1  # recorded as failed
+        assert dash.processor.step_history[-1]["status"] == "failed"
+        assert dash.processor.step_history[-1]["error"] == (
+            "ValueError: Unknown flavor: bogus"
+        )
         assert "Unknown flavor: bogus" in dash.broker.exceptions_log[-1]
 
     def test_missing_group_column_fails(self, dash, shifted_embedding):
@@ -495,6 +504,7 @@ class TestDoubletDetection:
         # history records both variable controls
         params = d.processor.step_history[-1]["params"]
         assert params["override_layer"] is False
+        assert params["layer"] == "counts"  # resolved implicit input
 
     def test_override_enables_dropdown_and_uses_chosen_layer(self):
         d = SCLabDashboard(make_adata(300, 300))

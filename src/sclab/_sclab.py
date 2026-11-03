@@ -151,6 +151,7 @@ class SCLabDashboard(GridBox):
                 self.processor.results_panel,
                 self.dataset.obs_table,
                 self.dataset.var_table,
+                self.processor.history_panel,
                 self.broker.logs_tab,
             ],
             titles=[
@@ -158,6 +159,7 @@ class SCLabDashboard(GridBox):
                 "Results",
                 "Observations",
                 "Genes",
+                "History",
                 "Logs",
             ],
         )

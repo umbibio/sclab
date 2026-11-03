@@ -109,6 +109,8 @@ class BasicProcessorStep(EventClient):
     def run(self, **extra_params):
         # one flush of coalesced renders after the whole step
         with self.broker.batch():
+            shape_before = self.parent.dataset.adata.shape
+            params = extra_params
             try:
                 # extra params will override fixed and variable params
                 params = {**self.fixed_params, **self.variable_params, **extra_params}
@@ -120,7 +122,9 @@ class BasicProcessorStep(EventClient):
                 self.broker.publish(f"step_{self.function_name}_started")
 
                 self.function(**params)
-                self.parent.append_to_step_history(self.description, params)
+                self.parent.append_to_step_history(
+                    self.description, params, shape_before=shape_before
+                )
 
                 if self.use_run_button:
                     self.run_button.button_style = "success"
@@ -132,6 +136,13 @@ class BasicProcessorStep(EventClient):
             except Exception as e:
                 if self.use_run_button:
                     self.run_button.button_style = "danger"
+                self.parent.append_to_step_history(
+                    self.description,
+                    params,
+                    status="failed",
+                    error=f"{type(e).__name__}: {e}".split("\n")[0][:200],
+                    shape_before=shape_before,
+                )
 
                 info = dict(status="failed", error=e, traceback=traceback.format_exc())
                 self.broker.publish(f"step_{self.function_name}_ended", **info)

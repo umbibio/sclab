@@ -76,6 +76,12 @@ class Preprocess(ProcessorStepBase):
             variable_controls=variable_controls,
         )
 
+    def resolved_params(self, params: dict) -> dict:
+        resolved = super().resolved_params(params)
+        if resolved.get("layer") is None:
+            resolved["layer"] = self.parent.dataset.counts_layer
+        return resolved
+
     def function(
         self,
         layer: str | None = None,

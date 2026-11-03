@@ -1,3 +1,4 @@
+import inspect
 import traceback
 from typing import Any
 
@@ -132,27 +133,56 @@ class ProcessorStepBase(EventClient):
     def function(self, *pargs, **kwargs):
         raise NotImplementedError
 
+    def resolved_params(self, params: dict) -> dict:
+        """Return the params to record in the step history.
+
+        ``params`` are the merged fixed, widget and extra params passed to
+        :meth:`function`. The default fills in :meth:`function`'s defaults for
+        params not given. Override (calling ``super()``) to add implicit
+        inputs the step reads at run time, e.g. ``self.parent.batch_key``, or
+        to resolve placeholders such as ``layer=None`` -> the counts layer.
+        """
+        defaults = {
+            name: p.default
+            for name, p in inspect.signature(self.function).parameters.items()
+            if p.default is not p.empty and name not in params
+        }
+        return {**params, **defaults}
+
     def run(self, **extra_params):
         # one flush of coalesced renders after the whole step
         with self.broker.batch():
             self.output.clear_output(wait=False)
+            shape_before = self.parent.dataset.adata.shape
+            recorded = extra_params
             try:
                 # extra params will override fixed and variable params
                 params = {**self.fixed_params, **self.variable_params, **extra_params}
+                recorded = params
 
                 self.run_button.disabled = True
                 self.run_button.button_style = "warning"
                 self.run_button.description = "..."
 
                 self.broker.publish(f"step_{self.name}_started")
+                recorded = self.resolved_params(params)
                 self.function(**params)
 
-                self.parent.append_to_step_history(self.description, params)
+                self.parent.append_to_step_history(
+                    self.description, recorded, shape_before=shape_before
+                )
                 info = dict(status="success")
                 self.run_button.button_style = "success"
 
             except Exception as e:
                 self.run_button.button_style = "danger"
+                self.parent.append_to_step_history(
+                    self.description,
+                    recorded,
+                    status="failed",
+                    error=f"{type(e).__name__}: {e}".split("\n")[0][:200],
+                    shape_before=shape_before,
+                )
 
                 info = dict(status="failed", error=e, traceback=traceback.format_exc())
                 self.broker.exceptions_log.append(traceback.format_exc())

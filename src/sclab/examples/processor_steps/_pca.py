@@ -68,6 +68,13 @@ class PCA(ProcessorStepBase):
         ]
         return super().make_controls()
 
+    def resolved_params(self, params: dict) -> dict:
+        return {
+            **super().resolved_params(params),
+            "batch_key": self.parent.batch_key,
+            "counts_layer": self.parent.dataset.counts_layer,
+        }
+
     def function(
         self,
         n_comps: int = 30,

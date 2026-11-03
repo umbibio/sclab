@@ -74,6 +74,12 @@ class DoubletDetection(ProcessorStepBase):
             if counts_layer in self._layer_dropdown.options:
                 self._layer_dropdown.value = counts_layer
 
+    def resolved_params(self, params: dict) -> dict:
+        resolved = super().resolved_params(params)
+        if not resolved.get("override_layer"):
+            resolved["layer"] = self.parent.dataset.counts_layer
+        return resolved
+
     def function(
         self, flavor: str, override_layer: bool = False, layer: str | None = None
     ):

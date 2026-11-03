@@ -1,6 +1,7 @@
+import html
+import inspect
 import json
 import logging
-from hashlib import sha256
 from pathlib import Path
 from typing import Any, Literal
 
@@ -37,9 +38,19 @@ from ...event import EventBroker, EventClient
 from ...utils import layer_keys, set_options_keep_value, text_or_category_columns
 from .._dataset import SCLabDataset
 from ..plotter import Plotter
+from . import _history
 from ._results_panel import ResultsPanel
 
 logger = logging.getLogger(__name__)
+
+
+def _accepted_params(function: callable, params: dict) -> dict:
+    """The subset of ``params`` that ``function`` accepts as keywords."""
+    parameters = inspect.signature(function).parameters.values()
+    if any(p.kind is p.VAR_KEYWORD for p in parameters):
+        return params
+    names = {p.name for p in parameters}
+    return {k: v for k, v in params.items() if k in names}
 
 
 # forward declaration
@@ -120,7 +131,11 @@ class Processor(EventClient):
         self.selection_labeling_controls_dict = {}
         self.selection_buttons_dict = {}
         self.all_controls_list = []
-        self.step_history = []
+        # a dataset saved by sclab carries its history; summarized, display-only
+        self.step_history = _history.loads_uns(self.dataset.adata)
+        self.history_table = HTML()
+        self.history_panel = VBox([self.history_table])
+        self._render_step_history()
 
         def update_category_control_visibility_callback(change):
             if "new" not in change or not change["new"]:
@@ -787,18 +802,60 @@ class Processor(EventClient):
             # called directly: publishing is disabled while dset_metadata_change runs
             self.dspr_selection_values_change_callback(column, None)
 
-    def append_to_step_history(self, step_description: str, params: dict):
-        params_ = {}
-        for key, value in params.items():
-            if isinstance(value, pd.Index):
-                value = value.to_list()
-            params_[key] = value
+    def append_to_step_history(
+        self,
+        step_description: str,
+        params: dict,
+        status: Literal["success", "failed"] = "success",
+        error: str | None = None,
+        shape_before: tuple[int, int] | None = None,
+    ):
+        """Record a step run; see :mod:`sclab.dataset.processor._history`."""
+        entry = _history.make_entry(
+            step_description,
+            params,
+            status,
+            error,
+            shape_before,
+            self.dataset.adata.shape,
+        )
+        self.step_history.append(entry)
+        self._sync_step_history()
 
-        self.step_history.append(
-            {
-                "step_description": step_description,
-                "params": params_,
-            }
+    def _sync_step_history(self):
+        uns = self.dataset.adata.uns.setdefault(_history.UNS_KEY, {})
+        uns["history"] = _history.dumps_uns(self.step_history)
+        self._render_step_history()
+
+    def _render_step_history(self):
+        header = ["#", "Step", "Params", "Status", "Time", "Shape after"]
+        rows = []
+        for i, entry in enumerate(self.step_history, 1):
+            status = entry.get("status", "success")
+            if entry.get("error"):
+                status = f"{status}: {entry['error']}"
+            shape = entry.get("shape_after")
+            cells = [
+                i,
+                entry["step"],
+                _history.format_params(entry["params"]),
+                status,
+                (entry.get("time") or "")[:19].replace("T", " "),
+                " x ".join(map(str, shape)) if shape else "",
+            ]
+            color = "" if status == "success" else " style='color:#c62828'"
+            tds = "".join(f"<td>{html.escape(str(c))}</td>" for c in cells)
+            rows.append(f"<tr{color}>{tds}</tr>")
+
+        if not rows:
+            self.history_table.value = "<i>No steps applied yet.</i>"
+            return
+
+        ths = "".join(f"<th>{h}</th>" for h in header)
+        self.history_table.value = (
+            "<style>.sclab-history td,.sclab-history th"
+            "{padding:2px 8px;text-align:left;vertical-align:top}</style>"
+            f"<table class='sclab-history'><tr>{ths}</tr>{''.join(rows)}</table>"
         )
 
     def save_step_history(
@@ -814,8 +871,6 @@ class Processor(EventClient):
             with open(path, "wb") as f:
                 pickle.dump(self.step_history, f)
         elif format == "json":
-            import json
-
             with open(path, "w") as f:
                 json.dump(self.step_history, f, indent=4)
         else:
@@ -829,20 +884,25 @@ class Processor(EventClient):
             import pickle
 
             with open(path, "rb") as f:
-                self._loaded_step_history: list = pickle.load(f)
+                history: list = pickle.load(f)
         elif format == "json":
-            import json
-
             with open(path, "r") as f:
-                self._loaded_step_history: list = json.load(f)
+                history: list = json.load(f)
         else:
             raise ValueError(f"Unsupported format {format}")
 
+        self._loaded_step_history = [_history.normalize_entry(e) for e in history]
+
     def apply_step_history(self):
+        """Replay the successful steps of the loaded history not yet applied.
+
+        The successful steps already in ``step_history`` must match the start
+        of the loaded history (step and params); failed entries are skipped.
+        """
         assert self._loaded_step_history is not None, "No step history loaded"
 
-        current_step_history = self.step_history
-        new_step_history = self._loaded_step_history
+        current_step_history = _history.succeeded(self.step_history)
+        new_step_history = _history.succeeded(self._loaded_step_history)
         n = len(current_step_history)
         N = len(new_step_history)
         assert N >= n, "Step history mismatch"
@@ -850,48 +910,49 @@ class Processor(EventClient):
         for i, (present_step, incoming_step) in enumerate(
             zip(current_step_history, new_step_history)
         ):
-            # compare as JSON would store them: a loaded history has lists for tuples
-            present_step, incoming_step = json.loads(
-                json.dumps([present_step, incoming_step], default=str)
+            present_key = _history.entry_key(present_step)
+            assert present_key == _history.entry_key(incoming_step), (
+                "Step history mismatch"
             )
-            assert present_step == incoming_step, "Step history mismatch"
-            step_description = present_step["step_description"]
-            logger.info(f"Step {i + 1: 2d}/{N} already applied: {step_description}")
+            logger.info(f"Step {i + 1: 2d}/{N} already applied: {present_key['step']}")
 
-        new_steps_to_apply = new_step_history[n:]
-        for i, step in enumerate(new_steps_to_apply):
-            step_description = step["step_description"]
-            params = step["params"]
+        for i, entry in enumerate(new_step_history[n:]):
+            step_description = entry["step"]
+            if _history.is_summarized(entry["params"]):
+                raise ValueError(
+                    f"Step {n + i + 1} ({step_description}) has summarized params "
+                    "(from adata.uns) and cannot be replayed"
+                )
             logger.info(f"Applying step {n + i + 1: 2d}/{N}: {step_description}")
-            self.steps[step_description].run(**params)
+            step = self.steps[step_description]
+            step.run(**_accepted_params(step.function, entry["params"]))
+
+            applied = self.step_history[-1]
+            if applied["status"] != "success" or _history.entry_key(
+                applied
+            ) != _history.entry_key(entry):
+                logger.warning(
+                    f"Replayed step {n + i + 1} ({step_description}) differs from "
+                    f"the loaded history: {applied.get('error') or applied['params']}"
+                )
 
     def print_step_history(self, with_hash: bool = False):
         for i, step in enumerate(self.step_history):
-            desc = step["step_description"]
-            params = step["params"]
-            p = []
-            for k, v in params.items():
-                if isinstance(v, list):
-                    v = f"list({len(v)})"
-                if v is None:
-                    v = "None"
-                if not isinstance(v, int | float | str):
-                    v = type(v)
-                p.append(f"{k}={v}")
+            desc = step["step"]
+            params = _history.format_params(step["params"])
             if with_hash:
                 history_hash = self._get_step_history_hash(self.step_history[: i + 1])
                 history_hash = history_hash[:8] + " ..."
             else:
                 history_hash = ""
-            print(f"({i + 1: 3d}) {history_hash} {desc}({', '.join(p)})")
+            print(f"({i + 1: 3d}) {history_hash} {desc}({params})")
 
     def _get_step_history_hash(self, history: list[dict]):
-        history_json = json.dumps(history)
-        history_json_hash = sha256(history_json.encode()).hexdigest()
-        return history_json_hash
+        return _history.history_hash(history)
 
     @property
     def step_history_hash(self):
+        """Hash of the successful steps (step and params) of ``step_history``."""
         return self._get_step_history_hash(self.step_history)
 
     @property

@@ -64,6 +64,9 @@ class Neighbors(ProcessorStepBase):
             variable_controls=variable_controls,
         )
 
+    def resolved_params(self, params: dict) -> dict:
+        return {**super().resolved_params(params), "batch_key": self.parent.batch_key}
+
     def function(
         self,
         n_neighbors: int = 20,

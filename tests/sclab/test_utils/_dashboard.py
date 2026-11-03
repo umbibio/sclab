@@ -29,7 +29,8 @@ def run_step(dash: SCLabDashboard, step_name: str, **params):
     assert not errors, f"{step_name!r} raised:\n" + "\n".join(errors)
     assert step.run_button.button_style == "success"
     assert len(dash.processor.step_history) == n_hist + 1
-    assert dash.processor.step_history[-1]["step_description"] == step_name
+    assert dash.processor.step_history[-1]["step"] == step_name
+    assert dash.processor.step_history[-1]["status"] == "success"
     return step
 
 

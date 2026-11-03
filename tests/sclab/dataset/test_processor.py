@@ -1,9 +1,11 @@
 import json
 import pickle
+from datetime import datetime
 
 import numpy as np
 import pandas as pd
 import pytest
+import anndata
 from anndata import AnnData
 from ipywidgets import (
     Checkbox,
@@ -14,6 +16,7 @@ from ipywidgets import (
 )
 from scipy.sparse import csr_matrix
 
+import sclab
 from sclab import SCLabDashboard
 from sclab.dataset.processor import Processor
 
@@ -98,10 +101,10 @@ class TestAddSteps:
         assert "My Step" in proc.steps
         proc.steps["My Step"].run(a=3)
         assert seen == {"a": 3, "b": 5}
-        assert proc.step_history[-1] == {
-            "step_description": "My Step",
-            "params": {"b": 5, "a": 3},
-        }
+        entry = proc.step_history[-1]
+        assert entry["step"] == "My Step" and entry["params"] == {"b": 5, "a": 3}
+        assert entry["status"] == "success" and entry["error"] is None
+        assert entry["shape_before"] == entry["shape_after"] == [40, 6]
 
     def test_duplicate_step_rejected(self, proc):
         proc.add_step_func("Dup", lambda: None)
@@ -156,7 +159,7 @@ class TestAddSteps:
 # step run behaviour (success / failure bookkeeping)
 # --------------------------------------------------------------------------
 class TestStepRun:
-    def test_failure_is_logged_not_raised_and_not_recorded(self, proc, dash):
+    def test_failure_is_logged_not_raised_and_recorded_as_failed(self, proc, dash):
         def boom():
             raise RuntimeError("kaboom")
 
@@ -170,7 +173,9 @@ class TestStepRun:
 
         dash.broker.publish = spy
         proc.steps["Boom"].run()
-        assert proc.step_history == []
+        (entry,) = proc.step_history
+        assert entry["step"] == "Boom" and entry["status"] == "failed"
+        assert entry["error"] == "RuntimeError: kaboom"
         assert "kaboom" in dash.broker.exceptions_log[-1]
         ended = [k for ev, k in events if ev.endswith("_ended")]
         assert ended and ended[-1]["status"] == "failed"
@@ -184,15 +189,20 @@ def label_step(proc, rows, column="lab", label="x"):
     proc.steps["apply_label"].run(index=pd.Index(rows), column=column, label=label)
 
 
+def steps_and_params(proc) -> list[tuple]:
+    return [(e["step"], e["params"]) for e in proc.step_history]
+
+
 class TestStepHistory:
     def test_pd_index_params_are_stored_as_lists(self, proc):
         label_step(proc, ["c00", "c01"])
-        assert proc.step_history == [
-            {
-                "step_description": "apply_label",
-                "params": {"index": ["c00", "c01"], "column": "lab", "label": "x"},
-            }
-        ]
+        (entry,) = proc.step_history
+        assert entry["step"] == "apply_label"
+        assert entry["params"] == {
+            "index": ["c00", "c01"],
+            "column": "lab",
+            "label": "x",
+        }
         json.dumps(proc.step_history)  # serialisable
 
     def test_hash_is_deterministic_and_history_sensitive(self, proc):
@@ -216,7 +226,7 @@ class TestStepHistory:
         d2.processor.load_step_history(path)
         d2.processor.apply_step_history()
 
-        assert d2.processor.step_history == d1.processor.step_history
+        assert steps_and_params(d2.processor) == steps_and_params(d1.processor)
         assert d2.dataset.adata.obs_names.tolist() == ["c00", "c01", "c05"]
         assert d2.dataset.adata.obs["lab"].loc[["c00", "c01"]].tolist() == ["A", "A"]
         assert d2.processor.step_history_hash == d1.processor.step_history_hash
@@ -290,10 +300,155 @@ class TestStepHistory:
         label_step(proc, ["c00", "c01"], "lab", "A")
         proc.print_step_history()
         out = capsys.readouterr().out
-        assert "apply_label(index=list(2), column=lab, label=A)" in out
+        assert "apply_label(index=(c00, c01), column=lab, label=A)" in out
         proc.print_step_history(with_hash=True)
         out = capsys.readouterr().out
         assert proc.step_history_hash[:8] in out
+
+    def test_entry_schema(self, proc):
+        label_step(proc, ["c00"])
+        entry = proc.step_history[-1]
+        assert set(entry) == {
+            "step",
+            "params",
+            "status",
+            "error",
+            "time",
+            "shape_before",
+            "shape_after",
+            "versions",
+        }
+        assert datetime.fromisoformat(entry["time"]).tzinfo is not None
+        assert set(entry["versions"]) == {"sclab", "scanpy", "anndata"}
+        assert entry["versions"]["sclab"] == sclab.__version__
+
+    def test_shapes_and_filled_in_defaults(self, proc):
+        from sclab.dataset.processor.step import ProcessorStepBase
+
+        class Implicit(ProcessorStepBase):
+            name = "implicit"
+            description = "Implicit"
+
+            def __init__(self, parent):
+                super().__init__(parent, fixed_params={}, variable_controls={})
+
+            def resolved_params(self, params):
+                return {**super().resolved_params(params), "batch_key": "batch"}
+
+            def function(self, n: int, dims: tuple = (1, 10)):
+                self.parent.dataset.filter_rows(self.parent.dataset.row_names[:n])
+
+        proc.add_steps(Implicit)
+        proc.steps["Implicit"].run(n=30)
+        entry = proc.step_history[-1]
+        assert entry["params"] == {"n": 30, "dims": [1, 10], "batch_key": "batch"}
+        assert entry["shape_before"] == [40, 6] and entry["shape_after"] == [30, 6]
+
+    def test_replay_passes_only_accepted_params(self, tmp_path):
+        def make_dash():
+            d = SCLabDashboard(make_adata())
+            d.processor.add_step_func(
+                "Take",
+                lambda n: d.processor.filter_rows(d.dataset.row_names[:n].tolist()),
+            )
+            return d
+
+        d1 = make_dash()
+        d1.processor.append_to_step_history("Take", {"n": 7, "implicit": "x"})
+        p = tmp_path / "h.json"
+        d1.processor.save_step_history(p)
+
+        d2 = make_dash()
+        d2.processor.load_step_history(p)
+        d2.processor.apply_step_history()  # would raise TypeError on `implicit`
+        assert d2.dataset.adata.n_obs == 7
+
+    def test_failed_entries_are_skipped_on_replay(self, tmp_path):
+        d1 = SCLabDashboard(make_adata())
+        d1.processor.add_step_func("Boom", lambda: 1 / 0)
+        d1.processor.steps["Boom"].run()
+        label_step(d1.processor, ["c00"], "lab", "A")
+        assert [e["status"] for e in d1.processor.step_history] == [
+            "failed",
+            "success",
+        ]
+        p = tmp_path / "h.json"
+        d1.processor.save_step_history(p)
+
+        d2 = SCLabDashboard(make_adata())
+        d2.processor.load_step_history(p)
+        d2.processor.apply_step_history()
+        assert steps_and_params(d2.processor) == steps_and_params(d1.processor)[1:]
+        assert d2.processor.step_history_hash == d1.processor.step_history_hash
+
+    def test_old_format_file_is_accepted(self, tmp_path):
+        old = [
+            {
+                "step_description": "apply_label",
+                "params": {"index": ["c00", "c01"], "column": "lab", "label": "A"},
+            },
+            {"step_description": "filter_rows", "params": {"index": ["c00", "c01"]}},
+        ]
+        p = tmp_path / "old.json"
+        p.write_text(json.dumps(old))
+
+        d = SCLabDashboard(make_adata())
+        d.processor.load_step_history(p)
+        d.processor.apply_step_history()
+        assert d.dataset.adata.obs_names.tolist() == ["c00", "c01"]
+        assert [e["step"] for e in d.processor.step_history] == [
+            "apply_label",
+            "filter_rows",
+        ]
+
+    def test_history_survives_h5ad_round_trip(self, tmp_path):
+        d1 = SCLabDashboard(make_adata())
+        rows = [f"c{i:02d}" for i in range(36)]
+        long_rows = rows * 2  # longer than the uns inline limit
+        label_step(d1.processor, rows[:2], "lab", "A")
+        d1.processor.append_to_step_history("Fake", {"index": long_rows})
+        d1.processor.steps["filter_rows"].run(index=pd.Index(rows))
+
+        stored = json.loads(d1.dataset.adata.uns["sclab"]["history"])
+        assert stored[0] == d1.processor.step_history[0]  # short lists inline
+        assert stored[1]["params"]["index"] == {
+            "__summary__": "list",
+            "len": 72,
+            "sha256": stored[1]["params"]["index"]["sha256"],
+        }
+        assert stored[2]["params"]["index"] == rows  # 36 <= limit
+
+        path = tmp_path / "a.h5ad"
+        d1.dataset.adata.write_h5ad(path)
+        adata = anndata.read_h5ad(path)
+        assert json.loads(adata.uns["sclab"]["history"]) == stored
+
+        d2 = SCLabDashboard(adata)  # picks the history up and shows it
+        assert d2.processor.step_history == stored
+        assert d2.processor.step_history_hash == d1.processor.step_history_hash
+        assert "Fake" in d2.processor.history_table.value
+
+        # a full history file matches the summarized prefix; summaries can't replay
+        p = tmp_path / "h.json"
+        d1.processor.save_step_history(p)
+        d2.processor.load_step_history(p)
+        d2.processor.apply_step_history()  # nothing new: no error
+        d3 = SCLabDashboard(make_adata())
+        d3.processor.add_step_func("Fake", lambda index: None)
+        d3.processor._loaded_step_history = stored
+        with pytest.raises(ValueError, match="summarized"):
+            d3.processor.apply_step_history()
+
+    def test_history_table_lists_steps(self, dash, proc):
+        assert "No steps" in proc.history_table.value
+        assert proc.history_panel in dash.main_content.children
+        label_step(proc, ["c00"], "lab", "A")
+        proc.add_step_func("Boom", lambda: 1 / 0)
+        proc.steps["Boom"].run()
+        table = proc.history_table.value
+        assert table.count("<tr") == 3  # header + 2 steps
+        assert "apply_label" in table and "label=A" in table
+        assert "failed: ZeroDivisionError" in table and "40 x 6" in table
 
 
 # --------------------------------------------------------------------------
@@ -386,7 +541,7 @@ class TestSelectionControls:
         proc.dspr_keep_selected_click_callback()
         assert dash.dataset.adata.n_obs == 10
         assert set(dash.dataset.adata.obs["cat"]) == {"a"}
-        assert proc.step_history[-1]["step_description"] == "filter_rows"
+        assert proc.step_history[-1]["step"] == "filter_rows"
         # slider bounds refreshed after the row change
         assert proc.selection_controls_dict["num_i"].max == 36
 
