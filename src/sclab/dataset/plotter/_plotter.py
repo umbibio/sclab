@@ -122,6 +122,11 @@ class Plotter(GridBox, EventClient):
             )
         )
 
+        # plotly>=6 (anywidget) never autosizes after attach; without this the first
+        # render falls back to plotly.js's 700px default width when the div is unsized.
+        # `responsive` makes plotly.js resize with its container.
+        self.g._config = {**self.g._config, "responsive": True}
+
         def relayout_publisher(event):
             if not event["new"]:
                 return
