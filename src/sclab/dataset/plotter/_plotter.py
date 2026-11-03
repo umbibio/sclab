@@ -135,7 +135,11 @@ class Plotter(GridBox, EventClient):
                 self.broker.publish("dplt_selected_points_change", selected_points)
 
                 with self.g.batch_update():
-                    self.g.update_traces(selectedpoints=None)
+                    # Contour traces have no selectedpoints
+                    self.g.update_traces(
+                        selectedpoints=None,
+                        selector=lambda t: not isinstance(t, go.Contour),
+                    )
                     self.g.plotly_relayout({"selections": None})
 
                 return

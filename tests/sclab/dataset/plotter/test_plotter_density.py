@@ -29,3 +29,21 @@ def test_density_contours_change_updates_contour_size(dash):
 
     assert not dash.broker.exceptions_log[n_exc:]
     assert contour.contours.size != size_before
+
+
+def test_frontend_selection_with_density_contours(dash):
+    plotter, ctrl = dash.plotter, dash.plotter.controls
+    ctrl.show_density.value = True
+    scatter = next(t for t in plotter.g.data if not isinstance(t, go.Contour))
+    scatter.selectedpoints = [0, 1, 2]
+    published = []
+    dash.broker.subscribe("dplt_selected_points_change", published.append)
+
+    # what the frontend sends after a box/lasso selection
+    plotter.g._js2py_relayout = {
+        "relayout_data": {"selections": [{"type": "rect"}]},
+        "source_view_id": "test",
+    }
+
+    assert len(published) == 1 and len(published[0]) == 3
+    assert scatter.selectedpoints is None
