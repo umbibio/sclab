@@ -28,6 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Support current anndata (0.13), plotly (6/7) and itables (2.9) releases while staying compatible with older ones; remove the `plotly<6.0` and `itables<2.4` pins
 - Support pandas 3 (copy-on-write, default `str` dtype for text columns, microsecond datetimes) while staying compatible with pandas 2
 - Gene Expression plots show all cells with the active selection highlighted, instead of only the selected cells
+- Dashboard plot and obs/var tables redraw once per step or action instead of once per event (new `EventBroker.batch()`, `coalesce()` and `flush()`)
+- Results panel "Category" dropdown selects the first result automatically
 - **Breaking:** `periodic_genes()` is now a single entry point, exported from `sclab.tools.cellflow`, with `method="cosinor"` (default, F-test p-values, tolerates dropped bins) or `method="periodogram"` (the previous behavior; raises if time bins are dropped). All options after `time_key` are keyword-only; `tmin`/`tmax` default to `adata.uns[time_key]["t_range"]` or the data range, `period` to `tmax - tmin`; parameters are recorded in `adata.uns["periodic_genes"]`
 - **Breaking:** `periodic_genes()` defaults to `layer="counts"` (pass `layer="X"` to use `adata.X`) and raises `ValueError` on non-count input
 - **Breaking:** `SCLabDataset.data_dict` and `SCLabDataset.metadata` are read-only; edit `dataset.adata` and call `update_data_dict()` to refresh embeddings
@@ -48,7 +50,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - PCA step with a reference batch failing when the `{counts}_log1p` layer is missing
     - With anndata>=0.13, `None` appearing as a layer option and the QC step crashing after Preprocess
     - With plotly>=6, the density contours slider failing (`'dict' object has no attribute 'min'`)
-    - With plotly>=6, the plot overflowing its container on first render (the figure is now responsive)
+    - Plot overflowing its container on first render (plotly>=6) and not following container/window resizes (all plotly versions)
+    - Extra plot redraw from Guided Pseudotime when no signal plot was open
+- `Processor.apply_step_history()` failing with "Step history mismatch" when replaying a JSON-saved history onto a dashboard that already ran its first steps
     - Gene Expression "Plot Expression" failing while a selection is active
     - Box/lasso selection crashing while density contours are shown
     - Category dropdowns (Selection Criteria, Results) losing their value when options refresh
