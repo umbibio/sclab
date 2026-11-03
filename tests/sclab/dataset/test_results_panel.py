@@ -38,3 +38,15 @@ class TestCategoryDropdownKeepsValue:
         panel.available_results.send_state = lambda key=None: sent.append(key)
         panel.add_result(Result("c"))
         assert len(sent) == 1
+
+
+class TestCategoryDropdownAutoSelect:
+    def test_first_result_is_selected(self):
+        panel = make_panel("a")
+        assert panel.available_results.value == 0
+        assert panel.results_stack.selected_index == 0
+
+    def test_existing_selection_is_kept_over_new_results(self):
+        panel = make_panel("a")
+        panel.add_result(Result("b"))
+        assert panel.available_results.value == 0

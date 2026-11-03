@@ -72,6 +72,8 @@ class ResultsPanel(VBox, EventClient):
 
         self.results_stack.children = tuple(current_stack)
         set_options_keep_value(self.available_results, options)
+        if self.available_results.value is None:
+            self.available_results.value = idx
 
     def remove_result(self, name: str):
         options: dict[str, int] = self.available_results.options
