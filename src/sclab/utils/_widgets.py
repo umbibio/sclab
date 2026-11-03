@@ -1,3 +1,4 @@
+import anywidget
 from ipywidgets import Dropdown
 
 
@@ -15,3 +16,29 @@ def set_options_keep_value(dropdown: Dropdown, options) -> None:
         dropdown.options = options
         if old_value in available:
             dropdown.value = old_value
+
+
+class ResizeNotifier(anywidget.AnyWidget):
+    """Zero-height, full-width widget that fires a window ``resize`` event.
+
+    It fires once its first size is laid out and again whenever its width
+    changes. Put it next to a responsive plotly figure: the plotly>=6 widget
+    renders while still detached (so it falls back to plotly.js's 700px
+    default) and, unlike the plotly 5 view, never re-measures on attach/resize
+    messages. plotly.js only re-measures on ``resize`` when ``responsive`` is set.
+    """
+
+    _esm = """
+    export default {
+      render({ el }) {
+        el.style.cssText = "width:100%;height:0";
+        let raf = 0;
+        const ro = new ResizeObserver(() => {
+          cancelAnimationFrame(raf);
+          raf = requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
+        });
+        ro.observe(el);
+        return () => ro.disconnect();
+      },
+    };
+    """

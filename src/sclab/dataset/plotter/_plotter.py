@@ -16,6 +16,7 @@ from plotly.graph_objs.scatter3d import Marker as Marker3D
 from scipy.interpolate import make_smoothing_spline
 
 from ...event import EventBroker, EventClient
+from ...utils._widgets import ResizeNotifier
 from .._dataset import SCLabDataset
 from ._controls import PlotterControls
 from ._utils import (
@@ -82,7 +83,7 @@ class Plotter(GridBox, EventClient):
         graph_layout = Layout(
             display="block", width="100%", height="600px", border="0px solid red"
         )
-        self.graph_box = Box([self.g], layout=graph_layout)
+        self.graph_box = Box([self.g, ResizeNotifier()], layout=graph_layout)
 
         GridBox.__init__(
             self,
@@ -463,6 +464,15 @@ class Plotter(GridBox, EventClient):
             )
             self.set_dragmode(dragmode)
 
+        self._unpin_size()
+
+    def _unpin_size(self):
+        # plotly.js pins the width (and drops autosize) whenever a relayout carries
+        # `height`, which every figure update does. `autosize` relayouts unpin it again
+        # so the plot keeps following its container. Sent directly because the public
+        # plotly_relayout skips values that are already True on the Python side.
+        self.g._send_relayout_msg({"autosize": True})
+
     def set_dragmode(self, dragmode: str | None = None):
         ndims = self.controls.n_dimensions.value
         if dragmode is None:
@@ -736,6 +746,7 @@ class Plotter(GridBox, EventClient):
     def ctrl_plot_height_change_callback(self, new_value):
         self.graph_box.layout.height = f"{new_value}px"
         self.g.update_layout(height=new_value)
+        self._unpin_size()
 
     def ctrl_save_button_click_callback(self):
         dataset_name = self.dataset.name
