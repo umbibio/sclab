@@ -6,6 +6,7 @@ from ipywidgets import Combobox, Dropdown
 
 from sclab.dataset.processor import Processor
 from sclab.dataset.processor.step import ProcessorStepBase
+from sclab.utils import layer_keys
 
 colorscales = list(
     filter(lambda s: "swatch" not in s and not s.startswith("_"), dir(pc.sequential))
@@ -54,7 +55,7 @@ class GeneExpression(ProcessorStepBase):
                 ensure_option=True,
             ),
             layer=Dropdown(
-                options=tuple(parent.dataset.adata.layers.keys()),
+                options=tuple(layer_keys(parent.dataset.adata)),
                 value=None,
                 description="Layer",
             ),

@@ -13,6 +13,7 @@ from anndata import AnnData
 
 from sclab import SCLabDashboard
 from sclab.preprocess import pca as library_pca
+from sclab.utils import layer_keys
 from sclab.examples.processor_steps._differential_expression import (
     _rank_genes_groups_df,
 )
@@ -72,6 +73,25 @@ def dash() -> SCLabDashboard:
         _, ok = run_step(d, name)
         assert ok, name
     return d
+
+
+# --------------------------------------------------------------------------
+# Layer dropdowns
+# --------------------------------------------------------------------------
+def test_layer_dropdown_options_never_include_none(dash):
+    # anndata>=0.13 exposes X as adata.layers[None]; it must not leak into options
+    assert None not in layer_keys(dash.dataset.adata)
+    dash.processor.dset_anndata_layers_change_callback()
+    seen = 0
+    for step in dash.processor.steps.values():
+        for control in step.variable_controls.values():
+            if getattr(control, "description", "").strip(" :.").lower() != "layer":
+                continue
+            seen += 1
+            values = list(control.options)
+            assert None not in values
+            assert set(values) <= set(layer_keys(dash.dataset.adata))
+    assert seen
 
 
 # --------------------------------------------------------------------------

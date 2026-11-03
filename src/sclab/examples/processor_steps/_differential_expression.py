@@ -14,6 +14,7 @@ from packaging.version import Version
 from sclab.dataset import SCLabDataset
 from sclab.dataset.processor import Processor
 from sclab.dataset.processor.step import ProcessorStepBase
+from sclab.utils import layer_keys
 
 
 class DifferentialExpressionResults(VBox):
@@ -164,7 +165,7 @@ class DifferentialExpression(ProcessorStepBase):
             groups=SelectMultiple(description="Groups"),
             reference=Dropdown(description="Reference"),
             layer=Dropdown(
-                options=(None,) + tuple(parent.dataset.adata.layers.keys()),
+                options=(None,) + tuple(layer_keys(parent.dataset.adata)),
                 value=None,
                 description="Layer",
             ),

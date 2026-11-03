@@ -3,6 +3,7 @@ from ipywidgets import Dropdown, IntText
 
 from sclab.dataset.processor import Processor
 from sclab.dataset.processor.step import ProcessorStepBase
+from sclab.utils import layer_keys
 
 
 class QC(ProcessorStepBase):
@@ -28,7 +29,7 @@ class QC(ProcessorStepBase):
 
         variable_controls = dict(
             layer=Dropdown(
-                options=tuple(parent.dataset.adata.layers.keys()),
+                options=tuple(layer_keys(parent.dataset.adata)),
                 value="counts",
                 description="Layer",
             ),

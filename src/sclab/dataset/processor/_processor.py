@@ -34,6 +34,7 @@ from traitlets import TraitError
 
 from ..._methods_registry import get_sclab_methods
 from ...event import EventBroker, EventClient
+from ...utils import layer_keys
 from .._dataset import SCLabDataset
 from ..plotter import Plotter
 from ._results_panel import ResultsPanel
@@ -1060,7 +1061,7 @@ class Processor(EventClient):
                     control.value = current_value
 
     def dset_anndata_layers_change_callback(self, *args, **kwargs):
-        layer_options = {key: key for key in self.dataset.adata.layers.keys()}
+        layer_options = {key: key for key in layer_keys(self.dataset.adata)}
         obsm_options = {key: key for key in self.dataset.adata.obsm.keys()}
 
         for control in self.all_controls_list:
@@ -1086,7 +1087,7 @@ class Processor(EventClient):
 
     def dset_data_dict_change_callback(self, *args, **kwargs):
         options = [
-            *self.dataset.adata.layers.keys(),
+            *layer_keys(self.dataset.adata),
             *self.dataset.adata.obsm.keys(),
         ]
         options = {v: v for v in options}

@@ -7,6 +7,7 @@ from sclab.tools.doublet_detection import (
     scdblfinder,
     scrublet,
 )
+from sclab.utils import layer_keys
 
 
 class DoubletDetection(ProcessorStepBase):
@@ -39,7 +40,7 @@ class DoubletDetection(ProcessorStepBase):
 
         methods_available = get_available_doublet_detection_methods()
 
-        layers = tuple(parent.dataset.adata.layers.keys())
+        layers = tuple(layer_keys(parent.dataset.adata))
         counts_layer = parent.dataset.counts_layer
         self._layer_dropdown = Dropdown(
             options=layers,

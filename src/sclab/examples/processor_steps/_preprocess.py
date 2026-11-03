@@ -8,6 +8,7 @@ from tqdm.auto import tqdm
 import sclab.preprocess
 from sclab.dataset.processor import Processor
 from sclab.dataset.processor.step import ProcessorStepBase
+from sclab.utils import layer_keys
 
 
 class Preprocess(ProcessorStepBase):
@@ -39,7 +40,7 @@ class Preprocess(ProcessorStepBase):
 
         variable_controls = dict(
             layer=Dropdown(
-                options=tuple(parent.dataset.adata.layers.keys()),
+                options=tuple(layer_keys(parent.dataset.adata)),
                 value="counts",
                 description="Layer",
             ),
@@ -214,7 +215,7 @@ class Preprocess(ProcessorStepBase):
 
         self.broker.publish("dset_metadata_change", dataset.metadata)
         self.broker.publish("dset_data_dict_change", dataset.data_dict, "metadata")
-        self.broker.publish("dset_anndata_layers_change", dataset.adata.layers.keys())
+        self.broker.publish("dset_anndata_layers_change", layer_keys(dataset.adata))
         self.broker.publish(
             "ctrl_value_change_request",
             data_key="metadata",

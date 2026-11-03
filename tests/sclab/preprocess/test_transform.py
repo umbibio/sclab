@@ -6,6 +6,7 @@ from scipy.sparse import csr_matrix, issparse
 
 from sclab.preprocess import pool_neighbors
 from sclab.preprocess._transform import periodic_pooling
+from sclab.utils import layer_keys
 
 from ._graph import graph_adata
 
@@ -145,7 +146,7 @@ def test_pool_neighbors_copy_returns_without_writing():
 
     assert result is not None
     np.testing.assert_allclose(np.asarray(result).ravel(), [1.5, 7 / 3, 3.0])
-    assert len(adata.layers) == 0
+    assert layer_keys(adata) == []
 
 
 def test_pool_neighbors_returns_none_by_default():

@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 from anndata import AnnData
 
-from sclab.utils import check_raw_counts
+from sclab.utils import check_raw_counts, layer_keys
 
 PYTHON_DEPENDENCIES = ["rpy2", "anndata2ri"]
 R_DEPENDENCIES = ["scater", "scDblFinder", "BiocParallel", "SingleCellExperiment"]
@@ -104,7 +104,7 @@ def scdblfinder(
     else:
         X = adata_.layers[layer]
 
-    for layer in list(adata_.layers.keys()):
+    for layer in layer_keys(adata_):
         adata_.layers.pop(layer, None)
 
     adata_.layers["counts"] = X.astype(float)

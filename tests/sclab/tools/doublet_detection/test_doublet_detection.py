@@ -18,6 +18,7 @@ from sclab.tools.doublet_detection._doubletdetection import (
 )
 from sclab.tools.doublet_detection._scdblfinder import scdblfinder_is_available
 from sclab.tools.doublet_detection._scrublet import scrublet_is_available
+from sclab.utils import layer_keys
 
 needs_scrublet = pytest.mark.skipif(
     not scrublet_is_available(), reason="scrublet not installed"
@@ -324,7 +325,7 @@ class TestScDblFinder:
         is_doublet = doublet_data[1]
         assert score[is_doublet].mean() > score[~is_doublet].mean()
         # original counts are untouched (works on a copy)
-        assert len(adata.layers) == 0
+        assert layer_keys(adata) == []
 
 
 class TestCheckCounts:
