@@ -150,6 +150,8 @@ def format_params(params: dict) -> str:
             v = f"list({len(v)})"
         elif isinstance(v, list | tuple):
             v = ", ".join(map(str, v)).join("()")
+        elif isinstance(v, float):
+            v = f"{v:.6g}"  # slider floats like 1.0000000000000002
         elif v is None:
             v = "None"
         elif not isinstance(v, int | float | str):

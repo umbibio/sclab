@@ -854,7 +854,8 @@ class Processor(EventClient):
         ths = "".join(f"<th>{h}</th>" for h in header)
         self.history_table.value = (
             "<style>.sclab-history td,.sclab-history th"
-            "{padding:2px 8px;text-align:left;vertical-align:top}</style>"
+            "{padding:2px 8px;text-align:left;vertical-align:top}"
+            ".sclab-history td:not(:nth-child(3)){white-space:nowrap}</style>"
             f"<table class='sclab-history'><tr>{ths}</tr>{''.join(rows)}</table>"
         )
 
