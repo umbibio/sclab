@@ -1,6 +1,7 @@
 from ._cca_integrate import cca_integrate, cca_integrate_pair
 from ._filter_obs import filter_obs
 from ._harmony_integrate import harmony_integrate
+from ._neighbors import neighbors
 from ._normalize_weighted import normalize_weighted
 from ._pca import pca
 from ._preprocess import preprocess
@@ -14,6 +15,7 @@ __all__ = [
     "cca_integrate_pair",
     "filter_obs",
     "harmony_integrate",
+    "neighbors",
     "normalize_weighted",
     "pca",
     "pool_neighbors",

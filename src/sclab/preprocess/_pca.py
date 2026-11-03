@@ -10,6 +10,7 @@ def pca(
     reference_batch: str | None = None,
     zero_center: bool = False,
     counts_layer: str = "counts",
+    random_state: int = 0,
 ):
     """Compute principal components and project all cells onto the PCA space.
 
@@ -48,6 +49,8 @@ def pca(
         the ``seurat_v3_paper`` flavor (on the counts). Raises ``ValueError``
         if the layer is missing. ``layer`` remains the input to PCA. Default
         is ``"counts"``.
+    random_state : int, optional
+        Seed for :func:`scanpy.pp.pca`. Default is 0.
 
     Returns
     -------
@@ -66,6 +69,7 @@ def pca(
         layer=layer,
         mask_var=mask_var,
         svd_solver="arpack",
+        random_state=random_state,
     )
 
     X = adata.X if layer is None else adata.layers[layer]
