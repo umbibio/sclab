@@ -1,15 +1,16 @@
-import numpy as np
 from ipywidgets import Dropdown, IntText
 
 from sclab.dataset.processor import Processor
 from sclab.dataset.processor.step import ProcessorStepBase
+from sclab.preprocess import qc
 from sclab.utils import layer_keys
 
 
 class QC(ProcessorStepBase):
     """Quality control step for single-cell RNA-seq data.
 
-    Computes per-cell and per-gene QC metrics using the selected counts
+    Runs :func:`sclab.preprocess.qc`: computes per-cell and per-gene QC
+    metrics using the selected counts
     layer, applies minimum count/gene/cell filters, and optionally restricts
     analysis to the top-ranked cells. After running, the plotter is updated
     to show ``barcode_rank`` vs ``total_counts``.
@@ -30,7 +31,7 @@ class QC(ProcessorStepBase):
         variable_controls = dict(
             layer=Dropdown(
                 options=tuple(layer_keys(parent.dataset.adata)),
-                value="counts",
+                value=parent.dataset.counts_layer,
                 description="Layer",
             ),
             min_counts=IntText(value=50, description="Min. Counts"),
@@ -61,44 +62,6 @@ class QC(ProcessorStepBase):
             resolved["layer"] = self.parent.dataset.counts_layer
         return resolved
 
-    def compute_qc_metrics(
-        self,
-        layer: str | None = None,
-        min_counts: int = 50,
-        min_genes: int = 5,
-        min_cells: int = 5,
-        max_rank: int = 0,
-    ):
-        import scanpy as sc
-
-        if layer is None:
-            layer = self.parent.dataset.counts_layer
-
-        dataset = self.parent.dataset
-        adata = dataset.adata
-
-        adata.layers["qc_tmp_current_X"] = adata.X
-        adata.X = adata.layers[layer].copy()
-        rowsums = np.asarray(adata.X.sum(axis=1)).squeeze()
-
-        obs_idx = adata.obs_names[rowsums >= min_counts]
-        adata._inplace_subset_obs(obs_idx)
-
-        sc.pp.calculate_qc_metrics(adata, percent_top=None, log1p=False, inplace=True)
-
-        sc.pp.filter_cells(adata, min_genes=min_genes)
-        sc.pp.filter_genes(adata, min_cells=min_cells)
-        sc.pp.calculate_qc_metrics(adata, percent_top=None, log1p=False, inplace=True)
-        adata.obs["barcode_rank"] = adata.obs["total_counts"].rank(ascending=False)
-
-        # Restore original X
-        adata.X = adata.layers.pop("qc_tmp_current_X")
-
-        if max_rank > 0:
-            series = self.parent.dataset.adata.obs["barcode_rank"]
-            index = series.loc[series < max_rank].index
-            self.parent.dataset.filter_rows(index)
-
     def function(
         self,
         layer: str | None = None,
@@ -107,14 +70,22 @@ class QC(ProcessorStepBase):
         min_cells: int = 5,
         max_rank: int = 0,
     ):
-        self.compute_qc_metrics(
-            layer,
-            min_counts,
-            min_genes,
-            min_cells,
-            max_rank,
+        dataset = self.parent.dataset
+        n_obs, n_vars = dataset.adata.shape
+
+        qc(
+            dataset.adata,
+            counts_layer=layer or dataset.counts_layer,
+            min_counts=min_counts,
+            min_genes=min_genes,
+            min_cells=min_cells,
+            max_rank=max_rank,
         )
 
+        if dataset.adata.n_obs != n_obs:
+            self.broker.publish("dset_total_rows_change", dataset.metadata)
+        if dataset.adata.n_vars != n_vars:
+            self.broker.publish("dset_total_vars_change", dataset.adata.var)
         self.broker.publish("dset_metadata_change", self.parent.dataset.metadata)
         self.broker.publish(
             "ctrl_value_change_request",

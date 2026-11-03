@@ -1,24 +1,27 @@
-import warnings
-
-import numpy as np
-from anndata import ImplicitModificationWarning
 from ipywidgets import Checkbox, Dropdown
-from tqdm.auto import tqdm
 
-import sclab.preprocess
 from sclab.dataset.processor import Processor
 from sclab.dataset.processor.step import ProcessorStepBase
+from sclab.preprocess import preprocess
 from sclab.utils import layer_keys, text_or_category_columns
+
+# dropdown label -> ``sclab.preprocess.preprocess(normalization_method=...)``
+NORMALIZATION_METHODS = {
+    "No normalization": "none",
+    "Library size": "library",
+    "Weighted library size": "weighted",
+}
 
 
 class Preprocess(ProcessorStepBase):
     """Normalization and scaling step for single-cell RNA-seq data.
 
-    Applies a configurable preprocessing pipeline: optional per-group HVG
-    selection, normalization (library size, entropy-weighted, or none),
-    log1p transformation, optional covariate regression, and per-group
-    scaling. The processed matrix is stored in a new named layer and the
-    plotter is updated to show ``n_genes_by_counts`` vs ``total_counts``.
+    Runs :func:`sclab.preprocess.preprocess`: cell/gene filtering, HVG
+    selection (optionally per group), normalization (library size,
+    entropy-weighted, or none), log1p transformation, optional covariate
+    regression, and (per-group) scaling. The processed matrix is stored in a
+    new named layer and the plotter is updated to show ``n_genes_by_counts``
+    vs ``total_counts``.
 
     Requires ``scanpy`` to be installed.
     """
@@ -41,7 +44,7 @@ class Preprocess(ProcessorStepBase):
         variable_controls = dict(
             layer=Dropdown(
                 options=tuple(layer_keys(parent.dataset.adata)),
-                value="counts",
+                value=parent.dataset.counts_layer,
                 description="Layer",
             ),
             group_by=Dropdown(
@@ -52,7 +55,7 @@ class Preprocess(ProcessorStepBase):
             regress_total_counts=Checkbox(description="Regr. out total counts"),
             regress_n_genes=Checkbox(description="Regr. out n genes"),
             normalization_method=Dropdown(
-                options=("No normalization", "Library size", "Weighted library size"),
+                options=tuple(NORMALIZATION_METHODS),
                 value="Library size",
                 description="Norm. method",
             ),
@@ -92,132 +95,22 @@ class Preprocess(ProcessorStepBase):
         log1p: bool = True,
         scale: bool = True,
     ):
-        import scanpy as sc
-
-        self.output.clear_output(wait=True)
-        with self.output:
-            pbar = tqdm(total=100, bar_format="{percentage:3.0f}%|{bar}|")
-
         dataset = self.parent.dataset
         adata = dataset.adata
-        if layer is None:
-            layer = dataset.counts_layer
+        start_n_cells, start_n_genes = adata.shape
 
-        if f"{layer}_log1p" not in adata.layers:
-            adata.layers[f"{layer}_log1p"] = sc.pp.log1p(adata.layers[layer].copy())
-        pbar.update(10)
-
-        if layer != "X":
-            adata.X = adata.layers[layer].copy()
-        start_n_cells_i, start_n_genes = adata.shape
-
-        sc.pp.calculate_qc_metrics(
-            adata,
-            percent_top=None,
-            log1p=False,
-            inplace=True,
-        )
-        sc.pp.filter_cells(adata, min_genes=5)
-        sc.pp.filter_genes(adata, min_cells=5)
-        pbar.update(10)
-
-        sc.pp.calculate_qc_metrics(
-            adata,
-            percent_top=None,
-            log1p=False,
-            inplace=True,
-        )
-        pbar.update(10)
-
-        if group_by is not None:
-            adata.var["highly_variable"] = False
-            for name, idx in adata.obs.groupby(group_by, observed=True).groups.items():
-                hvg_seurat = sc.pp.highly_variable_genes(
-                    adata[idx],
-                    layer=f"{layer}_log1p",
-                    flavor="seurat",
-                    inplace=False,
-                )["highly_variable"]
-
-                hvg_seurat_v3 = sc.pp.highly_variable_genes(
-                    adata[idx],
-                    layer=layer,
-                    flavor="seurat_v3_paper",
-                    n_top_genes=hvg_seurat.sum(),
-                    inplace=False,
-                )["highly_variable"]
-
-                adata.var[f"highly_variable_{name}"] = hvg_seurat | hvg_seurat_v3
-                adata.var["highly_variable"] |= adata.var[f"highly_variable_{name}"]
-
-        else:
-            sc.pp.highly_variable_genes(adata, layer=f"{layer}_log1p", flavor="seurat")
-            hvg_seurat = adata.var["highly_variable"]
-
-            sc.pp.highly_variable_genes(
+        self.output.clear_output(wait=True)
+        with self.output:  # the library's progress bar
+            preprocess(
                 adata,
-                layer=layer,
-                flavor="seurat_v3_paper",
-                n_top_genes=hvg_seurat.sum(),
+                counts_layer=layer or dataset.counts_layer,
+                group_by=group_by,
+                regress_total_counts=regress_total_counts,
+                regress_n_genes=regress_n_genes,
+                normalization_method=NORMALIZATION_METHODS[normalization_method],
+                log1p=log1p,
+                scale=scale,
             )
-            hvg_seurat_v3 = adata.var["highly_variable"]
-
-            adata.var["highly_variable"] = hvg_seurat | hvg_seurat_v3
-
-        pbar.update(10)
-        pbar.update(10)
-
-        new_layer = layer
-        if normalization_method == "Library size":
-            new_layer += "_normt"
-            sc.pp.normalize_total(adata, target_sum=1e4)
-        elif normalization_method == "Weighted library size":
-            new_layer += "_normw"
-            sclab.preprocess.normalize_weighted(
-                adata, target_scale=1e4, batch_key=group_by
-            )
-
-        pbar.update(10)
-        pbar.update(10)
-
-        if log1p:
-            new_layer += "_log1p"
-            adata.uns.pop("log1p", None)
-            sc.pp.log1p(adata)
-        pbar.update(10)
-
-        vars_to_regress = []
-        if regress_n_genes:
-            vars_to_regress.append("n_genes_by_counts")
-
-        if regress_total_counts and log1p:
-            adata.obs["log1p_total_counts"] = np.log1p(adata.obs["total_counts"])
-            vars_to_regress.append("log1p_total_counts")
-        elif regress_total_counts:
-            vars_to_regress.append("total_counts")
-
-        if vars_to_regress:
-            new_layer += "_regr"
-            sc.pp.regress_out(adata, keys=vars_to_regress, n_jobs=1)
-        pbar.update(10)
-
-        if scale:
-            new_layer += "_scale"
-            if group_by is not None:
-                for _, idx in adata.obs.groupby(group_by, observed=True).groups.items():
-                    with warnings.catch_warnings():
-                        warnings.filterwarnings(
-                            "ignore",
-                            category=ImplicitModificationWarning,
-                            message="Modifying `X` on a view results in data being overridden",
-                        )
-                        adata[idx].X = sc.pp.scale(adata[idx].X, zero_center=False)
-            else:
-                sc.pp.scale(adata, zero_center=False)
-
-        adata.layers[new_layer] = adata.X.copy()
-
-        pbar.update(10)
 
         self.broker.publish("dset_metadata_change", dataset.metadata)
         self.broker.publish("dset_data_dict_change", dataset.data_dict, "metadata")
@@ -230,12 +123,8 @@ class Preprocess(ProcessorStepBase):
         )
         self.broker.publish("dset_var_dataframe_change", dataset.adata.var)
 
-        end_n_cells_i, end_n_genes = adata.shape
-        if start_n_cells_i != end_n_cells_i:
+        end_n_cells, end_n_genes = adata.shape
+        if start_n_cells != end_n_cells:
             self.broker.publish("dset_total_rows_change", dataset.metadata)
         if start_n_genes != end_n_genes:
             self.broker.publish("dset_total_vars_change", adata.var)
-
-        adata.X = adata.X.astype(np.float32)
-
-        pbar.close()

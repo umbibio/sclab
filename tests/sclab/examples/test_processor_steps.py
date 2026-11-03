@@ -13,6 +13,8 @@ from anndata import AnnData
 
 from sclab import SCLabDashboard
 from sclab.preprocess import pca as library_pca
+from sclab.preprocess import preprocess as library_preprocess
+from sclab.preprocess import qc as library_qc
 from sclab.utils import layer_keys
 from sclab.examples.processor_steps._differential_expression import (
     _rank_genes_groups_df,
@@ -92,6 +94,84 @@ def test_layer_dropdown_options_never_include_none(dash):
             assert None not in values
             assert set(values) <= set(layer_keys(dash.dataset.adata))
     assert seen
+
+
+# --------------------------------------------------------------------------
+# QC / Preprocess: thin wrappers over the library functions
+# --------------------------------------------------------------------------
+def _dense(X):
+    return X.toarray() if hasattr(X, "toarray") else np.asarray(X)
+
+
+class TestQCPreprocessMatchLibrary:
+    @pytest.mark.parametrize(
+        "step_params, library_params",
+        [
+            ({}, {}),
+            (
+                {"group_by": "batch", "normalization_method": "Weighted library size"},
+                {"group_by": "batch", "normalization_method": "weighted"},
+            ),
+            (
+                {
+                    "normalization_method": "No normalization",
+                    "log1p": False,
+                    "scale": False,
+                    "regress_n_genes": True,
+                },
+                {
+                    "normalization_method": "none",
+                    "log1p": False,
+                    "scale": False,
+                    "regress_n_genes": True,
+                },
+            ),
+        ],
+    )
+    def test_step_output_equals_library_call(self, step_params, library_params):
+        d = SCLabDashboard(make_adata(300, 300))
+        expected = d.dataset.adata.copy()
+        qc_params = dict(min_counts=50, min_genes=5, min_cells=0, max_rank=250)
+
+        strict_run_step(d, "QC", **qc_params)
+        library_qc(expected, counts_layer="counts", **qc_params)
+        strict_run_step(d, "Preprocess", **step_params)
+        library_preprocess(expected, counts_layer="counts", **library_params)
+
+        got = d.dataset.adata
+        assert got.obs_names.equals(expected.obs_names)
+        assert got.var_names.equals(expected.var_names)
+        np.testing.assert_array_equal(_dense(got.X), _dense(expected.X))
+        assert got.X.dtype == expected.X.dtype
+        assert layer_keys(got) == layer_keys(expected)
+        for key in layer_keys(got):
+            np.testing.assert_array_equal(
+                _dense(got.layers[key]), _dense(expected.layers[key])
+            )
+        pd.testing.assert_series_equal(
+            got.var["highly_variable"], expected.var["highly_variable"]
+        )
+
+    def test_history_records_resolved_layer(self):
+        d = SCLabDashboard(make_adata(300, 300))
+        strict_run_step(d, "QC", layer=None)
+        strict_run_step(d, "Preprocess", layer=None)
+        qc_entry, pp_entry = d.processor.step_history
+        assert qc_entry["params"]["layer"] == pp_entry["params"]["layer"] == "counts"
+        assert pp_entry["shape_before"] == qc_entry["shape_after"]
+
+    def test_unknown_normalization_method_fails(self):
+        d = SCLabDashboard(make_adata(300, 300))
+        _, ok = run_step(d, "Preprocess", normalization_method="library")
+        assert not ok
+        assert d.processor.step_history[-1]["status"] == "failed"
+
+    def test_qc_filtering_refreshes_row_and_gene_dependents(self):
+        d = SCLabDashboard(make_adata(300, 300))
+        totals = np.asarray(d.dataset.adata.layers["counts"].sum(axis=1)).ravel()
+        rows = capture(d, "dset_total_rows_change")
+        strict_run_step(d, "QC", min_counts=int(np.median(totals)))
+        assert 0 < d.dataset.adata.n_obs < 300 and len(rows) == 1
 
 
 # --------------------------------------------------------------------------
