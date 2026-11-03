@@ -1,6 +1,7 @@
 from ipywidgets import Box, Dropdown, Layout, Stack, VBox, link
 
 from sclab.event import EventBroker, EventClient
+from sclab.utils import set_options_keep_value
 
 # Create a layout with a bottom border to act as the horizontal line
 hr_layout = Layout(
@@ -70,7 +71,7 @@ class ResultsPanel(VBox, EventClient):
             current_stack[idx] = results
 
         self.results_stack.children = tuple(current_stack)
-        self.available_results.options = options
+        set_options_keep_value(self.available_results, options)
 
     def remove_result(self, name: str):
         options: dict[str, int] = self.available_results.options
@@ -90,5 +91,5 @@ class ResultsPanel(VBox, EventClient):
             self.results_stack.selected_index = idx
 
         self.results_stack.children = tuple(current_stack)
-        self.available_results.options = options
+        set_options_keep_value(self.available_results, options)
         self.available_results.value = idx

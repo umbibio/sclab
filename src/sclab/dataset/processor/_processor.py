@@ -34,7 +34,7 @@ from traitlets import TraitError
 
 from ..._methods_registry import get_sclab_methods
 from ...event import EventBroker, EventClient
-from ...utils import layer_keys, text_or_category_columns
+from ...utils import layer_keys, set_options_keep_value, text_or_category_columns
 from .._dataset import SCLabDataset
 from ..plotter import Plotter
 from ._results_panel import ResultsPanel
@@ -668,11 +668,8 @@ class Processor(EventClient):
             else:
                 raise RuntimeError(f"Unsupported control type {type(control)}")
 
-        old_value = self.visible_category_dropdown.value
         options = [c.description for c in categorical_controls[1:]]
-        self.visible_category_dropdown.options = options
-        if old_value in options:
-            self.visible_category_dropdown.value = old_value
+        set_options_keep_value(self.visible_category_dropdown, options)
 
         tabs = Tab(
             [

@@ -547,3 +547,34 @@ class TestControlRefreshCallbacks:
         control = proc.steps["Neighbors"].variable_controls["use_rep"]
         assert [e for e in dash.broker.exceptions_log[n:] if "KeyError" in e] == []
         assert control.value == "X_pca"
+
+
+# --------------------------------------------------------------------------
+# category dropdown keeps its value when metadata changes
+# --------------------------------------------------------------------------
+class TestCategoryDropdownKeepsValue:
+    @pytest.mark.parametrize("picked", ["cat", "flag", "batch"])
+    def test_value_survives_new_column(self, proc, dash, picked):
+        dropdown = proc.visible_category_dropdown
+        dropdown.value = picked
+        dash.dataset.adata.obs["new_cat"] = pd.Categorical(["u", "v"] * 20)
+        dash.broker.publish("dset_metadata_change", dash.dataset.metadata, "new_cat")
+        assert "new_cat" in dropdown.options
+        assert dropdown.value == picked
+        assert dropdown.options[dropdown.index] == picked
+
+    def test_frontend_gets_a_single_update(self, proc, dash):
+        dropdown = proc.visible_category_dropdown
+        dropdown.value = "batch"
+        sent = []
+        dropdown.send_state = lambda key=None: sent.append(key)
+        dash.dataset.adata.obs["new_cat"] = pd.Categorical(["u", "v"] * 20)
+        dash.broker.publish("dset_metadata_change", dash.dataset.metadata, "new_cat")
+        assert len(sent) == 1  # no transient reset to the first option
+
+    def test_removed_category_falls_back_to_first_option(self, proc, dash):
+        dropdown = proc.visible_category_dropdown
+        dropdown.value = "batch"
+        del dash.dataset.adata.obs["batch"]
+        dash.broker.publish("dset_metadata_change", dash.dataset.metadata, None)
+        assert dropdown.value == "cat"
