@@ -967,17 +967,17 @@ class Plotter(GridBox, EventClient):
         if not isinstance(vlines, list):
             vlines = [vlines]
 
-        with self.g.batch_update():
-            for vline in vlines:
-                self.g.add_vline(x=vline, **kwargs)
+        # not in batch_update: plotly reads back the shape's xref/yref
+        for vline in vlines:
+            self.g.add_vline(x=vline, **kwargs)
 
     def dplt_add_hline_request_callback(self, hlines: float | list[float], **kwargs):
         if not isinstance(hlines, list):
             hlines = [hlines]
 
-        with self.g.batch_update():
-            for hline in hlines:
-                self.g.add_hline(y=hline, **kwargs)
+        # not in batch_update: plotly reads back the shape's xref/yref
+        for hline in hlines:
+            self.g.add_hline(y=hline, **kwargs)
 
     def dplt_add_data_as_line_trace_request_callback(
         self, data_key: str, data: pd.DataFrame, **kvargs
