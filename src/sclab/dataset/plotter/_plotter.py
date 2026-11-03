@@ -1,3 +1,4 @@
+import re
 from typing import Any
 
 import numpy as np
@@ -32,6 +33,8 @@ class Plotter(GridBox, EventClient):
     controls: PlotterControls
     dataset: SCLabDataset
     state: dict[str, Any]
+    # box/lasso of the last plot selection, see Processor._selection_params
+    selection_shape: dict | None = None
 
     events: list[str] = [
         "dplt_dataset_change",
@@ -137,8 +140,12 @@ class Plotter(GridBox, EventClient):
 
             relayout_data: dict = event["new"]["relayout_data"]
 
-            if relayout_data.get("selections", None):
-                selected_points = self.selected_points
+            if selections := relayout_data.get("selections", None):
+                self.selection_shape = self._selection_shape(selections)
+                if self.selection_shape:
+                    selected_points = self._shape_points(self.selection_shape)
+                else:  # may lag behind for lassos, see _shape_points
+                    selected_points = self.selected_points
                 if selected_points.empty:
                     selected_points = None
                 self.broker.publish("dplt_selected_points_change", selected_points)
@@ -180,6 +187,62 @@ class Plotter(GridBox, EventClient):
         self.dataset = dataset
 
         self.broker.publish("dplt_dataset_change", dataset)
+
+    def _selection_shape(self, selections: list[dict]) -> dict | None:
+        """A single box/lasso of plotly's layout.selections on plain 2D axes.
+
+        Plotly reports a box as ``{"type": "rect", "x0", "x1", "y0", "y1"}`` and a
+        lasso as ``{"type": "path", "path": "M x,y L x,y ... Z"}``, in data units.
+        Returns the schema of ``sclab.dataset.processor._selection_code`` or None
+        where the plotted coordinates are not a basis's columns (log, rank or
+        rotated axes, no data key) or for several selections.
+        """
+        ctrl = self.controls
+        key = self.dataset._selected_data_key
+        col_x, col_y = (d.value for d in ctrl.selected_axes.children[:2])
+        if (
+            len(selections) != 1
+            or ctrl.n_dimensions.value != "2D"
+            or not key
+            or col_x == "rank"
+            or ctrl.rotate_steps.value
+            or any(c.value for c in ctrl.log_axes.children[:2])
+        ):
+            return None
+
+        if key == "metadata":  # obs columns
+            shape = {"dims": [col_x, col_y]}
+        else:
+            columns = self.dataset.data.columns
+            dims = [int(columns.get_loc(col_x)), int(columns.get_loc(col_y))]
+            shape = {"basis": key, "dims": dims}
+
+        (selection,) = selections
+        try:  # frontend payload
+            if selection.get("type") == "rect":
+                x = sorted(float(selection[k]) for k in ("x0", "x1"))
+                y = sorted(float(selection[k]) for k in ("y0", "y1"))
+                return {"type": "box", **shape, "x": x, "y": y}
+            if selection.get("type") == "path":
+                vertices = re.findall(r"([-+.\deE]+),([-+.\deE]+)", selection["path"])
+                polygon = [[float(x), float(y)] for x, y in vertices]
+                if len(polygon) >= 3:
+                    return {"type": "lasso", **shape, "polygon": polygon}
+        except (KeyError, TypeError, ValueError):
+            pass
+        return None
+
+    def _shape_points(self, shape: dict) -> pd.Index:
+        """The cells inside a box/lasso, as plotly selects them (edges aside).
+
+        Preferred over the traces' selectedpoints: when the `selections` relayout
+        arrives they are often not synced yet for lassos (the frontend's message
+        buffer drops plotly_selected for the empty one that follows it).
+        """
+        from ..processor._selection_code import shape_mask  # circular import
+
+        adata = self.dataset.adata
+        return adata.obs_names[shape_mask(adata, shape)]
 
     @property
     def selected_points(self):

@@ -530,11 +530,19 @@ class TestSelectionControls:
         assert c["cat"].value == () and c["num_i"].value == (0, 0)
         assert dash.dataset._selected_rows is None
 
-    def test_plotter_selection_resets_controls(self, proc):
+    def test_plot_selection_intersects_filters(self, proc, dash):
         c = proc.selection_controls_dict
-        c["cat"].value = ("b",)
-        proc.dplt_selected_points_change_callback(pd.Index(["c00"]))
-        assert c["cat"].value == ()
+        c["cat"].value = ("b",)  # c01, c05, ...
+        dash.broker.publish(
+            "dplt_selected_points_change", pd.Index(["c00", "c01", "c02", "c05"])
+        )
+        assert c["cat"].value == ("b",)  # filters stay
+        assert dash.dataset.selected_rows.tolist() == ["c01", "c05"]
+        c["cat"].value = ("a", "b")  # filter change keeps the plot selection
+        assert dash.dataset.selected_rows.tolist() == ["c00", "c01", "c05"]
+        proc.dspr_clear_selection_click_callback()
+        assert dash.dataset._selected_rows is None
+        assert proc._plot_selection is None
 
     def test_keep_selected_filters_rows_and_records_history(self, proc, dash):
         proc.selection_controls_dict["cat"].value = ("a",)

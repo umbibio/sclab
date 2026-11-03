@@ -146,6 +146,8 @@ def format_params(params: dict) -> str:
     for k, v in params.items():
         if isinstance(v, dict) and v.get("__summary__") == "list":
             v = f"list({v['len']})"
+        elif isinstance(v, dict):  # e.g. the filters of a Keep/Drop selection
+            v = format_params(v).join("{}")
         elif isinstance(v, list | tuple) and len(v) > 4:
             v = f"list({len(v)})"
         elif isinstance(v, list | tuple):

@@ -46,6 +46,7 @@ from .._dataset import SCLabDataset
 from ..plotter import Plotter
 from . import _codegen, _history
 from ._results_panel import ResultsPanel
+from ._selection_code import selection_mask, store_selection, stored_selections
 
 logger = logging.getLogger(__name__)
 
@@ -111,6 +112,9 @@ class Processor(EventClient):
     step_history: list[dict[str, str | tuple | dict]]
     main_accordion: Accordion
     _loaded_step_history: list[dict[str, str | tuple | dict]] | None = None
+    # last plot (box/lasso) selection and its shape; None if none or not replayable
+    _plot_selection: pd.Index | None = None
+    _plot_shape: dict | None = None
 
     events = [
         "dspr_selection_values_change",
@@ -394,6 +398,18 @@ class Processor(EventClient):
                 else control.value[1] > control.value[0]
             )
         }
+
+    def _selection_filters(self) -> dict:
+        """Active filter controls, in the schema of :mod:`._selection_code`."""
+        filters = {}
+        obs = self.dataset.adata.obs
+        for column, value in self._active_selection_values().items():
+            series = obs[column]
+            if is_numeric_dtype(series) and not is_bool_dtype(series):
+                filters[column] = {"between": list(value)}  # range slider
+            else:
+                filters[column] = {"isin": list(value)}  # select multiple
+        return filters
 
     def _make_selection_controls(self, *args, **kwargs):
         before = self._active_selection_values()
@@ -1016,15 +1032,51 @@ class Processor(EventClient):
         new_value = change["new"]
         self.broker.publish("dspr_selection_values_change", column, new_value=new_value)
 
-    def filter_rows(self, index: pd.Index | list):
-        if isinstance(index, list):
-            index = pd.Index(index)
-        self.dataset.filter_rows(index)
+    def _recorded_selection(self, filters, shape, mask, n) -> pd.Index:
+        adata = self.dataset.adata
+        if shape and "id" in shape and shape["id"] not in stored_selections(adata):
+            store_selection(adata, shape, shape["id"])  # replay: for code export
+        selected = selection_mask(adata, filters, shape, mask)
+        if n is not None and selected.sum() != n:
+            logger.warning(f"Selection matched {selected.sum()} cells, recorded {n}")
+        return self.dataset.adata.obs_names[selected]
 
-    def apply_label(self, index: pd.Index | list, column: str, label: str):
-        if isinstance(index, list):
-            index = pd.Index(index)
-        self.dataset.apply_label(index, column, label)
+    def filter_rows(
+        self,
+        index: pd.Index | list | None = None,
+        filters: dict | None = None,
+        shape: dict | None = None,
+        mask: str | None = None,
+        n: int | None = None,
+        drop: bool = False,
+    ):
+        """Keep (or drop) the selected cells; see :mod:`._selection_code`.
+
+        ``index`` (pre-0.5 entries) lists the obs names to keep.
+        """
+        if index is None:
+            selected = self._recorded_selection(filters, shape, mask, n)
+            obs_names = self.dataset.adata.obs_names
+            index = obs_names[~obs_names.isin(selected)] if drop else selected
+        self.dataset.filter_rows(pd.Index(index))
+
+    def apply_label(
+        self,
+        index: pd.Index | list | None = None,
+        column: str = "",
+        label: str = "",
+        filters: dict | None = None,
+        shape: dict | None = None,
+        mask: str | None = None,
+        n: int | None = None,
+    ):
+        """Label the selected cells; see :mod:`._selection_code`.
+
+        ``index`` (pre-0.5 entries) lists the obs names to label.
+        """
+        if index is None:
+            index = self._recorded_selection(filters, shape, mask, n)
+        self.dataset.apply_label(pd.Index(index), column, label)
 
     def make_selectbatch_drowpdown(self, description="Select Batch"):
         control = dict()
@@ -1047,35 +1099,55 @@ class Processor(EventClient):
         return control
 
     def dspr_selection_values_change_callback(self, column_changed: str, new_value):
-        row_names = self.dataset.metadata.index
-        # None means no active control; an empty Index means active but nothing matched
-        selected_rows = None
-        for column, value in self.selection_values.items():
-            series = self.dataset.metadata[column]
-            subset = None
+        self._update_selected_rows()
 
-            if is_numeric_dtype(series) and not is_bool_dtype(series):
-                # this must be a range slider with value = tuple(min, max)
-                min_value, max_value = value
-                if max_value > min_value:
-                    subset = row_names[(series >= min_value) & (series <= max_value)]
+    def _update_selected_rows(self):
+        """Select the cells in the active filters AND the plot selection."""
+        filters = self._selection_filters()
+        obs_names = self.dataset.adata.obs_names
+        # None means nothing active; an empty Index means active but nothing matched
+        selected = None
+        if filters or self._plot_selection is not None:
+            mask = selection_mask(self.dataset.adata, filters)
+            if self._plot_selection is not None:
+                mask &= obs_names.isin(self._plot_selection)
+            selected = obs_names[mask]
 
-            elif value:
-                # this must be a select multiple with value = tuple(selected_values)
-                subset = row_names[series.isin(value)]
+        current = self.dataset._selected_rows
+        if (
+            selected is not None
+            and current is not None
+            and len(current) == len(selected)
+            and current.isin(selected).all()
+        ):
+            return  # e.g. the dataset already took the plot selection as is
+        self.dataset.selected_rows = selected
 
-            if subset is None:
-                continue
-
-            selected_rows = (
-                subset if selected_rows is None else selected_rows.intersection(subset)
-            )
-            if selected_rows.empty:
-                break
-
-        self.dataset.selected_rows = selected_rows
+    def _selection_params(self) -> dict | None:
+        """Provenance of the current selection, see :mod:`._selection_code`."""
+        if self.dataset._selected_rows is None:
+            return None
+        adata = self.dataset.adata
+        selected = adata.obs_names.isin(self.dataset._selected_rows)
+        filters = self._selection_filters()
+        shape = self._plot_shape if self._plot_selection is not None else None
+        params = {"n": int(selected.sum())}
+        if (filters or shape) and np.array_equal(
+            selection_mask(adata, filters, shape), selected
+        ):
+            if shape is not None and "id" not in shape:
+                shape = self._plot_shape = {
+                    "id": store_selection(adata, shape),
+                    **shape,
+                }
+            provenance = {"filters": filters, "shape": shape}
+            return {**{k: v for k, v in provenance.items() if v}, **params}
+        # e.g. set by code, or a plot selection whose shape was not captured
+        payload = {"type": "mask", "mask": selected}
+        return {"mask": store_selection(adata, payload), **params}
 
     def dspr_clear_selection_click_callback(self):
+        self._plot_selection = self._plot_shape = None
         for control in self.selection_controls_dict.values():
             if isinstance(control, SelectMultiple):
                 control.value = tuple()
@@ -1087,11 +1159,6 @@ class Processor(EventClient):
                 raise RuntimeError(f"Unsupported control type {type(control)}")
 
     def dspr_apply_label_click_callback(self):
-        if self.dataset.selected_rows is None:
-            return
-
-        rows_to_label = self.dataset.selected_rows
-
         create_new_key = self.selection_labeling_controls_dict[
             "create_new_key_checkbox"
         ].value
@@ -1107,30 +1174,24 @@ class Processor(EventClient):
         if column == "":
             return
 
-        self.steps["apply_label"].run(index=rows_to_label, column=column, label=label)
+        if (params := self._selection_params()) is not None:
+            self.steps["apply_label"].run(**params, column=column, label=label)
 
     def dspr_keep_selected_click_callback(self):
-        if self.dataset.selected_rows is not None:
-            rows_to_keep = self.dataset.selected_rows
-            self.steps["filter_rows"].run(index=rows_to_keep)
+        if (params := self._selection_params()) is not None:
+            self.steps["filter_rows"].run(**params)
 
     def dspr_drop_selected_click_callback(self):
-        if self.dataset.selected_rows is not None:
-            rows_to_keep = self.dataset.row_names.difference(self.dataset.selected_rows)
-            self.steps["filter_rows"].run(index=rows_to_keep)
+        if (params := self._selection_params()) is not None:
+            self.steps["filter_rows"].run(**params, drop=True)
 
-    def dplt_selected_points_change_callback(self, new_value: pd.Index):
-        for column, control in self.selection_controls_dict.items():
-            if isinstance(control, SelectMultiple):
-                control.value = tuple()
-
-            elif isinstance(control, IntRangeSlider | FloatRangeSlider):
-                control.value = control.min, control.min
-
-            else:
-                raise RuntimeError(
-                    f"Unsupported control type {type(control)} for column {column}"
-                )
+    def dplt_selected_points_change_callback(self, new_value: pd.Index | None):
+        # a new plot selection replaces the previous one; the filters stay
+        self._plot_selection = new_value
+        self._plot_shape = (
+            self.plotter.selection_shape if new_value is not None else None
+        )
+        self._update_selected_rows()
 
     def dset_total_rows_change_callback(self, metadata: pd.DataFrame):
         for column in self.selection_controls_dict.keys():
