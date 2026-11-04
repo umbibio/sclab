@@ -1,4 +1,5 @@
 import inspect
+from collections.abc import Callable
 from pathlib import Path
 
 from anndata import AnnData
@@ -15,6 +16,7 @@ from ipywidgets.widgets import (
     Text,
     ToggleButtons,
     VBox,
+    Widget,
 )
 
 from ._io import _read_adata_bytes, is_valid_url, load_adata_from_url, read_adata
@@ -47,6 +49,9 @@ class SCLabDashboard(GridBox):
         steps such as Integration and Neighbors. Default is None.
     copy : bool, optional
         If True, work on a copy of the input AnnData. Default is False.
+    source : str or None, optional
+        Path or URL the AnnData was read from, for the load line of the
+        generated script. Set automatically when a path or URL is given.
 
     Attributes
     ----------
@@ -79,8 +84,10 @@ class SCLabDashboard(GridBox):
         counts_layer: str = "counts",
         batch_key: str | None = None,
         copy: bool = False,
+        source: str | None = None,
     ):
-        self.source = None  # path or URL, for the generated script's load line
+        self._preexisting = _live_widget_ids()  # not ours to close, see close()
+        self.source = source  # path or URL, for the generated script's load line
         if adata_or_filepath_or_url is None:
             adata = None
 
@@ -107,6 +114,8 @@ class SCLabDashboard(GridBox):
         self.plotter = None
         self.processor = None
         self.main_content = None
+        # widgets made while building, incl. replaced ones held only by their comm
+        self._built: set[str] = set()
 
         self.data_loader_layout = Layout(
             width="100%",
@@ -125,7 +134,7 @@ class SCLabDashboard(GridBox):
             overflow="auto",  # scroll to the plot settings if the plot hits its min width
         )
 
-        self.data_loader = DataLoader(self)
+        self.data_loader = DataLoader(self._load_from_loader)
 
         GridBox.__init__(self)
         if adata is not None:
@@ -133,8 +142,22 @@ class SCLabDashboard(GridBox):
         else:
             self.children = (self.data_loader,)
             self.layout = self.data_loader_layout
+        self._built |= _live_widget_ids() - self._preexisting
+
+    def _load_from_loader(self, adata: AnnData, source: str | None):
+        self.source = source
+        self._load(adata)
+
+    def close(self):
+        """Close the dashboard and every widget it holds (frees the frontend comms)."""
+        _close_tree(self, self._preexisting)
+        registry = _widget_registry()
+        for model_id in self._built:
+            if (widget := registry.get(model_id)) is not None:
+                Widget.close(widget)
 
     def _load(self, adata: AnnData, copy: bool = False):
+        before = _live_widget_ids()
         self.dataset = SCLabDataset(
             adata,
             name=self.name,
@@ -174,6 +197,7 @@ class SCLabDashboard(GridBox):
             self.main_content,
         )
         self.layout = self.dashboard_layout
+        self._built |= _live_widget_ids() - before
 
     def generate_code(self, header: bool = True) -> str:
         """Python script reproducing the steps applied in the dashboard."""
@@ -192,8 +216,57 @@ class SCLabDashboard(GridBox):
         return self.plotter
 
 
+def _widget_registry() -> dict:
+    """Model id -> live widget; its name changed across ipywidgets versions."""
+    from ipywidgets.widgets import widget
+
+    if hasattr(widget, "_instances"):  # >= 8.1
+        return widget._instances
+    if hasattr(Widget, "_active_widgets"):  # 8.0
+        return Widget._active_widgets
+    return Widget.widgets
+
+
+def _live_widget_ids() -> set[str]:
+    return set(_widget_registry())
+
+
+def _close_tree(root, keep: set[str]):
+    """Close every widget reachable from ``root``.
+
+    Follows the attributes of widgets and of sclab objects, and the items of
+    dicts, lists, tuples and sets, so widgets held but not displayed (e.g.
+    the figure, step controls, the broker's logs) are closed too. Widgets in
+    ``keep`` (model ids alive before ``root`` was built, such as module-level
+    widgets shared by every dashboard) are left open.
+    """
+    seen, stack, widgets = set(), [root], []
+    while stack:
+        obj = stack.pop()
+        if id(obj) in seen:
+            continue
+        seen.add(id(obj))
+        if isinstance(obj, dict):
+            stack.extend(obj.values())
+        elif isinstance(obj, (list, tuple, set, frozenset)):
+            stack.extend(obj)
+        elif isinstance(obj, Widget) or type(obj).__module__.startswith("sclab."):
+            if isinstance(obj, Widget):
+                widgets.append(obj)
+            stack.extend(getattr(obj, "__dict__", {}).values())
+    for widget in widgets:
+        if widget.comm is not None and widget.model_id not in keep:
+            Widget.close(widget)  # not the override: root may be a dashboard
+
+
 class DataLoader(VBox):
-    dashboard: SCLabDashboard
+    """Pick an AnnData to load; ``on_load(adata, source)`` gets the choice.
+
+    ``user_ns`` is the namespace listed under "Defined datasets"; by default,
+    the locals of whoever called the code that built this loader.
+    """
+
+    on_load: Callable[[AnnData, str | None], None]
     adata: AnnData
 
     upload: FileUpload
@@ -214,8 +287,12 @@ class DataLoader(VBox):
     progress_output: Output
     continue_button: Button
 
-    def __init__(self, dashboard: SCLabDashboard):
-        self.dashboard = dashboard
+    def __init__(
+        self,
+        on_load: Callable[[AnnData, str | None], None],
+        user_ns: dict | None = None,
+    ):
+        self.on_load = on_load
         self.source = None  # path or URL of self.adata, if loaded from one
 
         self.upload_row_label = Label("Load from file:", layout=Layout(width="120px"))
@@ -240,7 +317,9 @@ class DataLoader(VBox):
         )
         self.load_button.on_click(self.on_load_url)
 
-        user_f_locals = inspect.stack()[2].frame.f_locals
+        if user_ns is None:
+            user_ns = inspect.stack()[2].frame.f_locals
+        user_f_locals = user_ns
         self.defined_adatas_dict = {}
         for name, variable_type in [(k, type(v)) for k, v in user_f_locals.items()]:
             if variable_type is AnnData and not name.startswith("_"):
@@ -333,7 +412,6 @@ class DataLoader(VBox):
             display(self.continue_button)
 
     def on_continue(self, *args, **kwargs):
-        self.dashboard.source = self.source
-        self.dashboard._load(self.adata)
+        self.on_load(self.adata, self.source)
         self.adata = None
         self.defined_adatas_dict = {}
