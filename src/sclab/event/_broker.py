@@ -7,6 +7,7 @@ from IPython.display import HTML, display
 from ipywidgets.widgets import Layout, Output, Tab
 
 from ._client import EventClient
+from ._jobs import JobRunner
 from ._utils import LogOutput
 
 
@@ -43,6 +44,7 @@ class EventBroker:
         self.max_flush_calls = 1000
         self._batch_depth = 0
         self._pending: dict[callable, tuple[callable, tuple, dict]] = {}
+        self.jobs = JobRunner(self)
         self.std_output = Output(layout=Layout(width="auto", height="500px"))
         self.execution_log = []
         self.execution_output = LogOutput()
@@ -116,6 +118,10 @@ class EventBroker:
     def publish(self, event: str, *args, **kwargs):
         if event not in self.available_events:
             raise ValueError(f"Event '{event}' is not available.")
+
+        if self.jobs.is_worker():  # widgets are main-thread only: replayed later
+            self.jobs.deferred.append((event, args, kwargs))
+            return
 
         with self.batch():
             self._publish(event, *args, **kwargs)
