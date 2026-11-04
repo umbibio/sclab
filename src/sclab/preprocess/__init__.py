@@ -1,6 +1,7 @@
 from ._cca_integrate import cca_integrate, cca_integrate_pair
 from ._filter_obs import filter_obs
 from ._harmony_integrate import harmony_integrate
+from ._merge import downsample_counts, merge_datasets, merge_preview
 from ._neighbors import neighbors
 from ._normalize_weighted import normalize_weighted
 from ._pca import pca
@@ -13,8 +14,11 @@ from ._transform import pool_neighbors
 __all__ = [
     "cca_integrate",
     "cca_integrate_pair",
+    "downsample_counts",
     "filter_obs",
     "harmony_integrate",
+    "merge_datasets",
+    "merge_preview",
     "neighbors",
     "normalize_weighted",
     "pca",

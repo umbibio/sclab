@@ -75,8 +75,19 @@ def call(func: str, *args, **kwargs) -> str:
     return "\n".join([f"{func}(", *(f"    {p}," for p in parts), ")"])
 
 
+def _merge_code(params: dict) -> str:
+    """The merge of a Workspace dataset; ``adatas`` holds its parents by name."""
+    keys = ("join", "label", "counts_layer", "equalize_depth", "random_state")
+    kwargs = {k: params[k] for k in keys}
+    return "adata = " + call(
+        "sclab.preprocess.merge_datasets", Name("adatas"), **kwargs
+    )
+
+
 register_step_codegen("filter_rows", filter_rows_code)
 register_step_codegen("apply_label", apply_label_code)
+register_step_codegen("load", lambda params: None)  # the script's load line
+register_step_codegen("merge", _merge_code)
 
 
 def _entry_code(entry: dict, steps: dict, variables: dict, used: set) -> str | None:
