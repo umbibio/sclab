@@ -2,6 +2,7 @@
 script that ``generate_code`` writes for them, on a copy of the same input."""
 
 import ast
+import tempfile
 
 import numpy as np
 import pandas as pd
@@ -11,9 +12,14 @@ from anndata import AnnData
 from sclab import SCLabDashboard
 from sclab.dataset.processor import _codegen
 from sclab.dataset.processor._codegen import LOAD_PLACEHOLDER, history_to_code
+from sclab.dataset.processor._selection_code import (
+    MAX_INLINE_VERTICES,
+    SELECTIONS_FILE,
+)
 from sclab.tools.doublet_detection import scrublet_is_available
 
 from ..test_utils import run_step, simple_loop_adata
+from .test_selection_provenance import box, keep, label, lasso
 
 BASE = [("QC", {}), ("Preprocess", {}), ("PCA", {})]
 
@@ -38,9 +44,16 @@ def run_steps(dash: SCLabDashboard, steps: list[tuple[str, dict]]):
         run_step(dash, name)
 
 
-def exec_code(code: str, adata: AnnData) -> AnnData:
+def exec_code(code: str, adata: AnnData, saved: AnnData | None = None) -> AnnData:
+    """Run ``code`` on ``adata``; ``saved`` is the adata the dashboard saved, from
+    which the code reads the lasso polygons and masks that are not inlined."""
     namespace = {"input_adata": adata}
-    exec(code.replace(LOAD_PLACEHOLDER, "adata = input_adata"), namespace)
+    code = code.replace(LOAD_PLACEHOLDER, "adata = input_adata")
+    with tempfile.TemporaryDirectory() as tmp:
+        if saved is not None:
+            saved.write_h5ad(f"{tmp}/saved.h5ad")
+            code = code.replace(f'"{SELECTIONS_FILE}"', f'"{tmp}/saved.h5ad"')
+        exec(code, namespace)
     return namespace["adata"]
 
 
@@ -74,7 +87,10 @@ def assert_readable(code: str):
     for node in ast.walk(tree):
         if isinstance(node, ast.List | ast.Tuple | ast.Set | ast.Dict):
             n = len(node.keys if isinstance(node, ast.Dict) else node.elts)
-            assert n <= 10, ast.unparse(node)
+            coords = isinstance(node, ast.List) and all(
+                isinstance(e, ast.List) and len(e.elts) == 2 for e in node.elts
+            )  # an inlined lasso polygon, one vertex per line
+            assert n <= 10 or coords, ast.unparse(node)
 
 
 def roundtrip(steps: list[tuple[str, dict]], ignore_obs: tuple = ()):
@@ -99,6 +115,47 @@ def test_full_pipeline_roundtrip():
     for step in ["QC", "Preprocess", "PCA", "Neighbors", "UMAP", "Cluster"]:
         assert f"# {step}\n" in code
     assert "random_state=0" in code
+
+
+@pytest.mark.parametrize("n_vertices", [4, MAX_INLINE_VERTICES + 10])
+def test_pipeline_with_selections_roundtrip(n_vertices):
+    """Keep by category, Keep by box, Label by lasso, replayed on the input."""
+    adata = make_adata()
+    dash = SCLabDashboard(adata.copy())
+    controls = dash.processor.selection_controls_dict
+    run_steps(dash, [*BASE, ("Neighbors", {}), ("UMAP", {}), ("Cluster", {})])
+    plotter = dash.plotter
+    plotter.controls.data_key.value = "X_2Dumap"
+    assert plotter.controls.n_dimensions.value == "2D"
+
+    clusters = list(dash.dataset.adata.obs["leiden"].cat.categories)
+    controls["leiden"].value = tuple(clusters[: max(1, len(clusters) - 1)])
+    keep(dash)
+    dash.processor.dspr_clear_selection_click_callback()
+
+    xy = dash.dataset.adata.obsm["X_2Dumap"][:, :2]
+    (x0, y0), (x1, y1) = np.quantile(xy, 0.05, axis=0), np.quantile(xy, 0.95, axis=0)
+    box(dash, x=(x0, x1), y=(y0, y1))
+    keep(dash)
+    dash.processor.dspr_clear_selection_click_callback()
+
+    xy = dash.dataset.adata.obsm["X_2Dumap"][:, :2]
+    t = np.linspace(0, 2 * np.pi, n_vertices, endpoint=False)
+    center, radius = np.median(xy, axis=0), np.ptp(xy, axis=0) / 3
+    lasso(dash, (center + radius * np.c_[np.cos(t), np.sin(t)]).tolist())
+    params = label(dash, "region", "core")
+    assert 0 < params["n"] < dash.dataset.adata.n_obs
+
+    code = dash.generate_code()
+    assert_readable(code)
+    assert code.count("select_box(") == 1 and code.count("select_polygon(") == 1
+    assert {"import sclab.tools", "import pandas as pd"} <= set(code.splitlines())
+    assert ("read_adata(" in code.replace(LOAD_PLACEHOLDER, "")) == (n_vertices > 20)
+    result = exec_code(code, adata.copy(), saved=dash.dataset.adata)
+    assert result.obs_names.equals(dash.dataset.adata.obs_names)
+    assert list(result.obs.columns) == list(dash.dataset.adata.obs.columns)
+    assert result.obs["region"].notna().sum() == params["n"]
+    assert_same_adata(dash.dataset.adata, result)
 
 
 @pytest.mark.parametrize(
@@ -271,15 +328,33 @@ def test_header_imports_versions_and_variables():
     assert dash.generate_code(header=False).lstrip().startswith("# QC\n")
 
 
-def test_selection_steps_emit_placeholders():
+def test_selection_steps_use_the_emitters_and_header_imports():
     dash = SCLabDashboard(make_adata())
-    keep = dash.dataset.adata.obs_names[:100]
-    dash.processor.steps["apply_label"].run(index=keep, column="sel", label="yes")
-    dash.processor.steps["filter_rows"].run(index=keep)
+    dash.dataset.selected_rows = dash.dataset.adata.obs_names[:100]
+    dash.processor.selection_controls_dict["batch"].value = ("b1",)
+    label(dash, "sel", "yes")
+    keep(dash)
     code = dash.generate_code()
     assert_readable(code)
-    assert "# filter_rows: selection code not available yet (kept n=100 cells)" in code
-    assert '(column="sel", label="yes", n=100 cells)' in code
+    assert '# apply_label\nmask = adata.obs["batch"].isin(["b1"])' in code
+    assert "# filter_rows\n" in code and "adata = adata[mask].copy()" in code
+    assert "placeholder" not in code and "not available yet" not in code
+    lines = code.splitlines()
+    assert "import pandas as pd" in lines
+    assert "import numpy as np" not in lines  # only an empty label uses np.nan
+    entry = {"step": "apply_label", "status": "success", "params": {"mask": "sel1"}}
+    entry["params"].update(column="c", label="")
+    assert "import numpy as np" in history_to_code([entry]).splitlines()
+
+
+def test_legacy_selection_entries_have_no_code():
+    dash = SCLabDashboard(make_adata())
+    keep_index = dash.dataset.adata.obs_names[:100]
+    dash.processor.steps["apply_label"].run(index=keep_index, column="sel", label="y")
+    dash.processor.steps["filter_rows"].run(index=keep_index)
+    code = dash.generate_code()
+    assert "# apply_label: cells recorded as a list of obs names (pre-0.5)" in code
+    assert "# filter_rows: cells recorded as a list of obs names (pre-0.5)" in code
 
 
 def test_registered_codegen_overrides_and_unknown_steps(monkeypatch):

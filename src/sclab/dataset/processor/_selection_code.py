@@ -34,7 +34,10 @@ Pre-0.5 entries with an ``index`` list of obs names replay as before.
 
 ``filter_rows_code`` and ``apply_label_code`` render an entry's params as
 Python that needs ``import numpy as np``, ``import pandas as pd`` and
-``import sclab``, and acts on a variable ``adata``.
+``import sclab``, and acts on a variable ``adata``. Box bounds and polygons of
+up to ``MAX_INLINE_VERTICES`` vertices are inlined; longer lasso polygons and
+masks live only in ``adata.uns`` of the dashboard, so the code reads them from
+the adata the dashboard saved (``SELECTIONS_FILE``, to be edited by the user).
 """
 
 import json
@@ -46,6 +49,8 @@ from ...tools._select import select_box, select_polygon
 from ._history import UNS_KEY
 
 SELECTIONS_KEY = "selections"
+SELECTIONS_FILE = "dashboard.h5ad"  # placeholder path in the emitted code
+MAX_INLINE_VERTICES = 20  # longer lasso polygons are read from the saved adata
 
 
 def stored_selections(adata: AnnData) -> dict:
@@ -109,29 +114,38 @@ def _lit(value) -> str:
     return repr(value)
 
 
-def _uns(key: str, field: str) -> str:
-    return f'adata.uns["{UNS_KEY}"]["{SELECTIONS_KEY}"][{_lit(key)}][{_lit(field)}]'
+def _saved_selection(key: str, field: str) -> str:
+    """Read a stored polygon / mask from the adata the dashboard saved."""
+    return (
+        f"sclab._io.read_adata({_lit(SELECTIONS_FILE)}).uns[{_lit(UNS_KEY)}]"
+        f"[{_lit(SELECTIONS_KEY)}][{_lit(key)}][{_lit(field)}]"
+    )
 
 
-def _shape_call(shape: dict) -> str:
-    args = [_lit(shape.get("basis"))]
+def _shape_lines(shape: dict) -> tuple[list[str], str]:
+    """Setup lines (polygon) and the expression selecting the shape's cells."""
+    from ._codegen import ADATA, Name, call  # circular import
+
+    dims = {} if list(shape["dims"]) == [0, 1] else {"dims": tuple(shape["dims"])}
+    basis = shape.get("basis")
     if shape["type"] == "box":
-        func = "select_box"
-        args += [
-            f"{k}=({_lit(shape[k][0])}, {_lit(shape[k][1])})"
-            for k in "xy"
-            if k in shape
-        ]
+        bounds = {k: tuple(shape[k]) for k in "xy" if k in shape}
+        return [], call("sclab.tools.select_box", ADATA, basis, **bounds, **dims)
+    polygon = shape["polygon"]
+    if len(polygon) <= MAX_INLINE_VERTICES:  # the geometry is in the params
+        lines = ["polygon = [", *(f"    {_lit(list(v))}," for v in polygon), "]"]
     else:
-        func = "select_polygon"
-        args.append(_uns(shape["id"], "polygon"))
-    if list(shape["dims"]) != [0, 1]:
-        args.append(f"dims=({', '.join(map(_lit, shape['dims']))})")
-    return f"sclab.tools.{func}(adata, {', '.join(args)})"
+        lines = [
+            f"# lasso with {len(polygon)} vertices: its polygon is read from the adata",
+            "# the dashboard saved (adata.write_h5ad); edit the path to where you put it",
+            f"polygon = {_saved_selection(shape['id'], 'polygon')}",
+        ]
+    term = call("sclab.tools.select_polygon", ADATA, basis, Name("polygon"), **dims)
+    return lines, term
 
 
 def _mask_lines(params: dict) -> list[str]:
-    terms = []
+    setup, terms = [], []
     for column, f in (params.get("filters") or {}).items():
         if "between" in f:
             lo, hi = f["between"]
@@ -139,10 +153,14 @@ def _mask_lines(params: dict) -> list[str]:
         else:
             terms.append(f"adata.obs[{_lit(column)}].isin({_lit(list(f['isin']))})")
     if params.get("shape"):
-        terms.append(_shape_call(params["shape"]))
+        setup, term = _shape_lines(params["shape"])
+        terms.append(term)
     if params.get("mask"):
-        terms.append(_uns(params["mask"], "mask"))  # last: `&=` must not modify uns
-    return [f"mask = {terms[0]}"] + [f"mask &= {t}" for t in terms[1:]]
+        setup.append(
+            "# boolean mask of cells picked in the dashboard: read from the saved adata"
+        )
+        terms.append(_saved_selection(params["mask"], "mask"))
+    return [*setup, f"mask = {terms[0]}"] + [f"mask &= {t}" for t in terms[1:]]
 
 
 def _legacy(step: str) -> str:

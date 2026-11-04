@@ -1,6 +1,7 @@
 """Keep/Drop/Label record how cells were selected; the emitted code reproduces it."""
 
 import logging
+import tempfile
 
 import anndata
 import numpy as np
@@ -12,6 +13,8 @@ from matplotlib.path import Path
 import sclab
 from sclab import SCLabDashboard
 from sclab.dataset.processor._selection_code import (
+    MAX_INLINE_VERTICES,
+    SELECTIONS_FILE,
     apply_label_code,
     filter_rows_code,
 )
@@ -73,10 +76,14 @@ def emitted_code(dash) -> str:
 
 
 def run_code(code: str, selections: dict) -> anndata.AnnData:
-    adata = original()
-    adata.uns["sclab"] = {"selections": selections}
-    namespace = {"adata": adata, "np": np, "pd": pd, "sclab": sclab}
-    exec(code, namespace)
+    saved = original()  # what the dashboard saved: its uns holds long polygons, masks
+    saved.uns["sclab"] = {"selections": selections}
+    with tempfile.TemporaryDirectory() as tmp:
+        path = f"{tmp}/saved.h5ad"
+        saved.write_h5ad(path)
+        code = code.replace(f'"{SELECTIONS_FILE}"', f'"{path}"')
+        namespace = {"adata": original(), "np": np, "pd": pd, "sclab": sclab}
+        exec(code, namespace)
     return namespace["adata"]
 
 
@@ -157,10 +164,8 @@ def test_box(dash):
         "y": [-1.0, 0.8],
     }
     code = emitted_code(dash)
-    assert (
-        'sclab.tools.select_box(adata, "X_umap", x=(-0.5, 1.0), y=(-1.0, 0.8))' in code
-    )
-    assert "selections" not in code  # a box is written out in full
+    assert 'select_box(adata, "X_umap", x=(-0.5, 1.0), y=(-1.0, 0.8))' in code
+    assert "read_adata" not in code  # a box is written out in full
     assert_reproduced(dash)
 
 
@@ -180,9 +185,22 @@ def test_lasso_keep_and_label(dash):
     keep(dash)  # same lasso: the stored shape is reused
     assert list(dash.dataset.adata.uns["sclab"]["selections"]) == ["sel1"]
     code = emitted_code(dash)
-    assert 'adata.uns["sclab"]["selections"]["sel1"]["polygon"]' in code
+    assert "polygon = [\n    [-1.0, -1.0],\n" in code  # short: inlined
+    assert "read_adata" not in code
     result = assert_reproduced(dash, ["lab"])
     assert (result.obs["lab"] == "inside").all()
+
+
+def test_long_lasso_is_read_from_the_saved_adata(dash):
+    t = np.linspace(0, 2 * np.pi, MAX_INLINE_VERTICES + 5, endpoint=False)
+    lasso(dash, np.c_[1.5 * np.cos(t), 1.5 * np.sin(t)].round(3).tolist())
+    label(dash, "lab", "inside")
+    code = emitted_code(dash)
+    assert f"# lasso with {len(t)} vertices" in code
+    assert '.uns["sclab"]["selections"]["sel1"]["polygon"]' in code
+    assert code.count("read_adata") == 1 and SELECTIONS_FILE in code
+    result = assert_reproduced(dash, ["lab"])
+    assert (result.obs["lab"] == "inside").sum() > 0
 
 
 def test_filters_intersect_lasso(dash):
@@ -195,7 +213,9 @@ def test_filters_intersect_lasso(dash):
     assert params["filters"] == {"cat": {"isin": ["a", "b"]}} and "shape" in params
     assert params["n"] == expected.sum() > 0
     code = emitted_code(dash)
-    assert code.startswith('mask = adata.obs["cat"].isin(["a", "b"])\nmask &= sclab')
+    assert (
+        'mask = adata.obs["cat"].isin(["a", "b"])\nmask &= sclab.tools.select_p' in code
+    )
     assert_reproduced(dash)
 
 
@@ -237,8 +257,8 @@ def test_box_on_obs_columns(dash):
         params["shape"]["dims"] == ["num_f", "num_i"] and "basis" not in params["shape"]
     )
     assert (
-        'select_box(adata, None, x=(1.0, 5.0), y=(0.0, 15.0), dims=("num_f", "num_i"))'
-        in emitted_code(dash)
+        "select_box(\n    adata,\n    None,\n    x=(1.0, 5.0),\n    y=(0.0, 15.0),\n"
+        '    dims=("num_f", "num_i"),\n)' in emitted_code(dash)
     )
     assert_reproduced(dash)
 

@@ -23,6 +23,7 @@ import re
 from typing import Callable
 
 from . import _history
+from ._selection_code import apply_label_code, filter_rows_code
 
 LOAD_PLACEHOLDER = "adata = ...  # load your data here"
 MAX_LINE = 88
@@ -74,28 +75,8 @@ def call(func: str, *args, **kwargs) -> str:
     return "\n".join([f"{func}(", *(f"    {p}," for p in parts), ")"])
 
 
-def _selection_size(params: dict) -> int:
-    index = params.get("index") or []
-    return index["len"] if isinstance(index, dict) else len(index)
-
-
-# shortcut: placeholders until the selection steps record how cells were selected
-def _filter_rows_placeholder(params: dict) -> str:
-    n = _selection_size(params)
-    return f"# filter_rows: selection code not available yet (kept n={n} cells)"
-
-
-def _apply_label_placeholder(params: dict) -> str:
-    n = _selection_size(params)
-    column, label = params.get("column"), params.get("label")
-    return (
-        "# apply_label: selection code not available yet "
-        f"(column={literal(column)}, label={literal(label)}, n={n} cells)"
-    )
-
-
-register_step_codegen("filter_rows", _filter_rows_placeholder)
-register_step_codegen("apply_label", _apply_label_placeholder)
+register_step_codegen("filter_rows", filter_rows_code)
+register_step_codegen("apply_label", apply_label_code)
 
 
 def _entry_code(entry: dict, steps: dict, variables: dict, used: set) -> str | None:
@@ -139,6 +120,8 @@ def _imports(code: str) -> list[str]:
     imports = []
     if re.search(r"\bnp\.", code):
         imports.append("import numpy as np")
+    if re.search(r"\bpd\.", code):
+        imports.append("import pandas as pd")
     if re.search(r"\bsc\.", code):
         imports.append("import scanpy as sc")
     modules = re.findall(r"\b(sclab(?:\.\w+)+)\.\w+\(", code)
