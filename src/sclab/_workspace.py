@@ -271,10 +271,18 @@ class Workspace(VBox):
         entry = self.datasets[name]
         return entry.adata is not None and _state_hash(entry.adata) != entry.base_hash
 
+    def _check_idle(self):
+        if self.dash is not None and self.dash.broker.jobs.busy:
+            raise RuntimeError(
+                f"{self.dash.broker.jobs.name!r} is running in {self.active!r}; "
+                "wait for it to finish or cancel it."
+            )
+
     def _leave(self):
         """Close the active dashboard and free its data if it can be read back."""
         if self.active is None:
             return
+        self._check_idle()
         entry = self.datasets[self.active]
         # in-memory AnnData: kept, the caller holds it; a merge: kept unless written
         if (entry.source is not None or entry.parents) and self.is_dirty(entry.name):
@@ -334,6 +342,7 @@ class Workspace(VBox):
         stays in memory, its dashboard's ``batch_key`` is the merge's label.
         """
         self._check_name(new_name)
+        self._check_idle()
         with self._loaded(names, opts.get("counts_layer", "counts")) as adatas:
             merged = merge_datasets(adatas, **opts)
         (merge,) = _history.loads_uns(merged)

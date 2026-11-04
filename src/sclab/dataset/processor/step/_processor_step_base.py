@@ -1,15 +1,57 @@
+import functools
 import inspect
 import traceback
 from typing import Any
 
+from anndata import AnnData
 from IPython.display import HTML, Markdown, display
 from ipywidgets import Button, Output, VBox
 from ipywidgets.widgets.valuewidget import ValueWidget
 from ipywidgets.widgets.widget_description import DescriptionWidget
 
-from ....event import EventClient
+from ....event import EventClient, StepCancelled
 from .._processor import Processor
 from .._results_panel import _Results
+
+_ENTRIES = ("obsm", "varm", "obsp", "varp", "layers", "uns")
+_MISSING = object()
+
+
+def _shallow_copy(adata: AnnData) -> tuple[AnnData, dict]:
+    """An AnnData sharing ``adata``'s arrays, and its entries for :func:`_apply_changes`.
+
+    Setting or deleting entries (or obs/var columns) of the copy leaves
+    ``adata`` unchanged; modifying shared arrays in place does not.
+    """
+    entries = {key: dict(getattr(adata, key)) for key in _ENTRIES}
+    obs, var = adata.obs.copy(), adata.var.copy()
+    # copies: AnnData may keep the dicts it is given as its own
+    copies = {key: dict(value) for key, value in entries.items()}
+    work = AnnData(X=adata.X, obs=obs, var=var, raw=adata.raw, **copies)
+    return work, entries
+
+
+def _apply_changes(adata: AnnData, work: AnnData, entries: dict):
+    """Set in ``adata`` what ``work`` (from :func:`_shallow_copy`) set or deleted."""
+    if work.X is not adata.X:
+        adata.X = work.X
+    for key, before in entries.items():
+        old, new = getattr(adata, key), getattr(work, key)
+        for k in before.keys() - new.keys():
+            old.pop(k, None)
+        for k, v in new.items():
+            if before.get(k, _MISSING) is not v:
+                old[k] = v
+    for key in ("obs", "var"):
+        old, new = getattr(adata, key), getattr(work, key)
+        old.drop(columns=old.columns.difference(new.columns), inplace=True)
+        for c in new.columns:
+            if (
+                c not in old
+                or new[c].dtype != old[c].dtype
+                or not new[c].equals(old[c])
+            ):
+                old[c] = new[c]
 
 
 class ProcessorStepBase(EventClient):
@@ -56,6 +98,12 @@ class ProcessorStepBase(EventClient):
     order : int
         Integer used to sort steps in the processor accordion. Lower values
         appear first. Default is 1000.
+    background : bool
+        If True, the Run button runs the step as a background job (see
+        :mod:`sclab.event._jobs`): the dashboard stays responsive and shows
+        a progress panel with Cancel and Interrupt. :meth:`function` should
+        then be a generator doing its heavy work through :meth:`compute`.
+        :meth:`run` stays synchronous. Default is False.
     controls : VBox
         The assembled widget panel for this step.
     run_button : Button
@@ -76,6 +124,7 @@ class ProcessorStepBase(EventClient):
     controls: VBox
     results: _Results | None
     order: int = 1000
+    background: bool = False
 
     run_button_description = "Run"
 
@@ -128,10 +177,32 @@ class ProcessorStepBase(EventClient):
         return {key: control.value for key, control in self.variable_controls.items()}
 
     def button_callback(self, _: Button | None = None):
-        self.run()
+        if not self.background:
+            self.run()
+            return
+        lock = self.parent.lockable_controls()
+        self.broker.jobs.start(self._run({}), self.description, lock=lock)
 
     def function(self, *pargs, **kwargs):
         raise NotImplementedError
+
+    def compute(self, fn: callable, *args, **kwargs):
+        """The heavy work of :meth:`function`: ``fn(adata, *args, **kwargs)``.
+
+        Use as ``result = yield from self.compute(fn, ...)`` (making
+        :meth:`function` a generator). ``fn`` gets a shallow copy of the
+        dataset's adata (see :func:`_shallow_copy`) and runs in the job's
+        worker thread for a background run, inline for :meth:`run`. What it
+        sets or deletes in the copy is then applied to the adata on the main
+        thread, so a cancelled or failed run leaves the adata unchanged.
+        ``fn`` must not touch widgets nor modify arrays in place, nor change
+        the shape.
+        """
+        adata = self.parent.dataset.adata
+        work, entries = _shallow_copy(adata)
+        result = yield functools.partial(fn, work, *args, **kwargs)
+        _apply_changes(adata, work, entries)
+        return result
 
     def resolved_params(self, params: dict) -> dict:
         """Return the params to record in the step history.
@@ -163,50 +234,79 @@ class ProcessorStepBase(EventClient):
         return None
 
     def run(self, **extra_params):
-        # one flush of coalesced renders after the whole step
-        with self.broker.batch():
-            self.output.clear_output(wait=False)
-            shape_before = self.parent.dataset.adata.shape
-            recorded = extra_params
-            try:
-                # extra params will override fixed and variable params
-                params = {**self.fixed_params, **self.variable_params, **extra_params}
-                recorded = params
+        """Run the step now, on this thread, also if it is a background step.
 
-                self.run_button.disabled = True
-                self.run_button.button_style = "warning"
-                self.run_button.description = "..."
+        One flush of coalesced renders after the whole step. Refused (raises
+        ``RuntimeError``) while a background job runs.
+        """
+        self.broker.jobs.run(self._run(extra_params))
 
-                self.broker.publish(f"step_{self.name}_started")
-                recorded = self.resolved_params(params)
-                self.function(**params)
+    def _run(self, extra_params: dict):
+        """The run as a job: :meth:`run` and the Run button drive it."""
+        self.output.clear_output(wait=False)
+        shape_before = self.parent.dataset.adata.shape
+        recorded = extra_params
+        info = {}
+        try:
+            # extra params will override fixed and variable params
+            params = {**self.fixed_params, **self.variable_params, **extra_params}
+            recorded = params
 
-                self.parent.append_to_step_history(
-                    self.description, recorded, shape_before=shape_before
-                )
-                info = dict(status="success")
-                self.run_button.button_style = "success"
+            self.run_button.disabled = True
+            self.run_button.button_style = "warning"
+            self.run_button.description = "..."
 
-            except Exception as e:
-                self.run_button.button_style = "danger"
-                self.parent.append_to_step_history(
-                    self.description,
-                    recorded,
-                    status="failed",
-                    error=f"{type(e).__name__}: {e}".split("\n")[0][:200],
-                    shape_before=shape_before,
-                )
+            self.broker.publish(f"step_{self.name}_started")
+            recorded = self.resolved_params(params)
+            result = self.function(**params)
+            if inspect.isgenerator(result):
+                yield from result
 
-                info = dict(status="failed", error=e, traceback=traceback.format_exc())
-                self.broker.exceptions_log.append(traceback.format_exc())
-                with self.broker.exceptions_output.output:
-                    display(HTML(f"<pre>{traceback.format_exc()}</pre>"))
-                self.update_output(f"{type(e)}: {e}")
+            self.parent.append_to_step_history(
+                self.description, recorded, shape_before=shape_before
+            )
+            info = dict(status="success")
+            self.run_button.button_style = "success"
 
-            finally:
-                self.run_button.description = self.run_button_description
-                self.run_button.disabled = False
-                self.broker.publish(f"step_{self.name}_ended", **info)
+        except StepCancelled:
+            self.run_button.button_style = ""
+            self.parent.append_to_step_history(
+                self.description,
+                recorded,
+                status="cancelled",
+                shape_before=shape_before,
+            )
+            info = dict(status="cancelled")
+            self.update_output("Cancelled.")
+
+        except Exception as e:
+            self.run_button.button_style = "danger"
+            self.parent.append_to_step_history(
+                self.description,
+                recorded,
+                status="failed",
+                error=f"{type(e).__name__}: {e}".split("\n")[0][:200],
+                shape_before=shape_before,
+            )
+
+            info = dict(status="failed", error=e, traceback=traceback.format_exc())
+            self.broker.exceptions_log.append(traceback.format_exc())
+            with self.broker.exceptions_output.output:
+                display(HTML(f"<pre>{traceback.format_exc()}</pre>"))
+            self.update_output(f"{type(e)}: {e}")
+
+        finally:
+            self.run_button.description = self.run_button_description
+            self.run_button.disabled = False
+            self.broker.publish(f"step_{self.name}_ended", **info)
+            if self.broker._batch_depth == 1:  # outermost: run the deferred renders now
+                n_exceptions = len(self.broker.exceptions_log)
+                self.broker.flush()
+                # so that a failed redraw does not leave the button green
+                failed = len(self.broker.exceptions_log) > n_exceptions
+                if failed and self.run_button.button_style == "success":
+                    self.run_button.button_style = "danger"
+                    self.update_output("The step ran, but redrawing failed; see Logs.")
 
     def update_output(self, message: str | Any | None, clear: bool = True):
         if clear:

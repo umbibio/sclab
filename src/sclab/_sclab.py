@@ -210,7 +210,7 @@ class SCLabDashboard(GridBox):
         )
 
         self.children = (
-            self.processor.main_accordion,
+            VBox([self.broker.jobs.panel, self.processor.main_accordion]),
             self.main_content,
         )
         self.layout = self.dashboard_layout

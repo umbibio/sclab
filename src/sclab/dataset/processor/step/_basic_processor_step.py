@@ -107,6 +107,9 @@ class BasicProcessorStep(EventClient):
         self.run()
 
     def run(self, **extra_params):
+        jobs = self.broker.jobs
+        if jobs.busy:  # it would change the data under the running job
+            raise RuntimeError(f"{jobs.name!r} is running; wait for it or cancel it.")
         # one flush of coalesced renders after the whole step
         with self.broker.batch():
             shape_before = self.parent.dataset.adata.shape

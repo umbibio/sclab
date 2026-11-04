@@ -384,6 +384,14 @@ class Processor(EventClient):
         if accordion is not None:
             self.append_to_accordion(accordion, step.controls, step.description)
 
+    def lockable_controls(self) -> list:
+        """Widgets disabled while a background step runs: those changing the data."""
+        return [
+            *self.all_controls_list,
+            *self.selection_buttons_dict["keep_drop_buttons"].children,
+            self.selection_labeling_controls_dict["apply_button"],
+        ]
+
     def append_to_accordion(self, accordion: Accordion, panel: VBox, title: str):
         children = list(accordion.children)
         children.append(panel)
