@@ -87,3 +87,29 @@ class CodeActions(anywidget.AnyWidget):
       },
     };
     """
+
+
+class Download(anywidget.AnyWidget):
+    """Saves files in the browser: :meth:`save` triggers a Blob download.
+
+    The content goes in a one-off message, not a synced trait, so it is not
+    kept in the widget state (or the notebook). Nothing is written on the
+    kernel's disk.
+    """
+
+    _esm = """
+    export default {
+      initialize({ model }) {
+        model.on("msg:custom", ({ text, filename, type }) => {
+          const a = document.createElement("a");
+          a.href = URL.createObjectURL(new Blob([text], { type }));
+          a.download = filename;
+          a.click();
+          setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+        });
+      },
+    };
+    """
+
+    def save(self, text: str, filename: str, type: str = "text/html"):
+        self.send({"text": text, "filename": filename, "type": type})

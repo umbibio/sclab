@@ -10,6 +10,7 @@ from ipywidgets.widgets import (
     Box,
     GridBox,
     Layout,
+    VBox,
 )
 from pandas.api.types import is_any_real_numeric_dtype, is_bool_dtype
 from plotly.graph_objs.scatter import Marker as Marker2D
@@ -17,9 +18,10 @@ from plotly.graph_objs.scatter3d import Marker as Marker3D
 from scipy.interpolate import make_smoothing_spline
 
 from ...event import EventBroker, EventClient
-from ...utils._widgets import ResizeNotifier
+from ...utils._widgets import Download, ResizeNotifier
 from .._dataset import SCLabDataset
 from ._controls import PlotterControls
+from ._views import ViewGallery
 from ._utils import (
     COLOR_DISCRETE_SEQUENCE,
     _make_density_heatmap,
@@ -82,15 +84,21 @@ class Plotter(GridBox, EventClient):
         self._init_figure()
         self._init_controls()
         self.load_dataset(dataset)
+        self.views = ViewGallery(self)
+        self.download = Download()
 
         graph_layout = Layout(
             display="block", width="100%", height="600px", border="0px solid red"
         )
-        self.graph_box = Box([self.g, ResizeNotifier()], layout=graph_layout)
+        self.graph_box = Box(
+            [self.g, ResizeNotifier(), self.download], layout=graph_layout
+        )
+        # min_width: the card strip scrolls instead of widening the plot column
+        graph_column = VBox([self.graph_box, self.views], layout=Layout(min_width="0"))
 
         GridBox.__init__(
             self,
-            [self.graph_box, self.controls],
+            [graph_column, self.controls],
             layout=Layout(
                 width="100%",
                 # a bare `auto` plot column collapses to a few px on narrow viewports
@@ -170,6 +178,12 @@ class Plotter(GridBox, EventClient):
                 return
 
         self.g.observe(relayout_publisher, names="_js2py_relayout")
+
+    def data_hash(self) -> str:
+        """Identifies the data a pinned view was made on; the Processor refines it."""
+        from ..processor import _history  # circular import
+
+        return _history.history_hash(_history.loads_uns(self.dataset.adata))
 
     def _init_controls(self):
         self.controls = PlotterControls(self.broker)
@@ -291,6 +305,10 @@ class Plotter(GridBox, EventClient):
         **figure_kwargs,
     ):
         self.g.layout.annotations = []
+        # what drew the figure, for pinned views: the controls, or e.g. a gene's
+        # values (events pass the metadata and its color column positionally)
+        extra = colorby not in (None, self.controls.color.value) or figure_kwargs
+        self.state["source"] = "gene" if extra else "controls"
 
         ndims = self.controls.n_dimensions.value
         col_x: str = self.controls.selected_axes.children[0].value
@@ -838,7 +856,7 @@ class Plotter(GridBox, EventClient):
             filename += f"___colorBy_{self.controls.color.value}"
 
         filename += ".html"
-        self.g.write_html(filename)
+        self.download.save(self.g.to_html(), filename)  # in the browser, not on disk
 
     def dspr_clear_selection_click_callback(self):
         with self.g.batch_update():
@@ -1043,6 +1061,7 @@ class Plotter(GridBox, EventClient):
             self.g.update(figure.to_dict(), overwrite=True)
             self.update_marker_sizes(colorby=colorby, sizeby=sizeby)
             self.g.plotly_relayout({"dragmode": False})
+        self.state["source"] = "custom"
 
     def dplt_add_trace_request_callback(self, trace: go.Scatter | go.Scattergl):
         self.broker.flush(self.make_new_figure)  # draw on the pending figure

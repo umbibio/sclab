@@ -205,6 +205,7 @@ class Processor(EventClient):
             ],
         )
         self.steps = {}
+        self.plotter.data_hash = self.data_hash  # for pinned views
         self.add_step_func("filter_rows", self.filter_rows, use_run_button=False)
         self.add_step_func("apply_label", self.apply_label, use_run_button=False)
 
@@ -857,6 +858,19 @@ class Processor(EventClient):
         )
         self.step_history.append(entry)
         self._sync_step_history()
+
+    def data_hash(self) -> str:
+        """``history_hash`` of the steps that changed the data.
+
+        Steps with ``plot_only = True`` (e.g. Gene Expression) are left out, so
+        plotting does not mark the pinned views as made on other data.
+        """
+        changed = [
+            e
+            for e in self.step_history
+            if not getattr(self.steps.get(e["step"]), "plot_only", False)
+        ]
+        return _history.history_hash(changed)
 
     def _sync_step_history(self):
         uns = self.dataset.adata.uns.setdefault(_history.UNS_KEY, {})

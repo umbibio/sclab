@@ -24,6 +24,7 @@ class GeneExpression(ProcessorStepBase):
     """
 
     parent: Processor
+    plot_only = True  # see Processor.data_hash
     name: str = "gene_expression"
     description: str = "Gene Expression"
 
