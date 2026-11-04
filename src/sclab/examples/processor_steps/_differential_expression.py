@@ -148,6 +148,7 @@ class DifferentialExpression(ProcessorStepBase):
     results: DifferentialExpressionResults
     name: str = "differential_expression"
     description: str = "Differential Expression"
+    background = True
 
     def __init__(self, parent: Processor) -> None:
         try:
@@ -232,8 +233,8 @@ class DifferentialExpression(ProcessorStepBase):
             groups = "all"
 
         key_added = self._key_added(name)
-        sc.tl.rank_genes_groups(
-            self.parent.dataset.adata,
+        yield from self.compute(
+            sc.tl.rank_genes_groups,
             groupby,
             groups=groups,
             reference=reference,

@@ -21,6 +21,7 @@ class Neighbors(ProcessorStepBase):
     parent: Processor
     name: str = "neighbors"
     description: str = "Neighbors"
+    background = True
 
     def __init__(self, parent: Processor) -> None:
         try:
@@ -90,8 +91,8 @@ class Neighbors(ProcessorStepBase):
         group_by_batch: bool = False,
         random_state: int = 0,
     ):
-        neighbors(
-            self.parent.dataset.adata,
+        yield from self.compute(
+            neighbors,
             use_rep=use_rep,
             dims=dims,
             n_neighbors=n_neighbors,

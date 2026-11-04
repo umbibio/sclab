@@ -20,6 +20,7 @@ class UMAP(ProcessorStepBase):
     parent: Processor
     name: str = "umap"
     description: str = "UMAP"
+    background = True
 
     def __init__(self, parent: Processor) -> None:
         try:
@@ -54,8 +55,8 @@ class UMAP(ProcessorStepBase):
         random_state: int = 0,
     ):
         dataset = self.parent.dataset
-        key = umap(
-            dataset.adata,
+        key = yield from self.compute(
+            umap,
             n_components=n_components,
             zero_center=zero_center,
             random_state=random_state,

@@ -27,6 +27,7 @@ class PCA(ProcessorStepBase):
     parent: Processor
     name: str = "pca"
     description: str = "PCA"
+    background = True
 
     def __init__(self, parent: Processor) -> None:
         try:
@@ -105,8 +106,8 @@ class PCA(ProcessorStepBase):
                 "raw counts. Run the Preprocess step first."
             )
 
-        pca(
-            adata,
+        yield from self.compute(
+            pca,
             n_comps=n_comps,
             mask_var=mask_var,
             batch_key=self.parent.batch_key,

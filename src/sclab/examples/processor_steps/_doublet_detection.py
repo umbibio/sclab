@@ -1,3 +1,4 @@
+import functools
 import inspect
 
 from ipywidgets import Checkbox, Dropdown
@@ -55,6 +56,7 @@ class DoubletDetection(ProcessorStepBase):
     parent: Processor
     name: str = "doublet_detection"
     description: str = "Doublet Detection"
+    background = True  # but not scDblFinder: R (rpy2) runs on the main thread
 
     def __init__(self, parent: Processor) -> None:
         from sclab.tools.doublet_detection import (
@@ -142,15 +144,23 @@ class DoubletDetection(ProcessorStepBase):
             scrublet=scrublet,
         )
 
+        detect = functools.partial(
+            functions[function],
+            layer=layer,
+            key_added=flavor,
+            **extra,
+            random_state=random_state,
+        )
+
+        def work(adata):
+            with self.broker.jobs.output():
+                detect(adata=adata)
+
         self.broker.std_output.clear_output(wait=False)
-        with self.broker.std_output:
-            functions[function](
-                adata=adata,
-                layer=layer,
-                key_added=flavor,
-                **extra,
-                random_state=random_state,
-            )
+        if function == "scdblfinder":
+            work(adata)
+        else:
+            yield from self.compute(work)
 
         self.broker.publish(
             "dset_metadata_change",

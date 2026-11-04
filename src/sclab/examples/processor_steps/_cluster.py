@@ -19,6 +19,7 @@ class Cluster(ProcessorStepBase):
     parent: Processor
     name: str = "cluster"
     description: str = "Cluster"
+    background = True
     leiden_kwargs = dict(flavor="igraph", n_iterations=2, directed=False)
 
     def __init__(self, parent: Processor) -> None:
@@ -52,9 +53,8 @@ class Cluster(ProcessorStepBase):
         import scanpy as sc
 
         dataset = self.parent.dataset
-        adata = self.parent.dataset.adata
-        sc.tl.leiden(
-            adata,
+        yield from self.compute(
+            sc.tl.leiden,
             resolution=resolution,
             **self.leiden_kwargs,
             random_state=random_state,
