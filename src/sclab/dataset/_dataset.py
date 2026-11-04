@@ -295,25 +295,27 @@ class SCLabDataset(EventClient):
     def _validate_data(
         self, dk: str, value: pd.DataFrame | NDArray | None
     ) -> pd.DataFrame:
+        # only the index of the metadata is needed: self.metadata is O(cells) to build
+        index = self._metadata.index
         if value is None:
-            value = pd.DataFrame(index=self.metadata.index)
+            value = pd.DataFrame(index=index)
 
         elif isinstance(value, np.ndarray):
             assert value.ndim <= 2, "data array must be 1D or 2D"
 
-            if not self.metadata.empty:
-                assert value.shape[0] == self._metadata.shape[0], (
+            if len(index):
+                assert value.shape[0] == len(index), (
                     "data must have same length as metadata"
                 )
-                value = pd.DataFrame(value, index=self.metadata.index)
+                value = pd.DataFrame(value, index=index)
 
             else:
                 value = pd.DataFrame(value)
             value.columns = [f"{dk.upper()} {i + 1}" for i in range(value.shape[1])]
 
         elif isinstance(value, pd.DataFrame):
-            if not self.metadata.empty:
-                assert value.index.equals(self.metadata.index), (
+            if len(index):
+                assert value.index.equals(index), (
                     "data must have same index as metadata"
                 )
 
