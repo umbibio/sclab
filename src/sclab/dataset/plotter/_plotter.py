@@ -29,6 +29,43 @@ from ._utils import (
     rotate_multiple_steps,
 )
 
+# 3D draws a seeded random subsample of this many cells unless full resolution is
+# on; WebGL 3D rotation cost is linear in the point count
+MAX_3D_POINTS = 200_000
+# plotly.js fails to allocate a scatter3d trace beyond ~600-800k points
+MAX_TRACE_POINTS = 500_000
+POS = "__sclab_row__"  # df column: row position of each cell in Plotter._rows
+
+
+def _flat(props: dict, prefix: str = ""):
+    """(dotted path, leaf) pairs of a trace's props; arrays and lists are leaves."""
+    for key, value in props.items():
+        if isinstance(value, dict):
+            yield from _flat(value, f"{prefix}{key}.")
+        else:
+            yield f"{prefix}{key}", value
+
+
+def _patch_trace(old, new):
+    """Make widget trace ``old`` equal to ``new``, sending only what differs.
+
+    plotly skips values equal to the current ones, so unchanged arrays (e.g. x/y
+    on a size change) are not sent again. ``_props`` is read to avoid deep-copying
+    the arrays, as ``to_plotly_json`` would.
+    """
+    new_props = dict(_flat(new._props))
+    for key, _ in list(_flat(old._props)):
+        if key not in new_props and key != "uid":
+            old[key] = None
+    for key, value in new_props.items():
+        if key not in ("type", "uid"):
+            old[key] = value
+
+
+def _float32(values):
+    values = np.asarray(values)
+    return values.astype(np.float32) if values.dtype.kind in "iuf" else values
+
 
 class Plotter(GridBox, EventClient):
     g: go.FigureWidget
@@ -80,6 +117,11 @@ class Plotter(GridBox, EventClient):
             add=[],
         )
         self.state = {}
+        # index map: trace i of self.g holds the cells self._rows[self._trace_rows[i]]
+        # (None for traces that are not cells: density, lines, histograms)
+        self._rows = pd.Index([])
+        self._trace_rows: list[np.ndarray | None] = []
+        self._structure = None  # what the current traces were built for, see _apply
 
         self._init_figure()
         self._init_controls()
@@ -260,20 +302,22 @@ class Plotter(GridBox, EventClient):
 
     @property
     def selected_points(self):
-        selectedpoints = set()
-        for data in self.g.data:
-            if isinstance(data, go.Contour) or not data.selectedpoints:
-                continue
-            ids = data.hovertext[list(data.selectedpoints)]
-            selectedpoints = selectedpoints.union(ids)
-        return pd.Index(selectedpoints)
+        positions = [
+            rows[list(trace.selectedpoints)]
+            for trace, rows in zip(self.g.data, self._trace_rows)
+            if rows is not None and trace.selectedpoints
+        ]
+        if not positions:
+            return pd.Index([])
+        return self._rows[np.unique(np.concatenate(positions))]
 
     def select_points(self, points: pd.Index | None):
         if self.controls.n_dimensions.value != "2D":
             self.make_new_figure()
             return
         else:
-            self.update_marker_sizes()
+            with self.g.batch_update():  # one message, not one per trace property
+                self.update_marker_sizes()
             return
 
     @property
@@ -322,6 +366,7 @@ class Plotter(GridBox, EventClient):
                 xaxis_title="", yaxis_title="", title="No Data", template="simple_white"
             )
             self.g.update(dict(layout=layout, data=[]), overwrite=True)
+            self._structure, self._trace_rows = None, []
             return
 
         data = self.data_for_plot
@@ -329,6 +374,8 @@ class Plotter(GridBox, EventClient):
             metadata = self.dataset.metadata
 
         df = data.join(metadata.loc[:, ~metadata.columns.isin(data.columns)])
+        rows = df.index
+        df[POS] = np.arange(len(df))
         if col_x == "rank":
             df = df.sort_values(col_y, ascending=False, na_position="last")
             df["rank"] = np.arange(df.shape[0]) + 1
@@ -385,6 +432,15 @@ class Plotter(GridBox, EventClient):
                 # break into 10 evenly distributed bins
                 df[colorby] = pd.cut(series, 10).astype(str).replace("nan", "NA")
 
+        n_cells = len(df)
+        full = self.controls.full_resolution.value
+        if ndims == "3D" and not full and n_cells > MAX_3D_POINTS:
+            # seeded per cell, so recoloring keeps the same cells; selected first
+            rank = np.random.default_rng(0).random(len(rows))[df[POS].to_numpy()]
+            rank[df["is_selected"].eq(True).to_numpy(dtype=bool, na_value=False)] -= 1
+            keep = np.argpartition(rank, MAX_3D_POINTS)[:MAX_3D_POINTS]
+            df = df.iloc[np.sort(keep)]  # keeps the color sort order
+
         if ndims == "1D":
             fig = px.histogram(
                 df,
@@ -405,7 +461,7 @@ class Plotter(GridBox, EventClient):
                 log_y=log_y,
                 color=colorby,
                 color_discrete_sequence=COLOR_DISCRETE_SEQUENCE,
-                hover_name=df.index,
+                custom_data=[POS],  # -> the index map, see _compact_traces
                 template="simple_white",
                 render_mode="webgl",
                 **figure_kwargs,
@@ -421,7 +477,7 @@ class Plotter(GridBox, EventClient):
                 log_z=log_z,
                 color=colorby,
                 color_discrete_sequence=COLOR_DISCRETE_SEQUENCE,
-                hover_name=df.index,
+                custom_data=[POS],  # -> the index map, see _compact_traces
                 template="simple_white",
                 **figure_kwargs,
             )
@@ -436,6 +492,7 @@ class Plotter(GridBox, EventClient):
                 dragmode=False,
             )
             self.g.update(dict(layout=layout, data=[]), overwrite=True)
+            self._structure, self._trace_rows = None, []
             return
 
         fig.update_layout(legend_title_text="")
@@ -471,8 +528,7 @@ class Plotter(GridBox, EventClient):
 
         if ndims == "2D" and self.controls.show_density.value:
             # make density plot
-            data = df.sort_index()[[col_x, col_y]].values
-            data = tuple(tuple(row) for row in data)
+            data = df[[col_x, col_y]].to_numpy(dtype=float)
             grid_resolution = self.controls.density_grid_resolution.value
             line_smoothing = self.controls.density_line_smoothing.value
             bandwidth_factor = self.controls.density_bandwidth_factor.value
@@ -527,7 +583,10 @@ class Plotter(GridBox, EventClient):
             else:
                 dragmode = False
 
-        fig.update_layout(title=self.dataset._selected_data_key, modebar=self.modebar)
+        title = data_key = self.dataset._selected_data_key
+        if len(df) < n_cells:
+            title = f"{data_key} ({len(df):,} of {n_cells:,} cells shown)"
+        fig.update_layout(title=title, modebar=self.modebar)
         fig.update_layout(template_layout_shapedefaults_fillcolor="rgba(0, 0, 0, 0)")
         fig.update_layout(legend={"itemsizing": "constant"})
 
@@ -536,17 +595,77 @@ class Plotter(GridBox, EventClient):
         else:
             fig.update_layout(showlegend=False)
 
+        if ndims == "3D":
+            # the layout is replaced below: keep the user's camera on the same basis
+            if self.g.layout.scene.uirevision == data_key:
+                if camera := self.g.layout.scene.camera.to_plotly_json():
+                    fig.update_layout(scene_camera=camera)
+            fig.update_layout(scene_uirevision=data_key)
+
+        traces = self._compact_traces(fig, rows, ndims)
+        # sized before drawing: within a batch, a property must be set only once
+        self.update_marker_sizes(
+            metadata=metadata,
+            colorby=colorby,
+            sizeby=sizeby,
+            marker_size_scale=marker_size_scale,
+            traces=traces,
+        )
+        structure = (ndims, data_key, col_x, col_y, col_z) + tuple(
+            (t.type, t.marker.coloraxis if "marker" in t else None) for t in traces
+        )
         with self.g.batch_update():
-            self.g.update(fig.to_dict(), overwrite=True)
-            self.update_marker_sizes(
-                metadata=metadata,
-                colorby=colorby,
-                sizeby=sizeby,
-                marker_size_scale=marker_size_scale,
-            )
+            self._apply(traces, fig.layout, structure)
             self.set_dragmode(dragmode)
 
         self._unpin_size()
+
+    def _compact_traces(self, fig: go.Figure, rows: pd.Index, ndims: str):
+        """fig's traces with float32 arrays and cell ids as customdata.
+
+        px put each cell's row position in customdata (``custom_data=[POS]``); it
+        becomes the index map and the cell id shown on hover. 3D traces are split
+        into chunks of at most ``MAX_TRACE_POINTS``, sharing their legend entry.
+        Sets the index map (``_rows``, ``_trace_rows``) for the returned traces.
+        """
+        names = np.asarray(rows, dtype=object)
+        traces, trace_rows = [], []
+        for trace in fig.data:
+            if trace.customdata is None:  # density, histogram bars
+                traces.append(trace)
+                trace_rows.append(None)
+                continue
+            pos = np.asarray(trace.customdata)[:, 0].astype(np.int64)
+            arrays = {k: _float32(trace[k]) for k in "xyz" if k in trace}
+            if isinstance(trace.marker.color, np.ndarray):  # continuous color
+                arrays["marker.color"] = _float32(trace.marker.color)
+            step = MAX_TRACE_POINTS if ndims == "3D" else max(len(pos), 1)
+            for start in range(0, max(len(pos), 1), step):
+                chunk = slice(start, start + step)
+                part = trace if start == 0 else type(trace)(trace, showlegend=False)
+                part.update({k: v[chunk] for k, v in arrays.items()})
+                part.customdata = names[pos[chunk]]
+                traces.append(part)
+                trace_rows.append(pos[chunk])
+        self._rows, self._trace_rows = rows, trace_rows
+        return traces
+
+    def _apply(self, traces: list, layout, structure: tuple):
+        """Draw traces and layout, patching the current traces where possible.
+
+        The traces are patched (only changed properties are sent, numpy arrays as
+        binary buffers) when they were built for the same basis, dims, axes, trace
+        types and continuous/categorical color, and no traces were added since.
+        Otherwise they are all replaced. The layout is always replaced, as before.
+        """
+        current = tuple(t.type for t in self.g.data)
+        if structure == self._structure and current == tuple(t.type for t in traces):
+            for old, new in zip(self.g.data, traces):
+                _patch_trace(old, new)
+            self.g.update(layout=layout, overwrite=True)
+        else:
+            self.g.update(dict(data=traces, layout=layout), overwrite=True)
+        self._structure = structure
 
     def _unpin_size(self):
         # plotly.js pins the width (and drops autosize) whenever a relayout carries
@@ -581,6 +700,7 @@ class Plotter(GridBox, EventClient):
         sizeby: str | None = None,
         colorby: str | None = None,
         metadata: pd.DataFrame | None = None,
+        traces: list | None = None,  # default: the figure's
     ):
         if colorby is None:
             colorby = self.controls.color.value
@@ -596,41 +716,52 @@ class Plotter(GridBox, EventClient):
         else:
             df = metadata
 
-        sizeby_series = pd.Series(1.0, index=df.index)
+        sizes = None  # one size for all: scalar marker.size
         marker_sizeref = 1.0 / marker_size_scale**2
 
         # is_selected may be a boolean column or a column of NaNs
         if active_selection := (not (selected := df["is_selected"]).isna().all()):
             # if it is a boolean column, a selection has been defined (possible all False)
-            sizeby_series.loc[selected] = 3.0
-            sizeby_series.loc[~selected] = 0.5
+            sizes = np.where(selected.eq(True).to_numpy(bool, na_value=False), 3.0, 0.5)
 
         elif sizeby is not None:
             sizeby_series = df[sizeby].astype(float)
             sizeby_series.loc[sizeby_series < 0] = 0.0
             sizeby_series = sizeby_series.fillna(0.0)
             marker_sizeref = sizeby_series.max() / marker_size_scale**2
+            sizes = sizeby_series.to_numpy()
+
+        if sizes is not None:
+            if not df.index.equals(self._rows):  # e.g. a gene's metadata
+                sizes = pd.Series(sizes, index=df.index).reindex(self._rows).to_numpy()
+            sizes = sizes.astype(np.float32)
 
         trace: go.Scatter | go.Scattergl | go.Scatter3d
-        for trace in self.g.data:
-            marker_ids = trace.hovertext
-            if not isinstance(marker_ids, np.ndarray | list):
-                continue
-
-            if df.index.intersection(marker_ids).empty:
+        traces = self.g.data if traces is None else traces
+        for trace, rows in zip(traces, self._trace_rows):
+            if rows is None:
                 continue
 
             trace.hovertemplate = self.get_hovertemplate(
-                info={colorby: trace.name}, show_size=not active_selection
+                info={colorby: trace.name},
+                show_size=not active_selection,
+                label=self._label(trace),
             )
 
             marker: Marker2D | Marker3D = trace.marker
             marker.sizemode = "area"
             marker.sizeref = marker_sizeref
-            marker.size = sizeby_series.loc[marker_ids].values
+            marker.size = 1.0 if sizes is None else sizes[rows]
             marker.line.width = 0.0
 
-    def get_hovertemplate(self, info: dict = {}, show_size: bool = True) -> str:
+    @staticmethod
+    def _label(trace) -> str:
+        # cell ids: customdata on our traces, hovertext on custom (px) figures
+        return "%{customdata}" if trace.hovertext is None else "%{hovertext}"
+
+    def get_hovertemplate(
+        self, info: dict = {}, show_size: bool = True, label: str = "%{customdata}"
+    ) -> str:
         ndims = self.controls.n_dimensions.value
         x_axis = self.controls.selected_axes.children[0].value
         y_axis = self.controls.selected_axes.children[1].value
@@ -651,7 +782,7 @@ class Plotter(GridBox, EventClient):
 
         hovertemplate = ""
         if is_scatter | is_na:
-            hovertemplate = "<b>%{hovertext}</b><br>"
+            hovertemplate = f"<b>{label}</b><br>"
 
         if is_scatter and marker_color and not marker_color_is_cat:
             info.pop(marker_color, None)
@@ -697,39 +828,26 @@ class Plotter(GridBox, EventClient):
         if ndims == "1D":
             return
 
-        for trace in self.g.data:
-            if isinstance(trace, go.Contour):
+        if row_name not in self._rows:
+            return
+        position = self._rows.get_loc(row_name)
+        for trace, rows in zip(self.g.data, self._trace_rows):
+            if rows is None or not (idx := np.flatnonzero(rows == position)).size:
                 continue
 
-            marker_size = trace.marker.size.copy()
-            # if ndims == "2D":
-            #     marker_opacity = trace.marker.opacity.copy()
+            # marker.size may be a scalar (no size-by column, no selection)
+            marker_size = np.broadcast_to(trace.marker.size, rows.shape).copy()
+            (idx,) = idx
+            default_size = self.controls.marker_size.value
+            current_size = marker_size[idx]
 
-            if row_name in trace.hovertext:
-                idx = list(trace.hovertext).index(row_name)
+            if current_size == default_size:
+                marker_size[idx] = default_size * 3
+            else:
+                marker_size[idx] = default_size
 
-                default_size = self.controls.marker_size.value
-                current_size = marker_size[idx]
-
-                if current_size == default_size:
-                    marker_size[idx] = default_size * 3
-                    # if ndims == "2D":
-                    #     marker_opacity[idx] = 1.0
-                else:
-                    marker_size[idx] = default_size
-                    # if ndims == "2D":
-                    #     marker_opacity[idx] = 0.7
-
-                trace.marker.size = marker_size
-                # if ndims == "2D":
-                #     with self.g.batch_animate():
-                #         trace.marker.size = marker_size
-                #         trace.marker.opacity = marker_opacity
-                # else:
-                #     with self.g.batch_update():
-                #         trace.marker.size = marker_size
-
-                break
+            trace.marker.size = marker_size
+            break
 
     def ctrl_show_density_change_callback(self, new_value):
         if new_value:
@@ -767,6 +885,10 @@ class Plotter(GridBox, EventClient):
 
     def ctrl_density_bandwidth_factor_change_callback(self, new_value):
         if self.controls.show_density.value:
+            self.make_new_figure()
+
+    def ctrl_full_resolution_change_callback(self, new_value):
+        if self.controls.n_dimensions.value == "3D":
             self.make_new_figure()
 
     def ctrl_marker_size_change_callback(self, new_value):
@@ -815,7 +937,9 @@ class Plotter(GridBox, EventClient):
             colorby = self.controls.color.value
             for trace in self.g.data:
                 trace.hoverinfo = "all"
-                trace.hovertemplate = self.get_hovertemplate(info={colorby: trace.name})
+                trace.hovertemplate = self.get_hovertemplate(
+                    info={colorby: trace.name}, label=self._label(trace)
+                )
         else:
             self.g.update_traces(hoverinfo="skip", hovertemplate=None)
 
@@ -1056,6 +1180,15 @@ class Plotter(GridBox, EventClient):
             self.controls.sizeby.value = None
 
         figure.layout.template = self.g.layout.template
+
+        # custom figures name their cells by hovertext (px hover_name)
+        self._rows = rows = self.dataset.metadata.index
+        self._trace_rows = []
+        for trace in figure.data:
+            ids = trace.hovertext if "hovertext" in trace else None
+            pos = None if ids is None else rows.get_indexer(np.asarray(ids))
+            self._trace_rows.append(None if pos is None or (pos < 0).any() else pos)
+        self._structure = None
 
         with self.g.batch_update():
             self.g.update(figure.to_dict(), overwrite=True)

@@ -24,6 +24,7 @@ class PlotterControls(EventClient, VBox):
     n_dimensions: ToggleButtons
     aspect_equal: Checkbox
     enable_hover_info: Checkbox
+    full_resolution: Checkbox
     marker_size: FloatSlider
     marker_opacity: FloatSlider
     plot_width: IntSlider
@@ -70,6 +71,7 @@ class PlotterControls(EventClient, VBox):
             "histogram_nbins": self.histogram_nbins,
             "aspect_equal": self.aspect_equal,
             "enable_hover_info": self.enable_hover_info,
+            "full_resolution": self.full_resolution,
             "show_density": self.show_density,
             "density_grid_resolution": self.density_grid_resolution,
             "density_line_smoothing": self.density_line_smoothing,
@@ -167,6 +169,11 @@ class PlotterControls(EventClient, VBox):
         self.enable_hover_info: Checkbox = Checkbox(
             description="Enable hover info",
             value=True,
+        )
+        self.full_resolution: Checkbox = Checkbox(
+            description="3D full resolution",
+            value=False,
+            tooltip="Draw every cell in 3D (by default at most 200,000)",
         )
         self.marker_size: FloatSlider = FloatSlider(
             min=0.01,
@@ -316,6 +323,7 @@ class PlotterControls(EventClient, VBox):
                 self.plot_height,
                 self.aspect_equal,
                 self.enable_hover_info,
+                self.full_resolution,
             ]
         )
 
@@ -361,6 +369,7 @@ class PlotterControls(EventClient, VBox):
         self.histogram_nbins.layout.width = "95%"
         self.aspect_equal.layout.width = "95%"
         self.enable_hover_info.layout.width = "95%"
+        self.full_resolution.layout.width = "95%"
         self.show_density.layout.width = "95%"
         self.density_grid_resolution.layout.width = "95%"
         self.density_line_smoothing.layout.width = "95%"

@@ -6,7 +6,6 @@ import tempfile
 import anndata
 import numpy as np
 import pandas as pd
-import plotly.graph_objects as go
 import pytest
 from matplotlib.path import Path
 
@@ -43,9 +42,10 @@ def dash() -> SCLabDashboard:
 def plot_select(dash, selections: list[dict], inside: np.ndarray):
     """What the frontend sends on a box/lasso: selectedpoints, then a relayout."""
     names = set(dash.dataset.adata.obs_names[inside])
-    for trace in dash.plotter.g.data:
-        if not isinstance(trace, go.Contour):
-            ids = trace.hovertext
+    plotter = dash.plotter
+    for trace, rows in zip(plotter.g.data, plotter._trace_rows):
+        if rows is not None:
+            ids = plotter._rows[rows]
             trace.selectedpoints = [i for i, n in enumerate(ids) if n in names]
     dash.plotter.g._js2py_relayout = {
         "relayout_data": {"selections": selections},

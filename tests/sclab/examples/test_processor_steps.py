@@ -820,8 +820,10 @@ class TestGeneExpression:
 
         assert dash.broker.exceptions_log[n:] == []
         g = dash.plotter.g
-        ids = np.concatenate([np.asarray(t.hovertext) for t in g.data])
+        p = dash.plotter
+        ids = p._rows[np.concatenate(p._trace_rows)]
         assert set(ids) == set(dash.dataset.row_names)  # all cells, not a subset
+        assert all(np.asarray(t.customdata).size for t in g.data)  # hover: cell ids
         sizes = np.concatenate([np.asarray(t.marker.size) for t in g.data])
         assert set(sizes) == {0.5, 3.0}  # selection highlighted by the plotter
 
