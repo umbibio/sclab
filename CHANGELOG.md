@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- `sclab.Workspace`: several named datasets with a switcher and one active dashboard. File datasets are read only when activated; edited ones are written to `workspace_dir` when you switch away (switching away without one is refused), so history and pinned views survive
+- `lazy` optional extra (`xarray`, `dask`): the Workspace lists `.h5ad` datasets with `anndata.experimental.read_lazy` when installed (falls back to a backed read)
+- `SCLabDashboard.close()` closes the dashboard and all its widgets; `SCLabDashboard(source=...)` sets the generated script's load line
 - Pinned plot views: a strip under the plot saves and restores plot settings plus zoom / 3D camera (one redraw), with badges for missing data or data changed since the pin; stored in `adata.uns["sclab"]["views"]`
 - History tab can show, copy and download a Python script reproducing the applied steps (`SCLabDashboard.generate_code()`), including Keep/Drop/Label selections as filter expressions, box bounds and lasso polygons
 - `sclab.tools.select_box()` / `select_polygon()` to select cells inside a box or polygon on an embedding or two obs columns
