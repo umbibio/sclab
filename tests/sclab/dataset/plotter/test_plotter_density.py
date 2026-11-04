@@ -47,3 +47,20 @@ def test_frontend_selection_with_density_contours(dash):
 
     assert len(published) == 1 and len(published[0]) == 3
     assert scatter.selectedpoints is None
+
+
+@pytest.mark.parametrize("ndims, density", [("2D", False), ("2D", True), ("3D", False)])
+def test_redraw_keeps_marker_opacity(dash, ndims, density):
+    plotter, ctrl = dash.plotter, dash.plotter.controls
+    ctrl.n_dimensions.value = ndims
+    ctrl.show_density.value = density
+    ctrl.marker_opacity.value = 0.3
+
+    ctrl.refresh_button.click()  # any full redraw
+
+    scatters = [t for t in plotter.g.data if not isinstance(t, go.Contour)]
+    assert scatters and all(t.opacity == 0.3 for t in scatters)
+    contours = [t for t in plotter.g.data if isinstance(t, go.Contour)]
+    assert all(t.opacity != 0.3 for t in contours)
+    ctrl.marker_opacity.value = 1
+    ctrl.show_density.value = False

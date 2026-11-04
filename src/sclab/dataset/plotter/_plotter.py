@@ -440,8 +440,8 @@ class Plotter(GridBox, EventClient):
                 )
 
         if ndims == "2D" or ndims == "3D":
-            # trace_opacity = self.controls.marker_opacity.value
-            # fig.update_traces(opacity=trace_opacity)
+            # before the density contour is added: it keeps its own opacity
+            fig.update_traces(opacity=self.controls.marker_opacity.value)
 
             fig.update_layout(legend_traceorder="reversed")
             if col_x == "rank" or not self.controls.enable_hover_info.value:
