@@ -746,6 +746,7 @@ class Plotter(GridBox, EventClient):
                 info={colorby: trace.name},
                 show_size=not active_selection,
                 label=self._label(trace),
+                metadata=df,
             )
 
             marker: Marker2D | Marker3D = trace.marker
@@ -760,7 +761,11 @@ class Plotter(GridBox, EventClient):
         return "%{customdata}" if trace.hovertext is None else "%{hovertext}"
 
     def get_hovertemplate(
-        self, info: dict = {}, show_size: bool = True, label: str = "%{customdata}"
+        self,
+        info: dict = {},
+        show_size: bool = True,
+        label: str = "%{customdata}",
+        metadata: pd.DataFrame | None = None,  # default: the dataset's (O(cells))
     ) -> str:
         ndims = self.controls.n_dimensions.value
         x_axis = self.controls.selected_axes.children[0].value
@@ -770,7 +775,9 @@ class Plotter(GridBox, EventClient):
         marker_size: str | None = self.controls.sizeby.value
 
         if marker_color is not None:
-            series = self.dataset.metadata[marker_color]
+            if metadata is None:
+                metadata = self.dataset.metadata
+            series = metadata[marker_color]
             marker_color_is_cat = isinstance(series.dtype, pd.CategoricalDtype)
         else:
             marker_color_is_cat = False
@@ -935,10 +942,13 @@ class Plotter(GridBox, EventClient):
     def ctrl_enable_hover_info_change_callback(self, new_value):
         if new_value:
             colorby = self.controls.color.value
+            metadata = self.dataset.metadata
             for trace in self.g.data:
                 trace.hoverinfo = "all"
                 trace.hovertemplate = self.get_hovertemplate(
-                    info={colorby: trace.name}, label=self._label(trace)
+                    info={colorby: trace.name},
+                    label=self._label(trace),
+                    metadata=metadata,
                 )
         else:
             self.g.update_traces(hoverinfo="skip", hovertemplate=None)
