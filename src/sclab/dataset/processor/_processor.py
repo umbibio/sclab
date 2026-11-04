@@ -3,7 +3,7 @@ import inspect
 import json
 import logging
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Callable, Literal
 
 import numpy as np
 import pandas as pd
@@ -115,6 +115,8 @@ class Processor(EventClient):
     # last plot (box/lasso) selection and its shape; None if none or not replayable
     _plot_selection: pd.Index | None = None
     _plot_shape: dict | None = None
+    # replaces history_to_code in generate_code, e.g. a Workspace's merge script
+    code_generator: Callable[[], str] | None = None
 
     events = [
         "dspr_selection_values_change",
@@ -869,6 +871,7 @@ class Processor(EventClient):
             e
             for e in self.step_history
             if not getattr(self.steps.get(e["step"]), "plot_only", False)
+            and e["step"] != "load"  # added by a Workspace; the data is the same
         ]
         return _history.history_hash(changed)
 
@@ -883,6 +886,8 @@ class Processor(EventClient):
 
         See :func:`sclab.dataset.processor._codegen.history_to_code`.
         """
+        if self.code_generator is not None:
+            return self.code_generator()
         return _codegen.history_to_code(
             self.step_history,
             steps=self.steps,

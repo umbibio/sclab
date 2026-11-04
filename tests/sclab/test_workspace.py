@@ -43,7 +43,7 @@ def test_history_and_views_survive_switching(files, tmp_path):
     assert ws.dash.ds.adata.n_obs == 200
 
     ws.activate("a")
-    assert [e["step"] for e in ws.dash.processor.step_history] == ["QC"]
+    assert [e["step"] for e in ws.dash.processor.step_history] == ["load", "QC"]
     assert [v["id"] for v in ws.dash.plotter.views.views] == [view_id]
     assert not ws.is_dirty("a")  # matches its cache
     assert "cached" not in ws._label(a) and "modified" in ws._label(a)
