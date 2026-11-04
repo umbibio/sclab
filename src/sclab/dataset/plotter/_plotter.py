@@ -48,6 +48,8 @@ MAX_3D_POINTS = 200_000
 # plotly.js fails to allocate a scatter3d trace beyond ~600-800k points
 MAX_TRACE_POINTS = 500_000
 POS = "__sclab_row__"  # df column: row position of each cell in Plotter._rows
+# plotly.js draws opaque 3D markers with a depth test, translucent ones in trace order
+OPACITY_3D_NOTE = "3D: opacity below 1 draws by trace order, not depth"
 
 
 def _flat(props: dict, prefix: str = ""):
@@ -277,6 +279,12 @@ class Plotter(GridBox, EventClient):
     def _say(self, text: str):
         style = "font-size:12px;color:#b45309"
         self.notice.value = f"<span style='{style}'>{text}</span>" if text else ""
+
+    def _note_3d_opacity(self):
+        c = self.controls
+        show = c.n_dimensions.value == "3D" and c.marker_opacity.value < 1
+        if show or OPACITY_3D_NOTE in self.notice.value:
+            self._say(OPACITY_3D_NOTE if show else "")
 
     def _show(self, widget):
         """Put ``widget`` (the figure or a backend's view) in the plot area."""
@@ -596,6 +604,7 @@ class Plotter(GridBox, EventClient):
             return
 
         view = self._view_2d(ndims, figure_kwargs)
+        self._note_3d_opacity()
         self._show(self.g if view is None else view.widget)
         data = self.data_for_plot
         if metadata is None:
@@ -656,7 +665,10 @@ class Plotter(GridBox, EventClient):
 
         if colorby:
             ascending = is_any_real_numeric_dtype(df[colorby])
-            df = df.sort_values(colorby, ascending=ascending, na_position="first")
+            # 2D: high values drawn on top. 3D: the depth test decides (see
+            # OPACITY_3D_NOTE), and the same order lets a recolor send only colors
+            if not (ascending and ndims == "3D"):
+                df = df.sort_values(colorby, ascending=ascending, na_position="first")
 
             series: pd.Series = df[colorby]
             # where(): pandas 3's str dtype keeps NaN instead of making it "nan"
@@ -1168,6 +1180,7 @@ class Plotter(GridBox, EventClient):
         self.ctrl_sizeby_change_callback(None)
 
     def ctrl_marker_opacity_change_callback(self, new_value):
+        self._note_3d_opacity()
         ndims = self.controls.n_dimensions.value
         if ndims == "1D" or self._view_redraw():
             return

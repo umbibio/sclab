@@ -219,3 +219,42 @@ def test_3d_camera_survives_a_redraw_on_the_same_basis(dash3d):
     p.controls.color.value = "quadrant"
     assert p.g.layout.scene.camera.eye.to_plotly_json() == camera["eye"]
     assert p.g.layout.scene.uirevision == "Y_array4"
+
+
+def test_3d_numeric_recolor_sends_only_colors_and_sizes(dash3d, sent):
+    p = dash3d.plotter
+    p.controls.color.value = "time"
+    sent.clear()
+    p.controls.color.value = "poisson"
+    assert sent["restyle marker.color"] and sent["restyle marker.size"]
+    assert {k for k in sent if k.startswith("restyle")} <= {
+        "restyle marker.color",
+        "restyle marker.size",
+        "restyle hovertemplate",
+    }
+    assert not sent["add"] and not sent["delete"]
+
+
+def test_2d_draws_high_values_on_top_3d_keeps_the_cell_order(dash):
+    p = dash.plotter
+    p.controls.color.value = "time"
+    (trace,) = p.g.data
+    assert (np.diff(np.asarray(trace.marker.color)) >= 0).all()  # last drawn: highest
+    p.controls.data_key.value = "Y_array4"
+    p.controls.n_dimensions.value = "3D"
+    (trace,) = p.g.data
+    assert (np.diff(p._trace_rows[0]) > 0).all()
+
+
+def test_3d_notice_for_opacity_below_1(dash3d):
+    p = dash3d.plotter
+    assert p.notice.value == ""
+    p.controls.marker_opacity.value = 0.7
+    assert _plotter.OPACITY_3D_NOTE in p.notice.value
+    p.controls.marker_opacity.value = 1.0
+    assert p.notice.value == ""
+    p.controls.marker_opacity.value = 0.7
+    p.controls.n_dimensions.value = "2D"  # 2D draws in order: no notice
+    assert p.notice.value == ""
+    p.controls.n_dimensions.value = "3D"
+    assert _plotter.OPACITY_3D_NOTE in p.notice.value
