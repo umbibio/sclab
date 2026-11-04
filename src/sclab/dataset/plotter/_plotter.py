@@ -1010,7 +1010,8 @@ class Plotter(GridBox, EventClient):
             marker: Marker2D | Marker3D = trace.marker
             marker.sizemode = "area"
             marker.sizeref = marker_sizeref
-            marker.size = 1.0 if sizes is None else sizes[rows]
+            # plotly.js applies sizeref to arrays only: a scalar is the px diameter
+            marker.size = marker_size_scale if sizes is None else sizes[rows]
             marker.line.width = 0.0
 
     @staticmethod
@@ -1100,8 +1101,9 @@ class Plotter(GridBox, EventClient):
             if rows is None or not (idx := np.flatnonzero(rows == position)).size:
                 continue
 
-            # marker.size may be a scalar (no size-by column, no selection)
-            marker_size = np.broadcast_to(trace.marker.size, rows.shape).copy()
+            # marker.size may be a scalar px diameter: 1.0 in sizeref units
+            size = 1.0 if np.isscalar(trace.marker.size) else trace.marker.size
+            marker_size = np.broadcast_to(size, rows.shape).copy()
             (idx,) = idx
             default_size = self.controls.marker_size.value
             current_size = marker_size[idx]

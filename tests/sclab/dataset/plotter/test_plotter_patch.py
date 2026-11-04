@@ -111,12 +111,13 @@ def test_point_click_grows_the_marker(dash):
 
 def test_marker_size_is_scalar_without_size_by_or_selection(dash):
     p = dash.plotter
-    assert all(t.marker.size == 1.0 for t in p.g.data)
+    # a scalar is the px diameter: plotly.js applies sizeref to arrays only
+    assert all(t.marker.size == p.controls.marker_size.value for t in p.g.data)
     dash.dataset.selected_rows = dash.dataset.metadata.index[:10]
     sizes = np.concatenate([np.asarray(t.marker.size) for t in p.g.data])
     assert sizes.dtype == np.float32 and set(sizes) == {0.5, 3.0}
     dash.dataset.selected_rows = None
-    assert all(t.marker.size == 1.0 for t in p.g.data)
+    assert all(t.marker.size == p.controls.marker_size.value for t in p.g.data)
 
 
 def test_size_and_selection_only_send_sizes(dash, sent):

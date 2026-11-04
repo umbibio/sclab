@@ -25,8 +25,13 @@ def test_value_size_factors():
 
 def sizes(plotter) -> pd.Series:
     """Each cell's plotly marker.size (area units: 1.0 is the marker size)."""
+    scale = plotter.controls.marker_size.value
+
+    def area(size):  # a scalar is the px diameter
+        return (size / scale) ** 2 if np.isscalar(size) else size
+
     parts = [
-        pd.Series(np.broadcast_to(t.marker.size, rows.shape), plotter._rows[rows])
+        pd.Series(np.broadcast_to(area(t.marker.size), rows.shape), plotter._rows[rows])
         for t, rows in zip(plotter.g.data, plotter._trace_rows)
         if rows is not None
     ]
