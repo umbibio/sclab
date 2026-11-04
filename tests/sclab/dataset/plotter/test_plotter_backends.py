@@ -161,12 +161,15 @@ def test_pinned_view_restores_settings(backend):
     p, ctrl = dash.plotter, dash.plotter.controls
     ctrl.color.value = "quadrant"
     ctrl.marker_opacity.value = 0.6
+    ctrl.emphasize_values.value = False
     spec = p.views.pin()
     assert spec["backend"] == backend and spec["ranges"] is None
+    assert spec["controls"]["emphasize_values"] is False
     expected = values(p)
 
     ctrl.color.value = "time"
     ctrl.marker_opacity.value = 1.0
+    ctrl.emphasize_values.value = True
     ctrl.data_key.value = "Y_array2"
     assert p.views.restore(spec["id"]) == []
     assert values(p) == expected

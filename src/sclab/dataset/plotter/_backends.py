@@ -29,6 +29,7 @@ import plotly.io as pio
 from ipywidgets import Box, Image, Layout
 from pandas.api.types import is_bool_dtype, is_numeric_dtype
 from plotly.colors import get_colorscale, hex_to_rgb, sample_colorscale, unlabel_rgb
+from scipy.stats import rankdata
 
 from ._utils import COLOR_DISCRETE_SEQUENCE, _make_density_heatmap
 
@@ -89,6 +90,21 @@ def color_spec(series: pd.Series, colorscale=None) -> dict | None:
         "values": pd.Categorical(labels.to_numpy(), categories=present),
         "colors": {c: colors[c] for c in present},
     }
+
+
+def value_size_factors(values, min_factor: float = 0.3) -> np.ndarray:
+    """Marker diameters relative to the marker size, emphasizing the cells with values.
+
+    Missing values and values <= 0 get ``min_factor``; positive values are scaled
+    by their rank (percentile among the positive values) from 0.6 to 1.5.
+    """
+    values = pd.Series(values).to_numpy(dtype=float, na_value=np.nan)
+    factors = np.full(values.shape, float(min_factor))
+    positive = values > 0  # False for NaN
+    if positive.any():
+        percentile = (rankdata(values[positive]) - 0.5) / positive.sum()
+        factors[positive] = 0.6 + 0.9 * percentile
+    return factors
 
 
 def density_lines(xy: np.ndarray, controls) -> list[np.ndarray]:

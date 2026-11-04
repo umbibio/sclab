@@ -9,6 +9,7 @@ import svgpathtools as spt
 from ipywidgets.widgets import (
     HTML,
     Box,
+    BoundedFloatText,
     BoundedIntText,
     Dropdown,
     GridBox,
@@ -30,6 +31,7 @@ from ._backends import (
     make_view,
     png_html,
     render_png,
+    value_size_factors,
 )
 from ._controls import PlotterControls
 from ._views import ViewGallery
@@ -201,18 +203,34 @@ class Plotter(GridBox, EventClient):
             description="3D points",
             tooltip="3D plots draw a random subsample of this many cells",
         )
+        self.min_size_input = BoundedFloatText(
+            value=0.3,
+            min=0.0,
+            max=1.0,
+            step=0.05,
+            description="Min. size",
+            tooltip="Emphasize values: size of zero or missing values, relative to "
+            "the marker size",
+        )
         self.backend_dropdown.observe(lambda c: self._set_backend(c["new"]), "value")
         self.max_3d_points_input.observe(
             lambda _: self.ctrl_full_resolution_change_callback(None), "value"
         )
+        self.min_size_input.observe(
+            lambda _: self.ctrl_sizeby_change_callback(None), "value"
+        )
         style = dict(description_width="80px")
-        for widget in (self.backend_dropdown, self.max_3d_points_input):
+        settings = (
+            self.backend_dropdown,
+            self.max_3d_points_input,
+            self.min_size_input,
+        )
+        for widget in settings:
             widget.style = style
         self.settings = VBox(
             [
                 HTML("<b>Plots</b>"),
-                self.backend_dropdown,
-                self.max_3d_points_input,
+                *settings,
                 self.controls.full_resolution,
             ],
             layout=Layout(padding="8px"),
@@ -315,6 +333,8 @@ class Plotter(GridBox, EventClient):
             values = df[sizeby].astype(float).clip(lower=0).fillna(0.0).to_numpy()
             if values.max() > 0:
                 size = scale * np.sqrt(values / values.max())
+        elif (factors := self._size_factors(df, colorby, sizeby)) is not None:
+            size = scale * factors
         selected = self.dataset._selected_rows
         x, y = (df[col].to_numpy(dtype=float) for col in (col_x, col_y))
         density = None
@@ -341,6 +361,25 @@ class Plotter(GridBox, EventClient):
             "aspect_equal": c.aspect_equal.value,
             "hover": c.enable_hover_info.value and col_x != "rank",
         }
+
+    def _size_factors(self, df, colorby, sizeby) -> np.ndarray | None:
+        """Per-cell marker diameters relative to the marker size (None: uniform).
+
+        "Emphasize values": for a numeric color column, cells with values > 0 are
+        drawn larger, by rank, and zero or missing values small (the Settings
+        tab's "Min. size"), see ``value_size_factors``. Sizes follow the first of:
+        a selection (selected cells large, the others small), the "Size by"
+        column, then these factors. 1D histograms ignore sizes.
+        """
+        if (
+            sizeby is not None
+            or not colorby
+            or not self.controls.emphasize_values.value
+        ):
+            return None
+        if colorby not in df or not is_any_real_numeric_dtype(df[colorby]):
+            return None  # categorical or boolean colors
+        return value_size_factors(df[colorby], self.min_size_input.value)
 
     def _init_figure(self):
         self.g = go.FigureWidget(
@@ -899,8 +938,10 @@ class Plotter(GridBox, EventClient):
         metadata: pd.DataFrame | None = None,
         traces: list | None = None,  # default: the figure's
     ):
+        # a gene's plot: its color column is in the metadata it was drawn with
+        last = {} if self.state.get("source") == "custom" else self._last_call
         if colorby is None:
-            colorby = self.controls.color.value
+            colorby = last.get("colorby") or self.controls.color.value
 
         if marker_size_scale is None:
             marker_size_scale = self.controls.marker_size.value
@@ -914,6 +955,7 @@ class Plotter(GridBox, EventClient):
             df = metadata
 
         sizes = None  # one size for all: scalar marker.size
+        index = df.index  # the cells of sizes
         marker_sizeref = 1.0 / marker_size_scale**2
 
         # is_selected may be a boolean column or a column of NaNs
@@ -928,9 +970,16 @@ class Plotter(GridBox, EventClient):
             marker_sizeref = sizeby_series.max() / marker_size_scale**2
             sizes = sizeby_series.to_numpy()
 
+        else:
+            values = df if colorby in df else last.get("metadata")
+            if values is not None:
+                factors = self._size_factors(values, colorby, sizeby)
+                if factors is not None:  # diameters -> marker.size areas
+                    sizes, index = factors**2, values.index
+
         if sizes is not None:
-            if not df.index.equals(self._rows):  # e.g. a gene's metadata
-                sizes = pd.Series(sizes, index=df.index).reindex(self._rows).to_numpy()
+            if not index.equals(self._rows):  # e.g. a gene's metadata
+                sizes = pd.Series(sizes, index=index).reindex(self._rows).to_numpy()
             sizes = sizes.astype(np.float32)
 
         trace: go.Scatter | go.Scattergl | go.Scatter3d
@@ -1114,6 +1163,9 @@ class Plotter(GridBox, EventClient):
 
         with self.g.batch_update():
             self.update_marker_sizes(sizeby=new_value)
+
+    def ctrl_emphasize_values_change_callback(self, new_value):
+        self.ctrl_sizeby_change_callback(None)
 
     def ctrl_marker_opacity_change_callback(self, new_value):
         ndims = self.controls.n_dimensions.value
@@ -1416,12 +1468,12 @@ class Plotter(GridBox, EventClient):
             pos = None if ids is None else rows.get_indexer(np.asarray(ids))
             self._trace_rows.append(None if pos is None or (pos < 0).any() else pos)
         self._structure = None
+        self.state["source"] = "custom"
 
         with self.g.batch_update():
             self.g.update(figure.to_dict(), overwrite=True)
             self.update_marker_sizes(colorby=colorby, sizeby=sizeby)
             self.g.plotly_relayout({"dragmode": False})
-        self.state["source"] = "custom"
 
     def dplt_add_trace_request_callback(self, trace: go.Scatter | go.Scattergl):
         self.broker.flush(self.make_new_figure)  # draw on the pending figure

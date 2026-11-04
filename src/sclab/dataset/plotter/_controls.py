@@ -33,6 +33,7 @@ class PlotterControls(EventClient, VBox):
     log_axes: VBox
     histogram_nbins: IntSlider
     color: Dropdown
+    emphasize_values: Checkbox
     show_density: Checkbox
     density_grid_resolution: IntSlider
     density_line_smoothing: FloatSlider
@@ -56,6 +57,7 @@ class PlotterControls(EventClient, VBox):
             "data_key": self.data_key,
             "color": self.color,
             "sizeby": self.sizeby,
+            "emphasize_values": self.emphasize_values,
             "n_dimensions": self.n_dimensions,
             "selected_axes_1": self.selected_axes.children[0],
             "selected_axes_2": self.selected_axes.children[1],
@@ -249,6 +251,12 @@ class PlotterControls(EventClient, VBox):
             value=None,
             layout=Layout(margin="10px 0px 0px 0px"),
         )
+        self.emphasize_values: Checkbox = Checkbox(
+            description="Emphasize values",
+            value=True,
+            tooltip="Numeric colors: larger points for higher values, small points "
+            "for zero or missing values (unless sized by a column)",
+        )
         self.show_density: Checkbox = Checkbox(
             description="Show density",
             value=False,
@@ -310,6 +318,7 @@ class PlotterControls(EventClient, VBox):
                 self.data_key,
                 self.color,
                 self.sizeby,
+                self.emphasize_values,
                 self.n_dimensions,
                 plot_settings_tab,
             ]
@@ -369,6 +378,7 @@ class PlotterControls(EventClient, VBox):
         self.aspect_equal.layout.width = "95%"
         self.enable_hover_info.layout.width = "95%"
         self.full_resolution.layout.width = "95%"
+        self.emphasize_values.layout.width = "95%"
         self.show_density.layout.width = "95%"
         self.density_grid_resolution.layout.width = "95%"
         self.density_line_smoothing.layout.width = "95%"
