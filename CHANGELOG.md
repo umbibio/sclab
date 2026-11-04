@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- Dashboard "Emphasize values" (on by default): when coloring by a number, cells with zero/negative/missing values shrink (Settings "Min. size", default 0.3) and the rest grow with their percentile; "Size by" and selections take precedence. Works in plotly, jscatter and static plots
+- Dashboard notice in 3D when opacity is below 1 (plotly then draws by trace order, not depth)
 - Dashboard Settings tab: choose the 2D plot backend (`plotly`, `jscatter` or `static` matplotlib image) and the 3D point limit; also `SCLabDashboard(plot_backend=...)` / `plotter.backend`. 1D/3D always use plotly; path drawing, custom figures and extra traces fall back to plotly with a notice
 - `jscatter` optional extra (`jupyter-scatter`) for the jscatter backend: color/size/opacity, selection, lasso (shape recorded), density contours; pinned views restore settings but not zoom
 - Workspace "Merge..." dialog and `Workspace.merge()`: a preview (shared/dropped genes, Ensembl IDs vs symbols, counts-layer check, obs conflicts, per-dataset median counts/genes per cell) blocks unsafe merges; the merged dataset starts from raw counts with the label column as its batch key, originals stay unchanged, and "Show code" gives a script covering every parent, the merge and later steps
@@ -36,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dashboard plots are faster and send less data: recolor, size and selection patch the existing traces (numpy arrays sent as binary); size/selection changes are near-instant and recolors 2–6× faster at 100k–1M cells
 - Density contours use a binned Gaussian KDE: under 2 s at 1M cells instead of minutes, within a few percent of the previous contours
 - 3D plots show a seeded random subsample of at most 200,000 cells by default (selected cells first, noted in the title); traces are split at 500,000 points and the camera is kept across redraws on the same embedding
+- 3D plots no longer sort cells by a numeric color (depth decides what is in front); a numeric recolor sends only colors and sizes (6.1 MB → 1.6 MB at 200k cells)
 - Plot traces no longer carry per-cell hover text; cell ids come from an index map (hover values are float32)
 - **Breaking:** remove `batch_key` from `pseudobulk_edger()` and `pseudobulk_limma()`
 - **Breaking:** `pseudobulk_pylimma()`, `pseudobulk_limma()` and `pseudobulk_edger()` default to `layer="counts"` (pass `layer="X"` to use `adata.X`; `layer=None` raises)
@@ -70,6 +73,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Dashboard
+    - Cells with a missing category disappeared from categorical plots under pandas 3; they are drawn as "NA" again
+    - Plots without per-cell sizes drew 1px points (since the plot speed-up in 0.5.0.dev6)
+    - Garbage-collecting a dashboard could close widgets beyond its own and errored at interpreter shutdown
     - Callbacks crashing on dataset changes (differential expression, integration, neighbors, gene expression)
     - Selection filters wiped on every metadata change while the old selection stayed active; still-valid filters are now kept (ranges clipped to new bounds) and the selection is recomputed when a filter changes
     - PCA step with a reference batch failing when the `{counts}_log1p` layer is missing
