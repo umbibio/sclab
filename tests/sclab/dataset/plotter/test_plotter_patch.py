@@ -1,8 +1,10 @@
 """Patched redraws, the cell index map, and 3D subsampling/chunking."""
 
+import contextlib
 from collections import Counter
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from sclab import SCLabDashboard
@@ -62,6 +64,29 @@ def test_index_map_and_hover_ids(dash):
         assert list(trace.customdata) == list(p._rows[rows])
         assert trace.hovertemplate.startswith("<b>%{customdata}</b>")
         assert np.asarray(trace.x).dtype == np.float32
+
+
+@pytest.mark.parametrize("ndims", ["1D", "2D"])
+def test_missing_categories_are_drawn_as_na(dash, ndims):
+    p = dash.plotter
+    p.controls.n_dimensions.value = ndims
+    missing = dash.dataset.metadata["quadrant"].isna()
+    assert missing.sum() == 150
+    # pandas 3's str dtype (pandas 2: future.infer_string) keeps NaN in astype(str)
+    infer_string = (
+        contextlib.nullcontext()
+        if int(pd.__version__.split(".")[0]) >= 3
+        else pd.option_context("future.infer_string", True)
+    )
+    with infer_string:
+        p.controls.color.value = "quadrant"
+    (na,) = [t for t in p.g.data if t.name == "NA"]
+    if ndims == "2D":
+        shown = [c for trace in cells(p) for c in trace]
+        assert sorted(shown) == sorted(dash.dataset.adata.obs_names)
+        assert sorted(na.customdata) == sorted(missing.index[missing])
+    else:  # histogram bars: the NA trace counts the missing cells
+        assert len(na.x) == 150
 
 
 def test_selected_points_from_trace_selections(dash):

@@ -620,11 +620,13 @@ class Plotter(GridBox, EventClient):
             df = df.sort_values(colorby, ascending=ascending, na_position="first")
 
             series: pd.Series = df[colorby]
+            # where(): pandas 3's str dtype keeps NaN instead of making it "nan"
             if isinstance(series.dtype, pd.CategoricalDtype | bool):
-                df[colorby] = series.astype(str).replace("nan", "NA")
+                df[colorby] = series.astype(str).where(series.notna(), "NA")
             elif ndims == "1D":
                 # break into 10 evenly distributed bins
-                df[colorby] = pd.cut(series, 10).astype(str).replace("nan", "NA")
+                bins = pd.cut(series, 10)
+                df[colorby] = bins.astype(str).where(bins.notna(), "NA")
 
         n_cells = len(df)
         full = self.controls.full_resolution.value
