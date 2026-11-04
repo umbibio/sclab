@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- Dashboard Settings tab: choose the 2D plot backend (`plotly`, `jscatter` or `static` matplotlib image) and the 3D point limit; also `SCLabDashboard(plot_backend=...)` / `plotter.backend`. 1D/3D always use plotly; path drawing, custom figures and extra traces fall back to plotly with a notice
+- `jscatter` optional extra (`jupyter-scatter`) for the jscatter backend: color/size/opacity, selection, lasso (shape recorded), density contours; pinned views restore settings but not zoom
 - Workspace "Merge..." dialog and `Workspace.merge()`: a preview (shared/dropped genes, Ensembl IDs vs symbols, counts-layer check, obs conflicts, per-dataset median counts/genes per cell) blocks unsafe merges; the merged dataset starts from raw counts with the label column as its batch key, originals stay unchanged, and "Show code" gives a script covering every parent, the merge and later steps
 - `sclab.preprocess.merge_preview()`, `merge_datasets()` (optional `equalize_depth` binomial thinning of deeper datasets to the shallowest median depth) and `downsample_counts()`
 - `sclab.Workspace`: several named datasets with a switcher and one active dashboard. File datasets are read only when activated; edited ones are written to `workspace_dir` when you switch away (switching away without one is refused), so history and pinned views survive
