@@ -1,3 +1,5 @@
+import inspect
+
 from ipywidgets import Checkbox, Dropdown
 
 from sclab.dataset.processor import Processor
@@ -23,6 +25,16 @@ FLAVORS = {
     ),
     "scrublet": ("scrublet", {}),
 }
+
+
+def default_seed(flavor: str) -> int | None:
+    """The flavor's library default ``random_state`` (None for unknown flavors)."""
+    if flavor not in FLAVORS:
+        return None
+    import sclab.tools.doublet_detection as tools
+
+    function = getattr(tools, FLAVORS[flavor][0])
+    return inspect.signature(function).parameters["random_state"].default
 
 
 class DoubletDetection(ProcessorStepBase):
@@ -93,6 +105,8 @@ class DoubletDetection(ProcessorStepBase):
         resolved = super().resolved_params(params)
         if not resolved.get("override_layer"):
             resolved["layer"] = self.parent.dataset.counts_layer
+        if resolved.get("random_state") is None:  # recorded so the code shows it
+            resolved["random_state"] = default_seed(resolved.get("flavor"))
         return resolved
 
     def to_code(self, params: dict) -> str:
@@ -111,7 +125,7 @@ class DoubletDetection(ProcessorStepBase):
         flavor: str,
         override_layer: bool = False,
         layer: str | None = None,
-        random_state: int = 0,
+        random_state: int | None = None,
     ):
         adata = self.parent.dataset.adata
         if not override_layer:
@@ -120,6 +134,8 @@ class DoubletDetection(ProcessorStepBase):
         if flavor not in FLAVORS:
             raise ValueError(f"Unknown flavor: {flavor}")
         function, extra = FLAVORS[flavor]
+        if random_state is None:
+            random_state = default_seed(flavor)
         functions = dict(
             scdblfinder=scdblfinder,
             doubletdetection=doubletdetection,

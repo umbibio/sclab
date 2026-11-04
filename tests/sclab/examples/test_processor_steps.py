@@ -616,6 +616,28 @@ class TestDoubletDetection:
         assert controls["layer"].disabled is True
         assert controls["layer"].value == "counts"
 
+    @pytest.mark.parametrize(
+        "flavor, function, seed",
+        [
+            ("scDblFinder", "scdblfinder", 31415),
+            ("scrublet", "scrublet", 0),
+            ("doubletdetection", "doubletdetection", 0),
+        ],
+    )
+    def test_uses_library_default_seed(self, flavor, function, seed, monkeypatch):
+        import sclab.examples.processor_steps._doublet_detection as mod
+
+        d = SCLabDashboard(make_adata(300, 300))
+        step = d.processor.steps["Doublet Detection"]
+        used = []
+        monkeypatch.setattr(mod, function, lambda **kw: used.append(kw["random_state"]))
+        step.run(flavor=flavor)  # flavor need not be installed: the call is faked
+        assert step.run_button.button_style == "success"
+        assert used == [seed]
+        entry = d.processor.step_history[-1]
+        assert entry["params"]["random_state"] == seed  # explicit in the history
+        assert f"random_state={seed}" in step.to_code(entry["params"])
+
     def test_layers_change_refresh_keeps_counts_selected(self):
         d = SCLabDashboard(make_adata(300, 300))
         adata = d.dataset.adata
