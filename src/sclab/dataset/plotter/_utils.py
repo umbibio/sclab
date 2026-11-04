@@ -1,4 +1,3 @@
-from functools import lru_cache
 from typing import Literal, NamedTuple
 
 import numpy as np
@@ -7,6 +6,7 @@ import plotly.graph_objects as go
 from numpy import float64
 from numpy.typing import NDArray
 from scipy.interpolate import BSpline, make_smoothing_spline
+from scipy.ndimage import gaussian_filter
 from sklearn.neighbors import KernelDensity
 
 
@@ -100,26 +100,55 @@ def _density_nd(
     return DensityResult(kde, grid_size, bounds, grid, d)
 
 
-@lru_cache
+def _density_binned_2d(
+    data: NDArray, bandwidth: float, grid_size: int
+) -> tuple[NDArray, NDArray, NDArray]:
+    """``_density_nd``'s 2D Gaussian KDE, from binned counts instead of per point.
+
+    Same bounds, normalized coordinates and bandwidth as ``_density_nd``. The
+    points are linearly binned onto a grid ``k`` times finer than the output one
+    (fine enough for the kernel to span >= 2 bins), smoothed with a Gaussian
+    filter, and read back at the output nodes: O(n + grid) instead of O(n * grid).
+    Returns the grid's x and y coordinates and the density, indexed [x, y].
+    """
+    lower, upper = data.min(axis=0), data.max(axis=0)
+    margins = (upper - lower) / 10
+    lo, span = lower - margins, (upper - lower) + 2 * margins
+    span = np.where(span > 0, span, 1.0)  # constant column: bin it all at 0
+    u = (data - lo) / span
+
+    step = 1 / (grid_size - 1)
+    k = int(np.clip(np.ceil(2 * step / bandwidth), 1, 4096 // (grid_size - 1)))
+    m = (grid_size - 1) * k + 1  # fine grid nodes per axis
+    f = u * (m - 1)
+    i = np.clip(np.floor(f).astype(np.int64), 0, m - 2)
+    w = f - i  # weight of the upper neighbour, per axis
+    counts = np.zeros(m * m)
+    for di, wx in ((0, 1 - w[:, 0]), (1, w[:, 0])):
+        for dj, wy in ((0, 1 - w[:, 1]), (1, w[:, 1])):
+            flat = (i[:, 0] + di) * m + i[:, 1] + dj
+            counts += np.bincount(flat, wx * wy, minlength=m * m)
+    counts = counts.reshape(m, m)
+
+    sigma = bandwidth * (m - 1)  # in fine bins
+    smooth = gaussian_filter(counts, sigma, mode="constant", truncate=5.0)
+    density = smooth[::k, ::k] * (m - 1) ** 2 / len(data)  # per unit area
+
+    axes = [lo[d] + span[d] * np.linspace(0, 1, grid_size) for d in range(2)]
+    return axes[0], axes[1], density
+
+
 def _make_density_heatmap(
-    data: tuple[tuple[float, float]],
+    data: NDArray,
     bandwidth_factor: float,
     grid_resolution: int,
     line_smoothing: float,
     contours: int,
     color: str = "orange",
 ):
-    data = np.array(data)
-    result = _density_nd(
-        data,
-        bandwidth_factor=bandwidth_factor,
-        max_grid_size=2**grid_resolution + 1,
+    x, y, D = _density_binned_2d(
+        np.asarray(data, dtype=float), bandwidth_factor, 2**grid_resolution + 1
     )
-    nx, ny = result.grid_size
-    X: NDArray = result.grid.reshape(result.grid_size + (2,))
-    D: NDArray = result.density.reshape(result.grid_size)
-    x = X[:nx, 0, 0]
-    y = X[0, :ny, 1]
     z = D.clip(min=0).T
 
     start = z.min() + 1e-9

@@ -209,7 +209,7 @@ class TestDensityND:
 class TestDensityHeatmap:
     def test_returns_contour_trace_with_expected_geometry(self):
         rng = np.random.default_rng(0)
-        data = tuple(map(tuple, rng.normal(size=(40, 2)).round(3)))
+        data = rng.normal(size=(40, 2)).round(3)
         trace = _make_density_heatmap(data, 0.2, 3, 0.5, 5, "red")
         assert isinstance(trace, go.Contour)
         z = np.asarray(trace.z)
@@ -221,8 +221,26 @@ class TestDensityHeatmap:
             (trace.contours.end - trace.contours.start) / 5
         )
         assert trace.line.smoothing == 0.5
-        # cached call returns the very same object
-        assert _make_density_heatmap(data, 0.2, 3, 0.5, 5, "red") is trace
+
+    @pytest.mark.parametrize(
+        "bandwidth, resolution",
+        [(0.017, 6), (0.002, 4), (0.02, 8), (0.2, 3)],  # incl. the slider ends
+    )
+    def test_binned_density_matches_the_exact_kde(self, bandwidth, resolution):
+        rng = np.random.default_rng(0)
+        labels = rng.integers(0, 5, 2000)
+        data = rng.normal(0, 5, (5, 2))[labels] + rng.normal(size=(2000, 2))
+        n = 2**resolution + 1
+        exact = _density_nd(data, bandwidth_factor=bandwidth, max_grid_size=n)
+        grid = exact.grid.reshape(n, n, 2)
+
+        trace = _make_density_heatmap(data, bandwidth, resolution, 1.0, 20)
+
+        np.testing.assert_allclose(trace.x, grid[:, 0, 0])
+        np.testing.assert_allclose(trace.y, grid[0, :, 1])
+        expected = exact.density.reshape(n, n).T  # z is [y, x]
+        err = np.abs(np.asarray(trace.z) - expected).max() / expected.max()
+        assert err < 0.03
 
 
 # --------------------------------------------------------------------------
