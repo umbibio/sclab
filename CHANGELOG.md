@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- Dashboard steps PCA, Neighbors, UMAP, Cluster, Differential Expression and Doublet Detection (except scDblFinder) run in the background when clicked: the plot, tabs and notebook stay usable, a progress panel shows the step and elapsed time, and Cancel (at checkpoints) or Interrupt (stops Python-level loops, e.g. UMAP epochs) leave the data unchanged and record "cancelled" in the history. Data-changing controls and Workspace switch/merge are locked meanwhile; `step.run()` stays synchronous
 - Dashboard "Emphasize values" (on by default): when coloring by a number, cells with zero/negative/missing values shrink (Settings "Min. size", default 0.3) and the rest grow with their percentile; "Size by" and selections take precedence. Works in plotly, jscatter and static plots
 - Dashboard notice in 3D when opacity is below 1 (plotly then draws by trace order, not depth)
 - Dashboard Settings tab: choose the 2D plot backend (`plotly`, `jscatter` or `static` matplotlib image) and the 3D point limit; also `SCLabDashboard(plot_backend=...)` / `plotter.backend`. 1D/3D always use plotly; path drawing, custom figures and extra traces fall back to plotly with a notice
@@ -73,6 +74,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Dashboard
+    - A step's button turned green even when the redraw after it failed; it now turns red with the error
     - Cells with a missing category disappeared from categorical plots under pandas 3; they are drawn as "NA" again
     - Plots without per-cell sizes drew 1px points (since the plot speed-up in 0.5.0.dev6)
     - Garbage-collecting a dashboard could close widgets beyond its own and errored at interpreter shutdown
