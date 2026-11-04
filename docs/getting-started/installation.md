@@ -25,6 +25,18 @@ pip install "sclab[scanpy]"
 pip install "sclab[jupyter]"
 ```
 
+## With jupyter-scatter (fast 2D plots)
+
+```bash
+pip install "sclab[jscatter]"
+```
+
+Then pick `jscatter` as the 2D plot backend in the dashboard's Settings tab, or
+pass `SCLabDashboard(adata, plot_backend="jscatter")`. It draws large 2D plots
+faster than plotly. Pinned views of jscatter plots keep their settings but not
+the zoom. Path drawing, custom figures and extra traces still use plotly. The
+`static` backend draws a matplotlib image instead.
+
 ## All optional dependencies at once
 
 ```bash

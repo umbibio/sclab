@@ -1,4 +1,4 @@
-"""2D plot backends other than plotly: ``static`` (a matplotlib image).
+"""2D plot backends other than plotly: jupyter-scatter (``jscatter``) and ``static``.
 
 The :class:`~sclab.dataset.plotter.Plotter` stays in charge: it computes a
 *frame* (what to draw, see ``Plotter._frame_2d``) and calls ``view.draw(frame)``
@@ -26,13 +26,13 @@ import io
 import numpy as np
 import pandas as pd
 import plotly.io as pio
-from ipywidgets import Image, Layout
+from ipywidgets import Box, Image, Layout
 from pandas.api.types import is_bool_dtype, is_numeric_dtype
 from plotly.colors import get_colorscale, hex_to_rgb, sample_colorscale, unlabel_rgb
 
 from ._utils import COLOR_DISCRETE_SEQUENCE, _make_density_heatmap
 
-BACKENDS = ("plotly", "static")
+BACKENDS = ("plotly", "jscatter", "static")
 NA_COLOR = "lightgray"
 
 
@@ -206,6 +206,173 @@ class StaticView:
         self.widget.close()
 
 
+def _equal(a, b) -> bool:
+    if type(a) is not type(b):
+        return False
+    if isinstance(a, np.ndarray):
+        return a.shape == b.shape and np.array_equal(
+            a, b, equal_nan=a.dtype.kind == "f"
+        )
+    if isinstance(a, pd.Categorical):
+        return a.equals(b) and list(a.categories) == list(b.categories)
+    if isinstance(a, dict):
+        return a.keys() == b.keys() and all(_equal(a[k], b[k]) for k in a)
+    if isinstance(a, list | tuple):
+        return len(a) == len(b) and all(_equal(u, v) for u, v in zip(a, b))
+    return a == b
+
+
+class JscatterView:
+    """WebGL 2D scatter by jupyter-scatter; lassos publish the plotly lasso's event.
+
+    Only the encodings that changed since the last frame are sent. The selection
+    shown is the dataset's (jscatter's own highlight); a lasso publishes
+    ``dplt_selected_points_change`` and, when the lasso polygon reproduces the
+    selection, records it as the plotter's ``selection_shape`` (as plotly lassos).
+    The camera is not synced back by jupyter-scatter: pinned views keep no zoom.
+    Its initial view fits the y range: a plot taller than wide starts cut off at
+    the sides (zoom out with the mouse wheel).
+    """
+
+    name = "jscatter"
+
+    def __init__(self, plotter):
+        import jscatter  # ImportError: the plotter falls back to plotly
+
+        self._jscatter = jscatter
+        self.plotter = plotter
+        self.scatter = None
+        self.frame: dict | None = None
+        self._sent: dict = {}  # encoding -> last value sent to the widget
+        self._echo = False  # True while the selection is set from Python
+        self._names: pd.Index | None = None  # cells of the last published selection
+        # display=block: a flex Box shrinks jscatter's width="auto" canvas to nothing
+        self.widget = Box(layout=Layout(width="100%", display="block"))
+
+    def draw(self, frame: dict):
+        old, self.frame = self.frame, frame
+        same_points = (
+            self.scatter is not None
+            and frame["index"].equals(old["index"])
+            and _equal(frame["x"], old["x"])
+            and _equal(frame["y"], old["y"])
+        )
+        if same_points:  # one message: separate ones race in jscatter's redraws
+            with self.scatter.widget.hold_sync():
+                self._apply(frame)
+            return
+        self._create(frame)
+        self._apply(frame)  # before the widget exists: drawn once, complete
+        widget = self.scatter.widget
+        widget.observe(self._on_selection, names="selection")
+        # the frontend sends the polygon after the selection, as its own update
+        widget.observe(self._on_polygon, names="lasso_selection_polygon")
+        self.widget.children = [widget]
+
+    def _apply(self, frame: dict):
+        s = self.scatter
+        if self._changed("color", frame["color"]):
+            spec = frame["color"]
+            if spec is None:
+                s.color(by=None, default=PALETTE[0])
+            elif spec["kind"] == "categorical":
+                s.color(by=spec["values"], map=spec["colors"])
+            else:
+                s.color(by=spec["values"], map=spec["colors"], norm=spec["range"])
+            s.legend(spec is not None)
+        if self._changed("size", frame["size"]):
+            size = frame["size"]
+            lo, hi = np.min(size), np.max(size)
+            if np.ndim(size) == 0 or lo == hi:
+                s.size(by=None, default=float(lo))
+            else:  # jscatter bins the sizes: 64 steps between the smallest and largest
+                s.size(by=size, map=np.linspace(lo, hi, 64).tolist(), norm=(lo, hi))
+        if self._changed("opacity", frame["opacity"]):
+            s.opacity(default=frame["opacity"])
+        if self._changed("density", frame["density"]):
+            line = self._jscatter.Line
+            lines = [
+                line([tuple(p) for p in v], line_color="#555555")
+                for v in frame["density"] or []
+            ]
+            s.annotations(lines)
+        if self._changed("labels", [frame["x_title"], frame["y_title"]]):
+            s.axes(labels=[frame["x_title"], frame["y_title"]])
+        if self._changed("height", frame["height"]):
+            s.height(frame["height"])
+        if self._changed("hover", frame["hover"]):
+            s.tooltip(enable=frame["hover"])
+        if self._changed("selected", frame["selected"]):
+            self._echo = True
+            try:
+                selected = frame["selected"]
+                s.selection(None if selected is None else frame["index"][selected])
+            finally:
+                self._echo = False
+
+    def _changed(self, key: str, value) -> bool:
+        if key in self._sent and _equal(self._sent[key], value):
+            return False
+        self._sent[key] = value
+        return True
+
+    def _create(self, frame: dict):
+        if self.scatter is not None:
+            self.scatter.widget.close()
+        df = pd.DataFrame({"x": frame["x"], "y": frame["y"]}, index=frame["index"])
+        self.scatter = self._jscatter.Scatter(
+            data=df,
+            x="x",
+            y="y",
+            data_use_index=True,
+            axes=True,
+            background_color="white",
+            lasso_initiator=True,
+            opacity_unselected=0.3,
+            opacity_by=None,  # not jscatter's density-based default: the control's
+        )
+        self._sent = {}
+
+    def _lasso_shape(self, names: pd.Index | None) -> dict | None:
+        """The last lasso polygon as a selection shape, if it selects ``names``."""
+        polygon = self.scatter.widget.lasso_selection_polygon
+        if names is None or polygon is None or len(polygon) < 3:
+            return None
+        path = (
+            "M"
+            + "L".join(f"{x!r},{y!r}" for x, y in np.asarray(polygon, float).tolist())
+            + "Z"
+        )
+        plotter = self.plotter
+        shape = plotter._selection_shape([{"type": "path", "path": path}])
+        # merged/subtracted lassos, or cells on its edge, are recorded as a mask
+        inside = None if shape is None else plotter._shape_points(shape)
+        if inside is None or inside.size != names.size or not inside.isin(names).all():
+            return None
+        return shape
+
+    def _on_selection(self, change):
+        if self._echo:
+            return
+        idx = np.asarray([] if change["new"] is None else change["new"], dtype=int)
+        names = self.frame["index"][idx] if idx.size else None
+        self._names = names
+        self.plotter.selection_shape = self._lasso_shape(names)
+        self.plotter.broker.publish("dplt_selected_points_change", names)
+
+    def _on_polygon(self, change):
+        if self.plotter.selection_shape is not None or self._names is None:
+            return
+        if (shape := self._lasso_shape(self._names)) is not None:
+            self.plotter.selection_shape = shape
+            self.plotter.broker.publish("dplt_selected_points_change", self._names)
+
+    def close(self):
+        self.widget.close()
+        if self.scatter is not None:
+            self.scatter.widget.close()
+
+
 def make_view(name: str, plotter):
-    """A backend's 2D view; raises ImportError if its package is missing."""
-    return {"static": StaticView}[name](plotter)
+    """A backend's 2D view; raises ImportError if jupyter-scatter is missing."""
+    return {"jscatter": JscatterView, "static": StaticView}[name](plotter)
