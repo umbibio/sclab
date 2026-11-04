@@ -52,6 +52,10 @@ class SCLabDashboard(GridBox):
     source : str or None, optional
         Path or URL the AnnData was read from, for the load line of the
         generated script. Set automatically when a path or URL is given.
+    plot_backend : {"plotly", "jscatter", "static"}, optional
+        Backend of the 2D plots, also in the Settings tab and settable later
+        as ``dashboard.plotter.backend``. "jscatter" needs jupyter-scatter.
+        1D and 3D plots always use plotly. Default is "plotly".
 
     Attributes
     ----------
@@ -85,6 +89,7 @@ class SCLabDashboard(GridBox):
         batch_key: str | None = None,
         copy: bool = False,
         source: str | None = None,
+        plot_backend: str = "plotly",
     ):
         self._preexisting = _live_widget_ids()  # not ours to close, see close()
         self.source = source  # path or URL, for the generated script's load line
@@ -107,6 +112,7 @@ class SCLabDashboard(GridBox):
         self.name = name
         self.counts_layer = counts_layer
         self.batch_key = batch_key
+        self.plot_backend = plot_backend
 
         self.broker = EventBroker()
 
@@ -165,7 +171,7 @@ class SCLabDashboard(GridBox):
             copy=copy,
             broker=self.broker,
         )
-        self.plotter = Plotter(self.dataset)
+        self.plotter = Plotter(self.dataset, backend=self.plot_backend)
         self.processor = Processor(
             self.dataset,
             self.plotter,
@@ -181,6 +187,7 @@ class SCLabDashboard(GridBox):
                 self.dataset.var_table,
                 self.processor.history_panel,
                 self.broker.logs_tab,
+                self.plotter.settings,
             ],
             titles=[
                 "Main graph",
@@ -189,6 +196,7 @@ class SCLabDashboard(GridBox):
                 "Genes",
                 "History",
                 "Logs",
+                "Settings",
             ],
         )
 

@@ -173,7 +173,7 @@ class PlotterControls(EventClient, VBox):
         self.full_resolution: Checkbox = Checkbox(
             description="3D full resolution",
             value=False,
-            tooltip="Draw every cell in 3D (by default at most 200,000)",
+            tooltip="Draw every cell in 3D, not at most '3D points'",
         )
         self.marker_size: FloatSlider = FloatSlider(
             min=0.01,
@@ -323,7 +323,6 @@ class PlotterControls(EventClient, VBox):
                 self.plot_height,
                 self.aspect_equal,
                 self.enable_hover_info,
-                self.full_resolution,
             ]
         )
 

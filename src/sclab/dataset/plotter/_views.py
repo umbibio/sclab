@@ -10,15 +10,18 @@ A view spec is a JSON dict, independent of the plotting backend::
         "controls": {"data_key": "X_umap", "n_dimensions": "2D", ...},
         "ranges": {"x": [x0, x1], "y": [y0, y1]} | {"camera": {...}} | None,
         "dragmode": "lasso",
+        "backend": "plotly",
         "history_hash": "<sha256 of the steps that changed the data>",
         "n_obs": 1000,
     }
 
 ``controls`` holds the value of every value widget in ``PlotterControls.dict``;
 ``ranges`` the frontend zoom/pan (1D/2D) or 3D camera, as synced into the
-figure's layout. The active selection, drawn paths and extra traces are not
-part of a view. Views are stored in ``adata.uns["sclab"]["views"]`` as a JSON
-string, so they travel with the h5ad file.
+figure's layout; None for 2D plots drawn by the other backends (``backend``):
+jupyter-scatter does not sync its camera back, static images have no zoom. A
+restore keeps the current backend. The active selection, drawn paths and extra
+traces are not part of a view. Views are stored in ``adata.uns["sclab"]["views"]``
+as a JSON string, so they travel with the h5ad file.
 """
 
 import json
@@ -77,7 +80,9 @@ def capture(plotter, name: str = "") -> dict:
         k: w.value for k, w in plotter.controls.dict.items() if hasattr(w, "value")
     }
     layout = plotter.g.layout
-    if controls["n_dimensions"] == "3D":
+    if plotter._view_shown():  # no camera read-back from jupyter-scatter
+        ranges = None
+    elif controls["n_dimensions"] == "3D":
         camera = layout.scene.camera.to_plotly_json()
         ranges = {"camera": camera} if camera else None
     elif controls["n_dimensions"] in ("1D", "2D"):
@@ -92,6 +97,7 @@ def capture(plotter, name: str = "") -> dict:
         "controls": controls,
         "ranges": ranges,
         "dragmode": plotter.get_dragmode(),
+        "backend": plotter.backend if plotter._view_shown() else "plotly",  # drew it
         "history_hash": plotter.data_hash(),
         "n_obs": plotter.dataset.adata.n_obs,
     }
@@ -112,6 +118,8 @@ def problems(plotter, spec: dict) -> list[str]:
     ]
     if _is_stale(plotter, spec):
         found.append("data changed since pin")
+    if spec.get("backend") == "jscatter" and c.get("n_dimensions") == "2D":
+        found.append("zoom not saved (jscatter)")
     return found
 
 
@@ -152,6 +160,8 @@ def restore(plotter, spec: dict) -> list[str]:
     ranges = spec.get("ranges")
     if ranges and _is_stale(plotter, spec):
         warnings.append("data changed since pin: zoom not restored")
+    elif ranges and plotter._view_shown():
+        warnings.append(f"zoom not restored ({plotter.backend} plot)")
     elif ranges:
         if "camera" in ranges:
             relayout = {"scene.camera": ranges["camera"]}

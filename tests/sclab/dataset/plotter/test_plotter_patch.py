@@ -145,7 +145,7 @@ def test_extra_traces_force_a_rebuild(dash, sent):
 
 @pytest.fixture
 def dash3d(dash, monkeypatch) -> SCLabDashboard:
-    monkeypatch.setattr(_plotter, "MAX_3D_POINTS", 50)
+    dash.plotter.max_3d_points = 50
     monkeypatch.setattr(_plotter, "MAX_TRACE_POINTS", 40)
     dash.plotter.controls.data_key.value = "Y_array4"
     dash.plotter.controls.n_dimensions.value = "3D"

@@ -7,7 +7,10 @@ import plotly.express as px
 import plotly.graph_objects as go
 import svgpathtools as spt
 from ipywidgets.widgets import (
+    HTML,
     Box,
+    BoundedIntText,
+    Dropdown,
     GridBox,
     Layout,
     VBox,
@@ -20,6 +23,14 @@ from scipy.interpolate import make_smoothing_spline
 from ...event import EventBroker, EventClient
 from ...utils._widgets import Download, ResizeNotifier
 from .._dataset import SCLabDataset
+from ._backends import (
+    BACKENDS,
+    color_spec,
+    density_lines,
+    make_view,
+    png_html,
+    render_png,
+)
 from ._controls import PlotterControls
 from ._views import ViewGallery
 from ._utils import (
@@ -104,6 +115,7 @@ class Plotter(GridBox, EventClient):
         self,
         dataset: SCLabDataset | None = None,
         broker: EventBroker | None = None,
+        backend: str = "plotly",
     ):
         if broker is None:
             assert dataset is not None, "dataset must be provided if broker is None"
@@ -122,9 +134,13 @@ class Plotter(GridBox, EventClient):
         self._rows = pd.Index([])
         self._trace_rows: list[np.ndarray | None] = []
         self._structure = None  # what the current traces were built for, see _apply
+        self._view = None  # the 2D backend's view, None for plotly (see _backends)
+        self._fallback = None  # why the next 2D draw must use plotly
+        self._last_call: dict = {}  # make_new_figure's arguments, for view redraws
 
         self._init_figure()
         self._init_controls()
+        self._init_settings()
         self.load_dataset(dataset)
         self.views = ViewGallery(self)
         self.download = Download()
@@ -135,8 +151,11 @@ class Plotter(GridBox, EventClient):
         self.graph_box = Box(
             [self.g, ResizeNotifier(), self.download], layout=graph_layout
         )
+        self.notice = HTML()  # why a plotly plot is shown instead of the backend's
         # min_width: the card strip scrolls instead of widening the plot column
-        graph_column = VBox([self.graph_box, self.views], layout=Layout(min_width="0"))
+        graph_column = VBox(
+            [self.graph_box, self.notice, self.views], layout=Layout(min_width="0")
+        )
 
         GridBox.__init__(
             self,
@@ -164,6 +183,164 @@ class Plotter(GridBox, EventClient):
         self.broker.subscribe("dset_selected_rows_change", self.select_points)
         self.broker.subscribe("dset_total_rows_change", self.make_new_figure)
         self.broker.subscribe("dset_metadata_change", self.make_new_figure)
+        self.backend = backend
+
+    def _init_settings(self):
+        """The dashboard's Settings tab: plot defaults."""
+        self.backend_dropdown = Dropdown(
+            options=BACKENDS,
+            value="plotly",
+            description="2D plots",
+            tooltip="1D and 3D plots always use plotly",
+        )
+        self.max_3d_points_input = BoundedIntText(
+            value=MAX_3D_POINTS,
+            min=1,
+            max=10**9,
+            step=10_000,
+            description="3D points",
+            tooltip="3D plots draw a random subsample of this many cells",
+        )
+        self.backend_dropdown.observe(lambda c: self._set_backend(c["new"]), "value")
+        self.max_3d_points_input.observe(
+            lambda _: self.ctrl_full_resolution_change_callback(None), "value"
+        )
+        style = dict(description_width="80px")
+        for widget in (self.backend_dropdown, self.max_3d_points_input):
+            widget.style = style
+        self.settings = VBox(
+            [
+                HTML("<b>Plots</b>"),
+                self.backend_dropdown,
+                self.max_3d_points_input,
+                self.controls.full_resolution,
+            ],
+            layout=Layout(padding="8px"),
+        )
+
+    @property
+    def backend(self) -> str:
+        """The 2D plot backend: "plotly", "jscatter" (jupyter-scatter) or "static"."""
+        return self.backend_dropdown.value
+
+    @backend.setter
+    def backend(self, name: str):
+        if name not in BACKENDS:
+            raise ValueError(f"backend must be one of {BACKENDS}, not {name!r}")
+        self.backend_dropdown.value = name
+
+    @property
+    def max_3d_points(self) -> int:
+        """3D plots draw at most this many cells, unless at full resolution."""
+        return self.max_3d_points_input.value
+
+    @max_3d_points.setter
+    def max_3d_points(self, n: int):
+        self.max_3d_points_input.value = n
+
+    def _set_backend(self, name: str):
+        self._say("")
+        old, self._view = self._view, None
+        if name != "plotly":
+            try:
+                self._view = make_view(name, self)
+            except ImportError:
+                self.backend_dropdown.value = "plotly"
+                self._say(
+                    "jupyter-scatter is not installed (pip install jupyter-scatter): "
+                    "using plotly"
+                )
+                return
+        self._show(self.g)
+        if old is not None:
+            old.close()
+        self.make_new_figure(**self._last_call)
+
+    def _say(self, text: str):
+        style = "font-size:12px;color:#b45309"
+        self.notice.value = f"<span style='{style}'>{text}</span>" if text else ""
+
+    def _show(self, widget):
+        """Put ``widget`` (the figure or a backend's view) in the plot area."""
+        if self.graph_box.children[0] is widget:
+            return
+        if widget is not self.g:  # free the hidden plotly traces
+            self.g.data = []
+            self._structure, self._trace_rows = None, []
+        self.graph_box.children = (widget, *self.graph_box.children[1:])
+
+    def _view_shown(self) -> bool:
+        return self.graph_box.children[0] is not self.g
+
+    def _view_2d(self, ndims: str, figure_kwargs: dict):
+        """The backend view to draw a 2D plot with, or None to draw with plotly."""
+        if self._view is None:
+            return None
+        if ndims != "2D":
+            self._say("")
+            return None
+        reason = self._fallback
+        if self.state.get("drawing"):
+            reason = "path drawing"
+        elif set(figure_kwargs) - {"color_continuous_scale"}:
+            reason = f"plot options {sorted(figure_kwargs)}"
+        msg = f"Shown with plotly: {self.backend} does not support {reason}"
+        self._say(msg if reason else "")
+        return None if reason else self._view
+
+    def _plotly_now(self, reason: str):
+        """Redraw a backend's 2D plot with plotly, for plotly-only features."""
+        if not self._view_shown():
+            return
+        self._fallback = reason
+        try:
+            type(self).make_new_figure(self, **self._last_call)  # now, not coalesced
+        finally:
+            self._fallback = None
+
+    def _view_redraw(self) -> bool:
+        """Redraw the backend's 2D plot (it sends what changed); False for plotly."""
+        if not self._view_shown():
+            return False
+        self.make_new_figure(**self._last_call)
+        return True
+
+    def _frame_2d(self, df, col_x, col_y, colorby, sizeby, scale, figure_kwargs):
+        """What a backend draws, see sclab.dataset.plotter._backends."""
+        c = self.controls
+        sizeby = c.sizeby.value if sizeby is None else sizeby
+        scale = c.marker_size.value if scale is None else scale
+        size = scale  # px diameter, as plotly draws marker.size with sizeref
+        if sizeby is not None:
+            values = df[sizeby].astype(float).clip(lower=0).fillna(0.0).to_numpy()
+            if values.max() > 0:
+                size = scale * np.sqrt(values / values.max())
+        selected = self.dataset._selected_rows
+        x, y = (df[col].to_numpy(dtype=float) for col in (col_x, col_y))
+        density = None
+        if c.show_density.value:
+            density = density_lines(np.column_stack([x, y]), c)
+        return {
+            "index": df.index,
+            "x": x,
+            "y": y,
+            "x_title": col_x,
+            "y_title": col_y,
+            "title": self.dataset._selected_data_key,
+            "color": None
+            if not colorby
+            else color_spec(df[colorby], figure_kwargs.get("color_continuous_scale")),
+            "color_title": colorby,
+            "size": size,
+            "marker_size": scale,
+            "selected": None if selected is None else df.index.isin(selected),
+            "opacity": c.marker_opacity.value,
+            "density": density,
+            "height": c.plot_height.value,
+            "width": c.plot_width.value,
+            "aspect_equal": c.aspect_equal.value,
+            "hover": c.enable_hover_info.value and col_x != "rank",
+        }
 
     def _init_figure(self):
         self.g = go.FigureWidget(
@@ -315,6 +492,8 @@ class Plotter(GridBox, EventClient):
         if self.controls.n_dimensions.value != "2D":
             self.make_new_figure()
             return
+        elif self._view_redraw():
+            return
         else:
             with self.g.batch_update():  # one message, not one per trace property
                 self.update_marker_sizes()
@@ -353,6 +532,13 @@ class Plotter(GridBox, EventClient):
         # values (events pass the metadata and its color column positionally)
         extra = colorby not in (None, self.controls.color.value) or figure_kwargs
         self.state["source"] = "gene" if extra else "controls"
+        self._last_call = dict(
+            metadata=metadata,
+            colorby=colorby,
+            sizeby=sizeby,
+            marker_size_scale=marker_size_scale,
+            **figure_kwargs,
+        )
 
         ndims = self.controls.n_dimensions.value
         col_x: str = self.controls.selected_axes.children[0].value
@@ -362,6 +548,7 @@ class Plotter(GridBox, EventClient):
         invalid_axes = col_x == "rank" and not col_y
 
         if self.dataset.data.empty or invalid_axes:
+            self._show(self.g)
             layout = dict(
                 xaxis_title="", yaxis_title="", title="No Data", template="simple_white"
             )
@@ -369,6 +556,8 @@ class Plotter(GridBox, EventClient):
             self._structure, self._trace_rows = None, []
             return
 
+        view = self._view_2d(ndims, figure_kwargs)
+        self._show(self.g if view is None else view.widget)
         data = self.data_for_plot
         if metadata is None:
             metadata = self.dataset.metadata
@@ -421,6 +610,11 @@ class Plotter(GridBox, EventClient):
         if colorby is None:
             colorby = self.controls.color.value
 
+        if view is not None:
+            args = (df, col_x, col_y, colorby, sizeby, marker_size_scale, figure_kwargs)
+            view.draw(self._frame_2d(*args))
+            return
+
         if colorby:
             ascending = is_any_real_numeric_dtype(df[colorby])
             df = df.sort_values(colorby, ascending=ascending, na_position="first")
@@ -434,11 +628,12 @@ class Plotter(GridBox, EventClient):
 
         n_cells = len(df)
         full = self.controls.full_resolution.value
-        if ndims == "3D" and not full and n_cells > MAX_3D_POINTS:
+        limit = self.max_3d_points
+        if ndims == "3D" and not full and n_cells > limit:
             # seeded per cell, so recoloring keeps the same cells; selected first
             rank = np.random.default_rng(0).random(len(rows))[df[POS].to_numpy()]
             rank[df["is_selected"].eq(True).to_numpy(dtype=bool, na_value=False)] -= 1
-            keep = np.argpartition(rank, MAX_3D_POINTS)[:MAX_3D_POINTS]
+            keep = np.argpartition(rank, limit)[:limit]
             df = df.iloc[np.sort(keep)]  # keeps the color sort order
 
         if ndims == "1D":
@@ -857,6 +1052,8 @@ class Plotter(GridBox, EventClient):
             break
 
     def ctrl_show_density_change_callback(self, new_value):
+        if self._view_redraw():
+            return
         if new_value:
             try:
                 trace = next(filter(lambda o: isinstance(o, go.Contour), self.g.data))
@@ -877,6 +1074,8 @@ class Plotter(GridBox, EventClient):
             )
 
     def ctrl_density_contours_change_callback(self, new_value):
+        if self._view_redraw():
+            return
         if self.controls.show_density.value:
             z_min, z_max = self.state["density_z_range"]
             start = z_min + 0.0001
@@ -900,7 +1099,7 @@ class Plotter(GridBox, EventClient):
 
     def ctrl_marker_size_change_callback(self, new_value):
         ndims = self.controls.n_dimensions.value
-        if ndims == "1D":
+        if ndims == "1D" or self._view_redraw():
             return
 
         with self.g.batch_update():
@@ -908,7 +1107,7 @@ class Plotter(GridBox, EventClient):
 
     def ctrl_sizeby_change_callback(self, new_value):
         ndims = self.controls.n_dimensions.value
-        if ndims == "1D":
+        if ndims == "1D" or self._view_redraw():
             return
 
         with self.g.batch_update():
@@ -916,7 +1115,7 @@ class Plotter(GridBox, EventClient):
 
     def ctrl_marker_opacity_change_callback(self, new_value):
         ndims = self.controls.n_dimensions.value
-        if ndims == "1D":
+        if ndims == "1D" or self._view_redraw():
             return
 
         with self.g.batch_update():
@@ -925,6 +1124,8 @@ class Plotter(GridBox, EventClient):
             self.g.update_traces(selector=dict(type="scatter3d"), opacity=new_value)
 
     def ctrl_aspect_equal_change_callback(self, new_value):
+        if self._view_redraw():
+            return
         ndims = self.controls.n_dimensions.value
         if new_value:
             if ndims == "3D":
@@ -940,6 +1141,8 @@ class Plotter(GridBox, EventClient):
                 self.g.update_yaxes(scaleanchor=None, scaleratio=None)
 
     def ctrl_enable_hover_info_change_callback(self, new_value):
+        if self._view_redraw():
+            return
         if new_value:
             colorby = self.controls.color.value
             metadata = self.dataset.metadata
@@ -958,11 +1161,13 @@ class Plotter(GridBox, EventClient):
             self.graph_box.layout.width = f"{new_value}px"
         else:
             self.graph_box.layout.width = "auto"
+        self._view_redraw()
 
     def ctrl_plot_height_change_callback(self, new_value):
         self.graph_box.layout.height = f"{new_value}px"
         self.g.update_layout(height=new_value)
         self._unpin_size()
+        self._view_redraw()
 
     def ctrl_save_button_click_callback(self):
         dataset_name = self.dataset.name
@@ -990,7 +1195,11 @@ class Plotter(GridBox, EventClient):
             filename += f"___colorBy_{self.controls.color.value}"
 
         filename += ".html"
-        self.download.save(self.g.to_html(), filename)  # in the browser, not on disk
+        if self._view_shown():  # a backend's plot: saved as a static image
+            html = png_html(render_png(self._view.frame), filename)
+        else:
+            html = self.g.to_html()
+        self.download.save(html, filename)  # in the browser, not on disk
 
     def dspr_clear_selection_click_callback(self):
         with self.g.batch_update():
@@ -1002,9 +1211,10 @@ class Plotter(GridBox, EventClient):
         if "2D" not in self.controls.n_dimensions.options:
             return
 
+        self.state["drawing"] = True  # before any redraw: drawing needs plotly
         self.controls.dict["n_dimensions"].value = "2D"
         self.broker.flush(self.make_new_figure)  # draw on the pending figure
-        self.state["drawing"] = True
+        self._plotly_now("path drawing")
         self.state["previous_dragmode"] = self.get_dragmode()
         for control_name in [
             "data_key",
@@ -1179,6 +1389,11 @@ class Plotter(GridBox, EventClient):
             return
 
         self.broker.flush(self.make_new_figure)  # draw on the pending figure
+        if self._view_shown():
+            self._say(
+                f"Shown with plotly: {self.backend} does not support custom figures"
+            )
+            self._show(self.g)
         if colorby in self.controls.color.options:
             self.controls.color.value = colorby
         else:
@@ -1208,11 +1423,13 @@ class Plotter(GridBox, EventClient):
 
     def dplt_add_trace_request_callback(self, trace: go.Scatter | go.Scattergl):
         self.broker.flush(self.make_new_figure)  # draw on the pending figure
+        self._plotly_now("extra traces")
         with self.g.batch_update():
             self.g.add_trace(trace)
 
     def dplt_add_vline_request_callback(self, vlines: float | list[float], **kwargs):
         self.broker.flush(self.make_new_figure)  # draw on the pending figure
+        self._plotly_now("extra lines")
         if not isinstance(vlines, list):
             vlines = [vlines]
 
@@ -1222,6 +1439,7 @@ class Plotter(GridBox, EventClient):
 
     def dplt_add_hline_request_callback(self, hlines: float | list[float], **kwargs):
         self.broker.flush(self.make_new_figure)  # draw on the pending figure
+        self._plotly_now("extra lines")
         if not isinstance(hlines, list):
             hlines = [hlines]
 
@@ -1236,6 +1454,7 @@ class Plotter(GridBox, EventClient):
             return
 
         self.broker.flush(self.make_new_figure)  # draw on the pending figure
+        self._plotly_now("extra traces")
         ndims = self.controls.n_dimensions.value
         col_x: str = self.controls.selected_axes.children[0].value
         col_y: str = self.controls.selected_axes.children[1].value
