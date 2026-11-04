@@ -8,4 +8,4 @@ __all__ = [
     "Workspace",
 ]
 
-__version__ = "0.5.0.dev5"
+__version__ = "0.5.0.dev6"
