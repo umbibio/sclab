@@ -264,6 +264,8 @@ class Workspace(VBox):
         """Close the workspace, the active dashboard and all their widgets."""
         _close_tree(self, self._preexisting)
 
+    __del__ = SCLabDashboard.__del__  # GC: close only this widget, see there
+
     def is_dirty(self, name: str) -> bool:
         """Whether the loaded dataset's history or pinned views changed since loading."""
         entry = self.datasets[name]

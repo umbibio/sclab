@@ -5,9 +5,11 @@ from types import SimpleNamespace
 import h5py
 import pytest
 from anndata import AnnData
+from ipywidgets import Widget
 
+import sclab._sclab as sclab_module
 import sclab._workspace as workspace_module
-from sclab import Workspace
+from sclab import SCLabDashboard, Workspace
 from sclab._workspace import _open_lazy
 
 from .test_utils import live_widget_ids, run_step, simple_loop_adata
@@ -123,6 +125,25 @@ def test_switching_closes_the_dashboard_widgets(files):
     ws.close()
     assert ws.comm is None and ws.datasets["b"].dash.comm is None
     assert len(live_widget_ids()) < len(widgets)
+
+
+@pytest.mark.parametrize("make", ["dashboard", "workspace"])
+def test_garbage_collection_closes_only_the_widget_itself(make, files, monkeypatch):
+    if make == "dashboard":
+        root = SCLabDashboard(simple_loop_adata(n_obs=100, n_vars=50))
+    else:
+        root = Workspace(files)
+    figure = (root if make == "dashboard" else root.dash).plotter.g  # in use elsewhere
+
+    def shutdown():  # the registry lookup at interpreter shutdown
+        raise ImportError("sys.meta_path is None, Python is likely shutting down")
+
+    monkeypatch.setattr(sclab_module, "_widget_registry", shutdown)
+    # GC calls __del__ (also at shutdown): no error, and the widgets it holds,
+    # which may be displayed elsewhere, stay open
+    root.__del__()
+    assert root.comm is None and figure.comm is not None
+    Widget.close(figure)
 
 
 def test_backed_listing_reads_shape_without_x(files, monkeypatch):

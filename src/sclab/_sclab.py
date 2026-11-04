@@ -162,6 +162,15 @@ class SCLabDashboard(GridBox):
             if (widget := registry.get(model_id)) is not None:
                 Widget.close(widget)
 
+    def __del__(self):
+        # Widget.__del__ calls close(): on GC and at interpreter shutdown close only
+        # this widget, as any widget would. Its children may be displayed elsewhere,
+        # and at shutdown the registry lookup fails (sys.meta_path is None).
+        try:
+            Widget.close(self)
+        except Exception:
+            pass
+
     def _load(self, adata: AnnData, copy: bool = False):
         before = _live_widget_ids()
         self.dataset = SCLabDataset(
