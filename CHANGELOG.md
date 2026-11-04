@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- Pinned plot views: a strip under the plot saves and restores plot settings plus zoom / 3D camera (one redraw), with badges for missing data or data changed since the pin; stored in `adata.uns["sclab"]["views"]`
 - History tab can show, copy and download a Python script reproducing the applied steps (`SCLabDashboard.generate_code()`), including Keep/Drop/Label selections as filter expressions, box bounds and lasso polygons
 - `sclab.tools.select_box()` / `select_polygon()` to select cells inside a box or polygon on an embedding or two obs columns
 - `sclab.preprocess.neighbors()` and `sclab.tools.embedding.umap()` (used by the Neighbors/UMAP steps); `random_state` on `sclab.preprocess.pca()`
@@ -38,6 +39,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** step history entries use `step` instead of `step_description` and record the parameters actually used (including counts layer / batch key), status, error, time, data shapes and package versions; failed runs are recorded (and skipped on replay); `step_history_hash` values change
 - Dashboard steps pass an explicit `random_state` (recorded in the history); CCA integration is now deterministic (`random_state=0`)
 - **Breaking:** Keep/Drop/Label act on the intersection of the selection filters and the plot selection (previously the last one used won), and record the filters / box or lasso shape / a mask in `adata.uns["sclab"]["selections"]` instead of obs-name lists; Keep with nothing selected does nothing (previously removed every cell); Drop preserves cell order
+- The plot's Save button downloads the figure in the browser instead of writing an HTML file to the working directory
+- Doublet Detection uses each flavor's library default seed (scDblFinder 31415, scrublet/doubletdetection 0), shown in history and generated code
+- `pydeseq2` removed from `uv.lock`
 - Main plot keeps a 400px minimum width; the dashboard scrolls horizontally instead of collapsing it
 - **Breaking:** `periodic_genes()` is now a single entry point, exported from `sclab.tools.cellflow`, with `method="cosinor"` (default, F-test p-values, tolerates dropped bins) or `method="periodogram"` (the previous behavior; raises if time bins are dropped). All options after `time_key` are keyword-only; `tmin`/`tmax` default to `adata.uns[time_key]["t_range"]` or the data range, `period` to `tmax - tmin`; parameters are recorded in `adata.uns["periodic_genes"]`
 - **Breaking:** `periodic_genes()` defaults to `layer="counts"` (pass `layer="X"` to use `adata.X`) and raises `ValueError` on non-count input
@@ -62,6 +66,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Plot overflowing its container on first render (plotly>=6) and not following container/window resizes (all plotly versions)
     - Extra plot redraw from Guided Pseudotime when no signal plot was open
     - Lasso selections never reaching Python
+    - Redraws resetting marker opacity to 1 while the slider showed another value
 - `Processor.apply_step_history()` failing with "Step history mismatch" when replaying a JSON-saved history onto a dashboard that already ran its first steps
     - Gene Expression "Plot Expression" failing while a selection is active
     - Box/lasso selection crashing while density contours are shown
