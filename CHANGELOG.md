@@ -25,9 +25,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `max_distance` parameter on `transfer_metadata()` and `propagate_metadata()`: neighbors at distance `>= max_distance` are ignored and do not count toward `min_neighs`
 - `counts_layer` parameter on `sclab.preprocess.pca()` (default `"counts"`), used to recompute highly variable genes on the reference batch
 - `sclab.utils.layer_keys()`: layer names of an AnnData without the `None` key that anndata>=0.13 uses for `X`
+- Dashboard "3D full resolution" checkbox (saved in pinned views)
 - `check_counts` parameter on `pseudobulk_pylimma()`, `pseudobulk_limma()` and `pseudobulk_edger()` (default `True`) to reject non-count input
 
 ### Changed
+- Dashboard plots are faster and send less data: recolor, size and selection patch the existing traces (numpy arrays sent as binary); size/selection changes are near-instant and recolors 2–6× faster at 100k–1M cells
+- Density contours use a binned Gaussian KDE: under 2 s at 1M cells instead of minutes, within a few percent of the previous contours
+- 3D plots show a seeded random subsample of at most 200,000 cells by default (selected cells first, noted in the title); traces are split at 500,000 points and the camera is kept across redraws on the same embedding
+- Plot traces no longer carry per-cell hover text; cell ids come from an index map (hover values are float32)
 - **Breaking:** remove `batch_key` from `pseudobulk_edger()` and `pseudobulk_limma()`
 - **Breaking:** `pseudobulk_pylimma()`, `pseudobulk_limma()` and `pseudobulk_edger()` default to `layer="counts"` (pass `layer="X"` to use `adata.X`; `layer=None` raises)
 - **Breaking:** `pydeseq2` is no longer a core dependency (it was unused)
