@@ -7,6 +7,7 @@ from scipy.sparse import csr_matrix
 from sclab.tools.utils import aggregate_and_filter
 from sclab.tools.utils._aggregate_and_filter import (
     _get_groups_to_drop,
+    _groups,
     _get_layer,
     _get_replica_idxs,
     _including,
@@ -247,6 +248,16 @@ class TestCellIdentity:
         for col in ["pct_expr_A_x", "pct_expr_notA_x", "tot_expr_C_y"]:
             assert col in res.var.columns
 
+    def test_rest_statistics_stay_within_identity(self, adata):
+        res = aggregate_and_filter(
+            adata, "batch", "ct", replicas_per_group=1, min_cells_per_group=10
+        )
+
+        X = _dense(adata.X)
+        rest_x = ((adata.obs["batch"] != "A") & (adata.obs["ct"] == "x")).values
+        np.testing.assert_allclose(res.var["pct_expr_notA_x"], (X[rest_x] > 0).mean(0))
+        np.testing.assert_array_equal(res.var["tot_expr_notA_x"], X[rest_x].sum(0))
+
     def test_min_cells_applies_to_crossed_groups(self, adata):
         res = aggregate_and_filter(
             adata, "batch", "ct", replicas_per_group=1, min_cells_per_group=30
@@ -347,3 +358,18 @@ class TestHelpers:
         dense = _get_layer(adata, "counts", dense=True)
         assert isinstance(dense, np.ndarray)
         np.testing.assert_array_equal(dense, adata.layers["counts"].toarray())
+
+
+class TestPandas4Groupby:
+    def test_single_key_groups_are_scalar(self, adata):
+        keys = list(_groups(adata, ["batch"]))
+        assert keys == ["A", "B", "C"]
+        assert all(isinstance(k, tuple) for k in _groups(adata, ["batch", "ct"]))
+
+    def test_no_tuple_key_warning(self, adata):
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.filterwarnings("error", message=".*keys of `groups`.*")
+            aggregate_and_filter(adata, "batch", min_cells_per_group=1)
+            aggregate_and_filter(adata, "batch", "ct", min_cells_per_group=1)

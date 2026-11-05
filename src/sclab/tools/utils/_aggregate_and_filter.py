@@ -46,7 +46,6 @@ def aggregate_and_filter(
         Whether to create expression statistics for each group. Defaults to True.
     make_dummies : bool, optional
         Whether to make categorical columns into dummies. Defaults to True.
-
     Returns
     -------
     AnnData
@@ -76,8 +75,7 @@ def aggregate_and_filter(
 
     data = {}
     meta = {}
-    groups = adata.obs.groupby(grouping_keys, observed=True).groups
-    for group, group_idxs in groups.items():
+    for group, group_idxs in _groups(adata, grouping_keys).items():
         if not isinstance(group, tuple):
             group = (group,)
 
@@ -180,21 +178,19 @@ def _create_var_dataframe(
     # Instead of subsetting the "Rest" cells (which is huge) every time,
     # we calculate Global - Group = Rest.
 
-    if issparse(X_global):
-        # Efficient sparse summing. returns np.matrix or np.array depending on scipy version
-        global_tot = np.array(X_global.sum(axis=0)).flatten()
-        # Count > 0 efficiently for sparse matrices
-        global_num = np.array((X_global > 0).sum(axis=0)).flatten()
-    else:
-        global_tot = np.array(X_global.sum(axis=0)).flatten()
-        global_num = np.count_nonzero(X_global > 0, axis=0)
+    global_tot, global_num = _tot_num(X_global)
 
     total_cells = X_global.shape[0]
 
-    # 3. Iterate through groups
-    groups = adata.obs.groupby(grouping_keys, observed=True).groups
+    # "rest" of a (group, identity) pair is the rest within that identity
+    identity_stats = {}
+    if len(grouping_keys) > 1:
+        for cid, idx in _groups(adata, grouping_keys[1:]).items():
+            X_id = X_global[adata.obs.index.get_indexer(idx)]
+            identity_stats[cid] = (*_tot_num(X_id), X_id.shape[0])
 
-    for group, idx in groups.items():
+    # 3. Iterate through groups
+    for group, idx in _groups(adata, grouping_keys).items():
         if not isinstance(group, tuple):
             group = (group,)
 
@@ -208,22 +204,21 @@ def _create_var_dataframe(
         # (idx contains the string index names from adata.obs)
         group_indices = adata.obs.index.get_indexer(idx)
         n_subset = len(group_indices)
-        n_rest = total_cells - n_subset
 
         # Slice the group (much smaller/faster than slicing the "rest")
         X_subset = X_global[group_indices]
 
         # Compute Group Statistics
-        if issparse(X_subset):
-            subset_tot = np.array(X_subset.sum(axis=0)).flatten()
-            subset_num = np.array((X_subset > 0).sum(axis=0)).flatten()
-        else:
-            subset_tot = np.array(X_subset.sum(axis=0)).flatten()
-            subset_num = np.count_nonzero(X_subset > 0, axis=0)
+        subset_tot, subset_num = _tot_num(X_subset)
 
         # Compute "Rest" Statistics via subtraction
-        rest_tot = global_tot - subset_tot
-        rest_num = global_num - subset_num
+        if identity_stats:
+            ref_tot, ref_num, ref_n = identity_stats[group[1]]
+        else:
+            ref_tot, ref_num, ref_n = global_tot, global_num, total_cells
+        rest_tot = ref_tot - subset_tot
+        rest_num = ref_num - subset_num
+        n_rest = ref_n - n_subset
 
         # 4. Fill DataFrame
         # Handle division by zero if n_subset or n_rest is 0 (though unlikely with filtering)
@@ -251,8 +246,7 @@ def _get_var_dataframe_columns(
 ) -> list[str]:
     columns = []
 
-    groups = adata.obs.groupby(grouping_keys, observed=True).groups
-    for group, _ in groups.items():
+    for group in _groups(adata, grouping_keys):
         if not isinstance(group, tuple):
             group = (group,)
 
@@ -274,6 +268,22 @@ def _get_var_dataframe_columns(
         )
 
     return columns
+
+
+def _groups(adata: AnnData, keys: list[str]) -> dict:
+    """``obs.groupby(keys).groups``; scalar keys for a single key.
+
+    pandas 4 returns 1-tuples when grouping by a one-element list.
+    """
+    by = keys[0] if len(keys) == 1 else keys
+    return adata.obs.groupby(by, observed=True).groups
+
+
+def _tot_num(X) -> tuple[ndarray, ndarray]:
+    """Per-gene total and number of cells with expression > 0."""
+    tot = np.asarray(X.sum(axis=0)).flatten()
+    num = np.asarray((X > 0).sum(axis=0)).flatten()
+    return tot, num
 
 
 def _including(group: tuple | str, groups_to_drop: list[str]) -> bool:
