@@ -4,7 +4,6 @@ import itables
 import numpy as np
 import pandas as pd
 from anndata import AnnData
-from IPython.display import Markdown, display
 from ipywidgets import Dropdown, Output, SelectMultiple, Text, ToggleButtons
 from ipywidgets.widgets.valuewidget import ValueWidget
 from ipywidgets.widgets.widget_box import VBox
@@ -15,7 +14,7 @@ from sclab.dataset import SCLabDataset
 from sclab.dataset.processor import Processor
 from sclab.dataset.processor._codegen import ADATA, call
 from sclab.dataset.processor.step import ProcessorStepBase
-from sclab.utils import layer_keys, text_or_category_columns
+from sclab.utils import layer_keys, show_outputs, text_or_category_columns
 
 
 class DifferentialExpressionResults(VBox):
@@ -104,30 +103,32 @@ class DifferentialExpressionResults(VBox):
             adata, group=group, key=selected_result, gene_symbols=gene_symbols
         )
 
-        self.table_output.clear_output()
-        with self.table_output:
-            display(Markdown(f"## {table_name}"))
-            itables.show(
-                df,
-                buttons=[
-                    "pageLength",
-                    {
-                        "extend": "colvis",
-                        "collectionLayout": "fixed columns",
-                        "popoverTitle": "Column visibility control",
-                    },
-                    "copyHtml5",
-                    {"extend": "csvHtml5", "title": table_name},
-                ],
-                columnDefs=[
-                    {"visible": True, "targets": [0]},
-                    {"visible": True, "targets": "_all"},
-                ],
-                style="width:100%",
-                classes="display cell-border",
-                stateSave=False,
-            )
-            display(Markdown(params_text))
+        html = itables.to_html_datatable(
+            df,
+            buttons=[
+                "pageLength",
+                {
+                    "extend": "colvis",
+                    "collectionLayout": "fixed columns",
+                    "popoverTitle": "Column visibility control",
+                },
+                "copyHtml5",
+                {"extend": "csvHtml5", "title": table_name},
+            ],
+            columnDefs=[
+                {"visible": True, "targets": [0]},
+                {"visible": True, "targets": "_all"},
+            ],
+            style="width:100%",
+            classes="display cell-border",
+            stateSave=False,
+        )
+        show_outputs(
+            self.table_output,
+            {"text/markdown": f"## {table_name}"},
+            {"text/html": html},
+            {"text/markdown": params_text},
+        )
 
 
 class DifferentialExpression(ProcessorStepBase):

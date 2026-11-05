@@ -28,19 +28,19 @@ def run_workflow(coalescing: bool) -> tuple[dict, dict]:
     counts: dict[str, Counter] = {}
     states: dict[str, dict] = {}
     current = Counter()
-    make_new_figure, show = Plotter.make_new_figure, itables.show
+    make_new_figure, to_html = Plotter.make_new_figure, itables.to_html_datatable
 
     def counting_make_new_figure(self, *args, **kwargs):
         current["figure"] += 1
         return make_new_figure(self, *args, **kwargs)
 
-    def counting_show(df, *args, table_id="", **kwargs):
+    def counting_to_html(df, *args, table_id="", **kwargs):
         current["obs" if "_obs_" in table_id else "var"] += 1
-        return show(df, *args, table_id=table_id, **kwargs)
+        return to_html(df, *args, table_id=table_id, **kwargs)
 
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(Plotter, "make_new_figure", counting_make_new_figure)
-        mp.setattr(itables, "show", counting_show)
+        mp.setattr(itables, "to_html_datatable", counting_to_html)
         dash = SCLabDashboard(simple_loop_adata(n_obs=1000))
         dash.broker.coalescing = coalescing
 

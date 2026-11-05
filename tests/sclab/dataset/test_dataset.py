@@ -339,3 +339,20 @@ class TestApplyLabel:
         with pytest.raises(ValueError, match="boolean"):
             ds.apply_label(pd.Index(["cell0"]), "flag", "yes")
         assert ds.adata.obs["flag"].dtype == bool
+
+
+def test_tables_are_set_from_the_kernel():
+    # captured (`with output:`) tables are sent back by the frontend and echoed:
+    # three copies of a multi-MB table through the websocket stalled slow links
+    from sclab import SCLabDashboard
+
+    adata = AnnData(csr_matrix(np.ones((20, 5), dtype=np.float32)))
+    dash = SCLabDashboard(adata)
+    for out, kind in (
+        (dash.dataset.obs_table_output, "obs"),
+        (dash.dataset.var_table_output, "var"),
+    ):
+        (shown,) = out.outputs
+        assert shown["output_type"] == "display_data"
+        assert f"singlecell_dataset_{kind}_itable_" in shown["data"]["text/html"]
+        assert out.msg_id == ""  # nothing captured

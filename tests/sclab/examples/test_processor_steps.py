@@ -901,7 +901,9 @@ class TestDifferentialExpressionStep:
         import itables
 
         shown = []
-        monkeypatch.setattr(itables, "show", lambda df, *a, **k: shown.append(df))
+        monkeypatch.setattr(
+            itables, "to_html_datatable", lambda df, *a, **k: shown.append(df) or ""
+        )
         step = dash.processor.steps["Differential Expression"]
         results = step.results
         results.result_selector.value = "differential_expression_ref"

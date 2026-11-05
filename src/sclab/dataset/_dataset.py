@@ -9,7 +9,7 @@ from ipywidgets import GridBox, Layout, Output
 from numpy.typing import NDArray
 
 from ..event import EventBroker, EventClient
-from ..utils import text_columns
+from ..utils import show_outputs, text_columns
 from ._exceptions import InvalidRowSubset
 
 itables.options.maxBytes = "50MB"
@@ -142,30 +142,29 @@ class SCLabDataset(EventClient):
             else:
                 raise TypeError("incoming_change must be a DataFrame or a dict")
 
-            self.obs_table_output.clear_output(wait=True)
-            with self.obs_table_output:
-                itables.show(
-                    df.reset_index(),
-                    table_id=f"singlecell_dataset_obs_itable_{self.uuid}",
-                    layout={"top1": "searchBuilder"},
-                    buttons=[
-                        "pageLength",
-                        {
-                            "extend": "colvis",
-                            "collectionLayout": "fixed columns",
-                            "popoverTitle": "Column visibility control",
-                        },
-                        "copyHtml5",
-                        {"extend": "csvHtml5", "title": f"{self.name}_cells"},
-                    ],
-                    columnDefs=[
-                        {"visible": True, "targets": [0]},
-                        {"visible": False, "targets": "_all"},
-                    ],
-                    style="width:100%",
-                    classes="display cell-border",
-                    stateSave=False,
-                )
+            html = itables.to_html_datatable(
+                df.reset_index(),
+                table_id=f"singlecell_dataset_obs_itable_{self.uuid}",
+                layout={"top1": "searchBuilder"},
+                buttons=[
+                    "pageLength",
+                    {
+                        "extend": "colvis",
+                        "collectionLayout": "fixed columns",
+                        "popoverTitle": "Column visibility control",
+                    },
+                    "copyHtml5",
+                    {"extend": "csvHtml5", "title": f"{self.name}_cells"},
+                ],
+                columnDefs=[
+                    {"visible": True, "targets": [0]},
+                    {"visible": False, "targets": "_all"},
+                ],
+                style="width:100%",
+                classes="display cell-border",
+                stateSave=False,
+            )
+            show_outputs(self.obs_table_output, {"text/html": html})
 
         def update_var_table(incoming_change: pd.DataFrame | dict, *args, **kvargs):
             if isinstance(incoming_change, dict):
@@ -175,30 +174,29 @@ class SCLabDataset(EventClient):
             else:
                 raise TypeError("incoming_change must be a DataFrame or a dict")
 
-            self.var_table_output.clear_output(wait=True)
-            with self.var_table_output:
-                itables.show(
-                    df.reset_index(),
-                    table_id=f"singlecell_dataset_var_itable_{self.uuid}",
-                    layout={"top1": "searchBuilder"},
-                    buttons=[
-                        "pageLength",
-                        {
-                            "extend": "colvis",
-                            "collectionLayout": "fixed columns",
-                            "popoverTitle": "Column visibility control",
-                        },
-                        "copyHtml5",
-                        {"extend": "csvHtml5", "title": f"{self.name}_genes"},
-                    ],
-                    columnDefs=[
-                        {"visible": True, "targets": [0]},
-                        {"visible": False, "targets": "_all"},
-                    ],
-                    style="width:100%",
-                    classes="display cell-border",
-                    stateSave=False,
-                )
+            html = itables.to_html_datatable(
+                df.reset_index(),
+                table_id=f"singlecell_dataset_var_itable_{self.uuid}",
+                layout={"top1": "searchBuilder"},
+                buttons=[
+                    "pageLength",
+                    {
+                        "extend": "colvis",
+                        "collectionLayout": "fixed columns",
+                        "popoverTitle": "Column visibility control",
+                    },
+                    "copyHtml5",
+                    {"extend": "csvHtml5", "title": f"{self.name}_genes"},
+                ],
+                columnDefs=[
+                    {"visible": True, "targets": [0]},
+                    {"visible": False, "targets": "_all"},
+                ],
+                style="width:100%",
+                classes="display cell-border",
+                stateSave=False,
+            )
+            show_outputs(self.var_table_output, {"text/html": html})
 
         update_obs_table(self.adata.obs)
         update_var_table(self.adata.var)

@@ -1,6 +1,22 @@
 import anywidget
-from ipywidgets import Dropdown
+from ipywidgets import Dropdown, Output
 from traitlets import Unicode
+
+
+def show_outputs(output: Output, *bundles: dict) -> None:
+    """Replace what ``output`` shows by ``bundles`` (mime type -> data each).
+
+    Set from the kernel, unlike ``with output: display(...)``: the frontend
+    then sends every captured output back to the kernel, which echoes it to
+    the frontends, so a large table crosses the websocket three times. The
+    obs table of 16k cells is 7 MB: the copy sent by the browser delays its
+    pongs, clicks and execute requests until the connection times out on a
+    slow link (the dashboard looks hung).
+    """
+    output.outputs = tuple(
+        {"output_type": "display_data", "data": data, "metadata": {}}
+        for data in bundles
+    )
 
 
 def set_options_keep_value(dropdown: Dropdown, options) -> None:
