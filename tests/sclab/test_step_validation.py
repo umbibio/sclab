@@ -80,7 +80,10 @@ def test_differential_expression_needs_two_groups_and_a_valid_layer(raw):
 
     c["groupby"].value = "one"
     assert step.run_button.disabled and "single group" in step.status.value
-    c["groupby"].value = "two"
+    c["groupby"].value = "two"  # wilcoxon on adata.X, which holds raw counts here
+    assert step.run_button.disabled
+    assert "adata.X looks like raw counts" in step.status.value
+    c["method"].value = "pseudobulk_edger"  # the counts layer: valid
     assert not step.run_button.disabled and step.status.value == ""
     c["groups"].value = ("a",)
     c["reference"].value = "a"
@@ -88,7 +91,76 @@ def test_differential_expression_needs_two_groups_and_a_valid_layer(raw):
     c["reference"].value = "b"  # one group plus a reference
     assert not step.run_button.disabled
     with pytest.raises(ValueError, match="No layer 'nope'"):
-        step.run(layer="nope")
+        step.run(override_layer=True, layer="nope")
+    with pytest.raises(ValueError, match="Choose a layer"):
+        step.run(override_layer=True, layer=None)
+    with pytest.raises(ValueError, match="No column 'nope'"):
+        step.run(sample_key="nope")
+    with pytest.raises(ValueError, match="No column 'nope'"):
+        step.run(cell_identity="nope")
+    assert raw.processor.step_history == []
+
+
+def test_differential_expression_layer_must_suit_the_method(raw):
+    adata = raw.dataset.adata
+    adata.obs["two"] = pd.Categorical(["a", "b"] * (adata.n_obs // 2))
+    adata.layers["lognorm"] = np.log1p(adata.layers["counts"])
+    raw.broker.publish("dset_metadata_change", raw.dataset.metadata)
+    raw.broker.publish("dset_anndata_layers_change")
+    step = raw.processor.steps["Differential Expression"]
+    c = step.variable_controls
+    c["groupby"].value = "two"
+
+    c["override_layer"].value = True
+    c["layer"].value = "lognorm"  # wilcoxon on log-normalized data: valid
+    assert not step.run_button.disabled, step.status.value
+    c["layer"].value = "counts"
+    assert "Layer 'counts' looks like raw counts" in step.status.value
+    c["method"].value = "pseudobulk_limma"
+    assert not step.run_button.disabled, step.status.value
+    c["layer"].value = "lognorm"
+    assert "Layer 'lognorm' does not look like raw counts" in step.status.value
+    assert "pseudobulk_limma needs" in step.status.value
+
+    c["override_layer"].value = False
+    del adata.layers["counts"]  # no counts layer: pseudobulk cannot run
+    raw.broker.publish("dset_anndata_layers_change")
+    assert step.run_button.disabled
+    assert "No counts layer 'counts': tick 'Override layer'" in step.status.value
+
+
+def test_differential_expression_pseudobulk_needs_the_de_extra(raw, monkeypatch):
+    import sclab.examples.processor_steps._differential_expression as de_step
+
+    adata = raw.dataset.adata
+    adata.obs["two"] = pd.Categorical(["a", "b"] * (adata.n_obs // 2))
+    raw.broker.publish("dset_metadata_change", raw.dataset.metadata)
+    step = raw.processor.steps["Differential Expression"]
+    c = step.variable_controls
+    c["groupby"].value = "two"
+
+    monkeypatch.setattr(de_step, "edgepython_is_available", lambda: False)
+    monkeypatch.setattr(de_step, "pylimma_is_available", lambda: False)
+    assert set(c["method"].options) == {  # offered, and disabled with the reason
+        "wilcoxon",
+        "t-test",
+        "logreg",
+        "pseudobulk_limma",
+        "pseudobulk_edger",
+    }
+    c["method"].value = "pseudobulk_edger"
+    assert step.run_button.disabled
+    assert "pseudobulk_edger needs edgepython" in step.status.value
+    assert "sclab[de]" in step.status.value
+    c["method"].value = "pseudobulk_limma"
+    assert "pseudobulk_limma needs pylimma" in step.status.value
+
+    # pylimma without edgepython: limma runs with its own preprocessing
+    monkeypatch.setattr(de_step, "pylimma_is_available", lambda: True)
+    assert step.validate(step._control_params()) is None
+    resolved = step.resolved_params(step._control_params())
+    assert resolved["edger_preprocessing"] is False
+    assert "edger_preprocessing=False" in step.to_code(resolved)
 
 
 def test_integration_from_the_report(raw):

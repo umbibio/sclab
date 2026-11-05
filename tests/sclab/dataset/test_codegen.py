@@ -274,8 +274,8 @@ def test_differential_expression_records_the_key_it_added():
     assert 'key_added="differential_expression_x"' in code
     assert 'key_added="differential_expression_x_2"' in code
     for key in ("differential_expression_x", "differential_expression_x_2"):
-        names = pd.DataFrame(adata.uns[key]["names"])
-        pd.testing.assert_frame_equal(names, pd.DataFrame(result.uns[key]["names"]))
+        pd.testing.assert_frame_equal(adata.uns[key]["table"], result.uns[key]["table"])
+    assert "sclab.tools.de(" in code and "import sclab.tools" in code
 
 
 def test_guided_pseudotime_flags_the_drawn_path():

@@ -16,10 +16,10 @@ from sclab.preprocess import pca as library_pca
 from sclab.preprocess import preprocess as library_preprocess
 from sclab.preprocess import qc as library_qc
 from sclab.utils import layer_keys
-from sclab.examples.processor_steps._differential_expression import (
-    _rank_genes_groups_df,
-)
+from sclab.examples.processor_steps._differential_expression import _sheet_name
+from sclab.tools.differential_expression import edgepython_is_available
 
+from ..test_background_jobs import FakeLoop
 from ..test_utils import run_step as strict_run_step
 from ..test_utils import simple_loop_adata
 
@@ -827,47 +827,75 @@ class TestGeneExpression:
 # --------------------------------------------------------------------------
 # Differential expression
 # --------------------------------------------------------------------------
+DE = "Differential Expression"
+needs_edgepython = pytest.mark.skipif(
+    not edgepython_is_available(), reason="edgepython not installed"
+)
+
+
+def de_params(**params):
+    """Every DE control: run(**params) does not depend on earlier tests' values."""
+    defaults = dict(
+        method="wilcoxon",
+        groupby="grp",
+        groups=(),
+        reference="rest",
+        cell_identity=None,
+        sample_key=None,
+        replicas_per_group=3,
+        override_layer=False,
+        layer=None,
+        name="",
+    )
+    return {**defaults, **params}
+
+
 class TestDifferentialExpressionStep:
     def test_all_groups_vs_rest(self, dash):
         adata = dash.dataset.adata
-        step, ok = run_step(
-            dash,
-            "Differential Expression",
-            groupby="grp",
-            groups="all",
-            reference="rest",
-            layer=None,
-            name="",
-        )
+        step, ok = run_step(dash, DE, **de_params())
         assert ok
         res = adata.uns["differential_expression"]
-        assert list(res["names"].dtype.names) == ["A", "B", "C"]
-        assert (
-            res["params"]["groupby"] == "grp" and res["params"]["reference"] == "rest"
-        )
-        assert "pts" in res and "pts_rest" in res
+        assert set(res) == {"params", "table"}
+        table, params = res["table"], res["params"]
+        assert list(table["contrast"].unique()) == [
+            "A_vs_rest",
+            "B_vs_rest",
+            "C_vs_rest",
+        ]
+        assert params["method"] == "wilcoxon" and params["layer"] == "X"
+        assert params["reference_group"] == "rest"
         # every group's top gene is up in that group relative to the rest
         X = adata.X.toarray()
         for g in ["A", "B", "C"]:
-            gene = res["names"][g][0]
-            j = adata.var_names.get_loc(gene)
+            top = table[table["contrast"] == f"{g}_vs_rest"].iloc[0]
+            j = adata.var_names.get_loc(top["gene"])
             inside = (adata.obs["grp"] == g).to_numpy()
-            assert res["scores"][g][0] > 0
+            assert top["score"] > 0
             assert X[inside, j].mean() > X[~inside, j].mean()
+        recorded = dash.processor.step_history[-1]["params"]
+        assert recorded["layer"] == "X"
+        assert recorded["key_added"] == "differential_expression"
         # results panel follows the new analysis
-        assert step.results.result_selector.value == "differential_expression"
-        assert step.results.group_selector.options == ("all", "A", "B", "C")
+        results = step.results
+        assert results.result_selector.value == "differential_expression"
+        assert results.contrast_selector.options == (
+            "all",
+            "A_vs_rest",
+            "B_vs_rest",
+            "C_vs_rest",
+        )
+        assert results.identity_selector.layout.display == "none"
 
     def test_unique_keys_for_repeated_and_named_runs(self, dash):
         uns = dash.dataset.adata.uns
-        kw = dict(groupby="grp", groups="all", reference="rest", layer=None)
-        _, ok = run_step(dash, "Differential Expression", name="", **kw)
+        _, ok = run_step(dash, DE, **de_params())
         assert ok and "differential_expression_2" in uns
-        _, ok = run_step(dash, "Differential Expression", name="x", **kw)
+        _, ok = run_step(dash, DE, **de_params(name="x"))
         assert ok and "differential_expression_x" in uns
-        _, ok = run_step(dash, "Differential Expression", name="x", **kw)
+        _, ok = run_step(dash, DE, **de_params(name="x"))
         assert ok and "differential_expression_x_2" in uns
-        step = dash.processor.steps["Differential Expression"]
+        step = dash.processor.steps[DE]
         assert step.results.result_selector.value == "differential_expression_x_2"
         assert set(step.results.result_selector.options) >= {
             "differential_expression",
@@ -877,89 +905,98 @@ class TestDifferentialExpressionStep:
         }
 
     def test_specific_groups_against_reference_group(self, dash):
-        adata = dash.dataset.adata
-        _, ok = run_step(
-            dash,
-            "Differential Expression",
-            groupby="grp",
+        params = de_params(
             groups=("B", "C"),
             reference="A",
+            override_layer=True,
             layer="counts_log1p",
             name="ref",
         )
+        _, ok = run_step(dash, DE, **params)
         assert ok
-        res = adata.uns["differential_expression_ref"]
-        assert list(res["names"].dtype.names) == ["B", "C"]
-        assert res["params"]["reference"] == "A"
+        res = dash.dataset.adata.uns["differential_expression_ref"]
+        assert list(res["table"]["contrast"].unique()) == ["B_vs_A", "C_vs_A"]
+        assert res["params"]["reference_group"] == "A"
         assert res["params"]["layer"] == "counts_log1p"
 
-    def test_group_selector_renders_table(self, dash, monkeypatch):
-        import itables
+    def test_method_switch_sets_the_layer(self, dash):
+        step = dash.processor.steps[DE]
+        c = step.variable_controls
+        c["override_layer"].value = False
+        c["method"].value = "pseudobulk_edger"
+        assert step.resolved_params(step._control_params())["layer"] == "counts"
+        assert c["layer"].value == "counts"
+        assert "(counts)" in c["override_layer"].description
+        c["method"].value = "t-test"
+        assert step.resolved_params(step._control_params())["layer"] == "X"
+        assert c["layer"].value is None
+        assert "(X)" in c["override_layer"].description
+        c["method"].value = "wilcoxon"
 
-        shown = []
-        monkeypatch.setattr(
-            itables, "to_html_datatable", lambda df, *a, **k: shown.append(df) or ""
-        )
-        step = dash.processor.steps["Differential Expression"]
-        results = step.results
-        results.result_selector.value = "differential_expression_ref"
-        assert results.group_selector.options == ("all", "B", "C")
-        assert shown == []  # Results tab hidden: nothing built
-        panel = dash.processor.results_panel
-        panel.available_results.value = panel.available_results.options[results.namespace]
-        dash.main_content.selected_index = 1  # open the Results tab
-        assert len(shown) == 1 and results.table_output.outputs
-        n = len(shown)
-        results.group_selector.value = "B"
-        assert len(shown) == n + 1
-        res = dash.dataset.adata.uns["differential_expression_ref"]
-        assert shown[-1]["names"].tolist() == [str(g) for g in res["names"]["B"]]
-        assert "group" not in shown[-1]  # single group
-        results.group_selector.value = "all"
-        assert set(shown[-1]["group"].astype(str)) == {"B", "C"}
-        results.group_selector.value = "all"
-        results.sync_results_list()
-        assert results.result_selector.value == "differential_expression_ref"
-        results.sync_results_list(focus_result="differential_expression")
-        assert results.result_selector.value == "differential_expression"
-        n = len(shown)
-        dash.main_content.selected_index = 0  # hidden: unloaded, not rebuilt
-        assert results.table_output.outputs == ()
-        results.group_selector.value = "A"
-        assert len(shown) == n
-        dash.main_content.selected_index = 1
-        assert len(shown) == n + 1  # the change made while hidden is shown
-        res = dash.dataset.adata.uns["differential_expression"]
-        assert shown[-1]["names"].tolist() == [str(g) for g in res["names"]["A"]]
-        dash.main_content.selected_index = 0
+    def test_override_checkbox_reveals_the_layer(self, dash):
+        step = dash.processor.steps[DE]
+        c = step.variable_controls
+        assert c["layer"].layout.display == "none"
+        c["override_layer"].value = True
+        assert c["layer"].layout.display is None
+        c["layer"].value = "counts_log1p"
+        assert step.resolved_params(step._control_params())["layer"] == "counts_log1p"
+        c["method"].value = "pseudobulk_edger"  # the override is kept
+        assert c["layer"].value == "counts_log1p"
+        c["override_layer"].value = False
+        assert c["layer"].layout.display == "none"
+        assert c["layer"].value == "counts"
+        c["method"].value = "wilcoxon"
+
+    def test_pseudobulk_params_only_for_pseudobulk(self, dash):
+        c = dash.processor.steps[DE].variable_controls
+        hidden = {
+            k
+            for k in ("sample_key", "replicas_per_group")
+            if c[k].layout.display == "none"
+        }
+        assert hidden == {"sample_key", "replicas_per_group"}  # wilcoxon
+        c["method"].value = "pseudobulk_limma"
+        assert c["sample_key"].layout.display is None
+        assert c["replicas_per_group"].layout.display is None
+        c["sample_key"].value = "batch"  # real samples: no pseudo-replicates
+        assert c["replicas_per_group"].layout.display == "none"
+        c["sample_key"].value = None
+        assert c["replicas_per_group"].layout.display is None
+        c["method"].value = "wilcoxon"
+
+    def test_codegen_emits_sclab_tools_de(self, dash):
+        code = dash.generate_code()
+        assert "sclab.tools.de(" in code and "import sclab.tools" in code
+        assert "rank_genes_groups" not in code
+        assert 'key_added="differential_expression_ref"' in code
+        assert 'condition_group=["B", "C"]' in code
+        assert 'reference_group="A"' in code
+        assert 'layer="counts_log1p"' in code
+
+    def test_metadata_change_refreshes_identity_and_sample_keys(self, dash):
+        c = dash.processor.steps[DE].variable_controls
+        c["cell_identity"].value = "batch"
+        dash.dataset.adata.obs["donor"] = pd.Categorical(["d1", "d2"] * 200)
+        dash.broker.publish("dset_metadata_change", dash.dataset.metadata)
+        assert "donor" in c["cell_identity"].options
+        assert "donor" in c["sample_key"].options
+        assert c["cell_identity"].value == "batch"
+        c["cell_identity"].value = None
 
     def test_missing_groupby_is_refused(self, dash):
         with pytest.raises(ValueError, match="Choose a 'Group by' column"):
-            dash.processor.steps["Differential Expression"].run(
-                groupby=None,
-                groups="all",
-                reference="rest",
-                layer=None,
-                name="bad",
-            )
+            dash.processor.steps[DE].run(**de_params(groupby=None, name="bad"))
         assert "differential_expression_bad" not in dash.dataset.adata.uns
 
     def test_empty_groups_means_all(self, dash):
-        _, ok = run_step(
-            dash,
-            "Differential Expression",
-            groupby="batch",
-            groups=(),
-            reference="rest",
-            layer=None,
-            name="batchde",
-        )
+        _, ok = run_step(dash, DE, **de_params(groupby="batch", name="batchde"))
         assert ok
         res = dash.dataset.adata.uns["differential_expression_batchde"]
-        assert list(res["names"].dtype.names) == ["b1", "b2"]
+        assert list(res["table"]["contrast"].unique()) == ["b1_vs_rest", "b2_vs_rest"]
 
     def test_group_controls_follow_groupby(self, dash):
-        c = dash.processor.steps["Differential Expression"].variable_controls
+        c = dash.processor.steps[DE].variable_controls
         c["groupby"].value = "grp"
         assert c["groups"].options == ("A", "B", "C")
         assert c["reference"].options == ("rest", "A", "B", "C")
@@ -979,80 +1016,152 @@ class TestDifferentialExpressionStep:
         assert d.broker.exceptions_log[n:] == []
 
 
-class TestRankGenesGroupsDf:
+@needs_edgepython
+def test_pseudobulk_background_run_stores_params_and_table():
+    d = SCLabDashboard(make_adata(240, 120))
+    for name in ["QC", "Preprocess"]:
+        strict_run_step(d, name)
+    d.broker.jobs.loop = FakeLoop()
+    d.broker.jobs.beat_timeout = 0  # no frontend: resume on the timer
+    step = d.processor.steps[DE]
+    c = step.variable_controls
+    c["method"].value = "pseudobulk_edger"
+    c["groupby"].value = "grp"
+    c["reference"].value = "A"
+    assert not step.run_button.disabled, step.status.value
+    step.run_button.click()
+    assert d.broker.jobs.busy  # a background job
+    d.broker.jobs.loop.pump(d.broker.jobs)
+    assert step.run_button.button_style == "success", step.status.value
+    res = d.dataset.adata.uns["differential_expression"]
+    assert set(res) == {"params", "table"}
+    assert res["params"]["method"] == "pseudobulk_edger"
+    assert res["params"]["layer"] == "counts"
+    assert set(res["table"]["contrast"]) <= {"B_vs_A", "C_vs_A"}
+    assert {"gene", "logFC", "pval", "padj", "F"} <= set(res["table"])
+    entry = d.processor.step_history[-1]
+    assert entry["status"] == "success" and entry["params"]["layer"] == "counts"
+    code = d.generate_code()
+    assert "sclab.tools.de(" in code
+    assert 'method="pseudobulk_edger"' in code
+    assert "layer=counts_layer" in code
+    assert "sample_key=None" in code and "replicas_per_group=3" in code
+    assert step.results.result_selector.value == "differential_expression"
+
+
+class TestDifferentialExpressionResults:
     @pytest.fixture(scope="class")
-    def de_adata(self):
-        rng = np.random.default_rng(0)
-        X = rng.poisson(2.0, size=(90, 12)).astype(float)
-        grp = np.repeat(["A", "B", "C"], 30)
-        X[grp == "A", 0] += 6  # gene g0 up in A
-        X[grp == "B", 1] += 6  # gene g1 up in B
-        adata = AnnData(
-            X,
-            obs=pd.DataFrame(
-                {"g": pd.Categorical(grp)}, index=[f"c{i}" for i in range(90)]
-            ),
-            var=pd.DataFrame(
-                {"symbol": [f"S{i}" for i in range(12)]},
-                index=[f"g{i}" for i in range(12)],
-            ),
-        )
-        sc.pp.log1p(adata)
-        sc.tl.rank_genes_groups(
-            adata, "g", method="t-test", pts=True, key_added="ttest"
-        )
-        sc.tl.rank_genes_groups(adata, "g", method="logreg", key_added="logreg")
-        return adata
+    def results(self, dash):
+        params = de_params(cell_identity="batch", name="viewer")
+        step, ok = run_step(dash, DE, **params)
+        assert ok
+        return step.results
 
-    def test_all_groups_long_format(self, de_adata):
-        df = _rank_genes_groups_df(de_adata, None, key="ttest")
-        assert len(df) == 3 * 12
-        assert list(df.columns) == [
-            "group",
-            "names",
-            "scores",
-            "logfoldchanges",
-            "pvals",
-            "pvals_adj",
-            "pct_nz_group",
-            "pct_nz_reference",
+    def test_identity_picker_only_with_a_cell_identity(self, dash, results):
+        results.result_selector.value = "differential_expression_viewer"
+        assert results.identity_selector.layout.display is None
+        assert results.identity_selector.options == ("all", "b1", "b2")
+        results.result_selector.value = "differential_expression"
+        assert results.identity_selector.layout.display == "none"
+        assert results.identity_selector.options == ("all",)
+
+    def test_pickers_filter_the_table(self, dash, results):
+        results.result_selector.value = "differential_expression_viewer"
+        full = dash.dataset.adata.uns["differential_expression_viewer"]["table"]
+        df = results.filtered_table()
+        assert df.columns[0] == "gene" and len(df) == len(full)
+        results.contrast_selector.value = "B_vs_rest"
+        df = results.filtered_table()
+        assert "contrast" not in df and set(df["cell_identity"]) == {"b1", "b2"}
+        assert len(df) == (full["contrast"] == "B_vs_rest").sum()
+        results.identity_selector.value = "b2"
+        df = results.filtered_table()
+        assert "cell_identity" not in df
+        expected = full[
+            (full["contrast"] == "B_vs_rest") & (full["cell_identity"] == "b2")
         ]
-        assert df["group"].astype(str).unique().tolist() == ["A", "B", "C"]
-        # within each group rows keep scanpy's rank order (scores descending)
-        for _, sub in df.groupby("group", observed=True):
-            assert sub["scores"].is_monotonic_decreasing
-        top = df.groupby("group", observed=True).head(1).set_index("group")["names"]
-        assert top["A"] == "g0" and top["B"] == "g1"
+        assert df["gene"].tolist() == expected["gene"].tolist()
+        results.contrast_selector.value = "all"
+        assert set(results.filtered_table()["contrast"]) == set(full["contrast"])
+        results.identity_selector.value = "all"
 
-    def test_single_group_drops_group_column(self, de_adata):
-        df = _rank_genes_groups_df(de_adata, "A", key="ttest")
-        assert "group" not in df.columns and len(df) == 12
-        assert df.iloc[0]["names"] == "g0"
-        assert df.iloc[0]["pct_nz_group"] > df.iloc[0]["pct_nz_reference"]
+    def test_table_bundles_and_logreg_note(self, dash, results):
+        results.result_selector.value = "differential_expression_viewer"
+        bundles = results._table()
+        text = "".join(str(v) for b in bundles for v in b.values())
+        assert "<details><summary>Parameters</summary>" in text
+        assert "method: wilcoxon" in text
+        assert "no p-values" not in text
+        _, ok = run_step(dash, DE, **de_params(method="logreg", name="lr"))
+        assert ok
+        assert results.result_selector.value == "differential_expression_lr"
+        table = dash.dataset.adata.uns["differential_expression_lr"]["table"]
+        assert table["pval"].isna().all()
+        text = "".join(str(v) for b in results._table() for v in b.values())
+        assert "logreg gives no p-values" in text
 
-    def test_filters(self, de_adata):
-        full = _rank_genes_groups_df(de_adata, "A", key="ttest")
-        sig = _rank_genes_groups_df(de_adata, "A", key="ttest", pval_cutoff=0.01)
-        assert 0 < len(sig) < len(full) and (sig["pvals_adj"] < 0.01).all()
-        up = _rank_genes_groups_df(de_adata, "A", key="ttest", log2fc_min=0.5)
-        assert (up["logfoldchanges"] > 0.5).all() and "g0" in set(up["names"])
-        down = _rank_genes_groups_df(de_adata, "A", key="ttest", log2fc_max=0)
-        assert (down["logfoldchanges"] < 0).all()
-        both = _rank_genes_groups_df(
-            de_adata, "A", key="ttest", log2fc_min=-1, log2fc_max=1
+    def test_excel_export(self, dash, results, monkeypatch):
+        import io
+
+        saved = []
+        monkeypatch.setattr(
+            results.download,
+            "save",
+            lambda data, name, type: saved.append((data, name)),
         )
-        assert both["logfoldchanges"].between(-1, 1, inclusive="neither").all()
-        # index is reset after filtering
-        assert up.index.tolist() == list(range(len(up)))
+        results.result_selector.value = "differential_expression_viewer"
+        results.export_button.click()
+        ((data, name),) = saved
+        assert name == "differential_expression_viewer.xlsx"
+        sheets = pd.read_excel(io.BytesIO(data), sheet_name=None)
+        assert list(sheets) == ["A_vs_rest", "B_vs_rest", "C_vs_rest", "params"]
+        a = sheets["A_vs_rest"]
+        assert a.columns[0] == "gene" and "cell_identity" in a
+        table = dash.dataset.adata.uns["differential_expression_viewer"]["table"]
+        assert len(a) == (table["contrast"] == "A_vs_rest").sum()
+        params = sheets["params"].set_index("param")["value"]
+        assert params["method"] == "wilcoxon" and params["group_key"] == "grp"
 
-    def test_gene_symbols_and_multiple_groups(self, de_adata):
-        df = _rank_genes_groups_df(
-            de_adata, ["A", "C"], key="ttest", gene_symbols="symbol"
+    def test_sheet_names_are_valid_and_unique(self):
+        taken = {"params"}
+        names = [_sheet_name(n, taken) for n in ["a/b:c", "x" * 40, "x" * 40, "PARAMS"]]
+        assert names[0] == "a_b_c"
+        assert all(len(n) <= 31 for n in names)
+        assert len({n.lower() for n in names}) == 4 and names[3] != "PARAMS"
+
+    def test_nothing_built_while_the_results_tab_is_hidden(
+        self, dash, results, monkeypatch
+    ):
+        import itables
+
+        shown = []
+        monkeypatch.setattr(
+            itables, "to_html_datatable", lambda df, *a, **k: shown.append(df) or ""
         )
-        assert set(df["group"].astype(str)) == {"A", "C"}
-        assert (df["symbol"] == "S" + df["names"].str[1:]).all()
-
-    def test_logreg_has_only_names_and_scores(self, de_adata):
-        df = _rank_genes_groups_df(de_adata, "B", key="logreg", pval_cutoff=0.1)
-        assert list(df.columns) == ["names", "scores"]  # filters are ignored
-        assert len(df) == 12
+        dash.main_content.selected_index = 0
+        results.result_selector.value = "differential_expression_viewer"
+        results.contrast_selector.value = "A_vs_rest"
+        assert shown == []  # Results tab hidden: nothing built
+        panel = dash.processor.results_panel
+        panel.available_results.value = panel.available_results.options[
+            results.namespace
+        ]
+        dash.main_content.selected_index = 1  # open the Results tab
+        assert len(shown) == 1 and results.table_output.outputs
+        assert shown[-1].columns[0] == "gene" and "contrast" not in shown[-1]
+        results.contrast_selector.value = "B_vs_rest"
+        assert len(shown) == 2
+        results.result_selector.value = "differential_expression"  # one render
+        assert len(shown) == 3
+        dash.main_content.selected_index = 0  # hidden: unloaded, not rebuilt
+        assert results.table_output.outputs == ()
+        results.contrast_selector.value = "C_vs_rest"
+        assert len(shown) == 3
+        dash.main_content.selected_index = 1
+        assert len(shown) == 4  # the change made while hidden is shown
+        assert set(shown[-1]["gene"]) == set(
+            dash.dataset.adata.uns["differential_expression"]["table"].query(
+                "contrast == 'C_vs_rest'"
+            )["gene"]
+        )
+        dash.main_content.selected_index = 0
