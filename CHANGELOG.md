@@ -74,6 +74,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Dashboard
+    - Label failed on bool columns, and `False` was treated as an empty label; bool columns now take True/False (other labels raise)
+    - Long category filters in generated selection code are wrapped instead of written on one line
+    - The Workspace dataset label (modified, shape) now updates when the history or pinned views change, not only on top-bar actions
+    - Renaming a Workspace dataset also renames the active dashboard and its cache file (refused if the target file exists)
     - A step's button turned green even when the redraw after it failed; it now turns red with the error
     - Cells with a missing category disappeared from categorical plots under pandas 3; they are drawn as "NA" again
     - Plots without per-cell sizes drew 1px points (since the plot speed-up in 0.5.0.dev6)
