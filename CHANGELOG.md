@@ -36,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `check_counts` parameter on `pseudobulk_pylimma()`, `pseudobulk_limma()` and `pseudobulk_edger()` (default `True`) to reject non-count input
 
 ### Changed
+- `uv.lock` re-resolved to current releases (clears most Dependabot/OSV advisories: 268 → 79, all remaining in Python 3.10-only versions of pillow, filelock and tornado). Note: the locked rpy2-rinterface needs R ≥ 4.5
 - Dashboard plots are faster and send less data: recolor, size and selection patch the existing traces (numpy arrays sent as binary); size/selection changes are near-instant and recolors 2–6× faster at 100k–1M cells
 - Density contours use a binned Gaussian KDE: under 2 s at 1M cells instead of minutes, within a few percent of the previous contours
 - 3D plots show a seeded random subsample of at most 200,000 cells by default (selected cells first, noted in the title); traces are split at 500,000 points and the camera is kept across redraws on the same embedding
@@ -73,6 +74,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ALRA uses a scoped rpy2 converter instead of the deprecated global `numpy2ri.activate()`
 
 ### Fixed
+- `import sclab` crashed when rpy2 is installed but cannot load R (e.g. rpy2-rinterface ≥3.6.7 with R < 4.5); the R-backed methods now report R as unavailable
 - Dashboard
     - Label failed on bool columns, and `False` was treated as an empty label; bool columns now take True/False (other labels raise)
     - Long category filters in generated selection code are wrapped instead of written on one line
