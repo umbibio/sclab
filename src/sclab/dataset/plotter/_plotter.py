@@ -422,6 +422,11 @@ class Plotter(GridBox, EventClient):
         # `responsive` makes plotly.js resize with its container.
         self.g._config = {**self.g._config, "responsive": True}
 
+        # plotly counts frontend views in `_view_count` (nothing reads it) and its view
+        # sends the decrement when removed, after the kernel closed the comm (closing
+        # a dashboard): "No such comm" in the log. A None count is never sent.
+        self.g._view_count = None
+
         def relayout_publisher(event):
             if not event["new"]:
                 return
