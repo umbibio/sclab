@@ -888,6 +888,7 @@ class Processor(EventClient):
         uns["history"] = _history.dumps_uns(self.step_history)
         self._render_step_history()
         self._update_code()
+        self.broker.publish("dset_state_change")
 
     def generate_code(self, header: bool = True) -> str:
         """Python script reproducing the successful steps of ``step_history``.

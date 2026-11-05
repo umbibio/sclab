@@ -66,6 +66,7 @@ class SCLabDataset(EventClient):
         "dset_anndata_neighbors_change",
         "dset_var_dataframe_change",
         "dset_total_vars_change",
+        "dset_state_change",  # history or pinned views changed
     ]
     preemptions: dict[str, list[str]] = {
         "dset_data_key_selection_change": [

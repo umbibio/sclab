@@ -149,6 +149,7 @@ class Workspace(VBox):
         self.datasets: dict[str, DatasetEntry] = {}
         self.active: str | None = None
         self._syncing = False
+        self._watcher = None  # the active dashboard's coalesced _on_state_change
 
         self.selector = Dropdown(
             description="Dataset:", layout=Layout(width="auto", min_width="420px")
@@ -233,6 +234,9 @@ class Workspace(VBox):
         if loaded:
             entry.base_hash = _state_hash(entry.adata)
         entry.shape = entry.adata.shape
+        # coalesced: one refresh per batch, after a (background) step is applied
+        self._watcher = entry.dash.broker.coalesce(self._on_state_change)
+        entry.dash.broker.subscribe("dset_state_change", self._watcher)
         self.active = name
         self.body.children = (entry.dash,)
         self._refresh()
@@ -296,6 +300,8 @@ class Workspace(VBox):
                 )
         if entry.source is not None or entry.cache_path is not None:
             entry.adata = None
+        entry.dash.broker.unsubscribe("dset_state_change", self._watcher)
+        self._watcher = None
         entry.dash.close()
         entry.dash = None
         self.active = None
@@ -395,6 +401,12 @@ class Workspace(VBox):
             self.selector.value = self.active
         finally:
             self._syncing = False
+
+    def _on_state_change(self):
+        """The active dataset's history or pinned views changed: update its label."""
+        if (entry := self.datasets.get(self.active)) is not None and entry.dash:
+            entry.shape = entry.adata.shape  # a Keep/Drop step changes it
+            self._refresh()
 
     def _ui(self, fn, *args):
         """Run a top-bar action; show its error instead of raising it."""

@@ -212,3 +212,37 @@ def test_load_button_adds_a_defined_adata(files):
     loader.continue_button.click()
     assert ws.active == "extra" and ws.dash.ds.adata.shape == (80, 50)
     assert ws.loader_box.children == () and loader.comm is None
+
+
+def labels(ws: Workspace) -> list[str]:
+    return [label for label, _ in ws.selector.options]
+
+
+def test_label_follows_history_and_views_of_the_active_dataset(files, tmp_path):
+    ws = Workspace(files, workspace_dir=tmp_path / "ws")
+    assert "clean" in labels(ws)[0]
+    broker = ws.dash.broker
+    ws.dash.plotter.views.pin("mine")  # not a top-bar action
+    assert "modified" in labels(ws)[0] and ws.active == "a"
+    assert ws.selector.value == "a"
+    run_step(ws.dash, "QC")
+    assert "modified" in labels(ws)[0] and "clean" in labels(ws)[1]
+    ws.activate("b")
+    assert (
+        "dset_state_change" not in broker._subscribers
+        or not broker._subscribers["dset_state_change"]
+    )
+    run_step(ws.dash, "QC")
+    assert "modified" in labels(ws)[1]
+
+
+def test_label_is_refreshed_after_a_background_step(files, tmp_path):
+    from .test_background_jobs import FakeLoop
+
+    ws = Workspace(files, workspace_dir=tmp_path / "ws")
+    jobs = ws.dash.broker.jobs
+    jobs.loop, jobs.beat_timeout = FakeLoop(), 0
+    ws.dash.processor.steps["QC"].run_button.click()
+    jobs.loop.pump(jobs)
+    assert ws.dash.processor.step_history[-1]["step"] == "QC"
+    assert "modified" in labels(ws)[0]

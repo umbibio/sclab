@@ -236,6 +236,7 @@ class ViewGallery(VBox):
     def _sync(self):
         dumps_uns(self.plotter.dataset.adata, self.views)
         self._render()
+        self.plotter.broker.publish("dset_state_change")
 
     def _say(self, text: str):
         style = "font-size:12px;color:#b45309"
