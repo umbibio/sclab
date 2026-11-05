@@ -4,7 +4,7 @@ import itables
 import numpy as np
 import pandas as pd
 from anndata import AnnData
-from ipywidgets import Dropdown, Output, SelectMultiple, Text, ToggleButtons
+from ipywidgets import Dropdown, SelectMultiple, Text, ToggleButtons
 from ipywidgets.widgets.valuewidget import ValueWidget
 from ipywidgets.widgets.widget_box import VBox
 from ipywidgets.widgets.widget_description import DescriptionWidget
@@ -14,7 +14,7 @@ from sclab.dataset import SCLabDataset
 from sclab.dataset.processor import Processor
 from sclab.dataset.processor._codegen import ADATA, call
 from sclab.dataset.processor.step import ProcessorStepBase
-from sclab.utils import layer_keys, show_outputs, text_or_category_columns
+from sclab.utils import LazyOutput, layer_keys, text_or_category_columns
 
 
 class DifferentialExpressionResults(VBox):
@@ -28,14 +28,16 @@ class DifferentialExpressionResults(VBox):
     dataset: SCLabDataset
     result_selector: Dropdown
     group_selector: ToggleButtons
-    table_output: Output
+    table_output: LazyOutput
     namespace: str = "differential_expression"
 
     def __init__(self, dataset: SCLabDataset):
         self.dataset = dataset
         self.result_selector = Dropdown(description="Analysis Name")
         self.group_selector = ToggleButtons()
-        self.table_output = Output()
+        # tens of MB for all groups: built only while shown, see show_when
+        self.table_output = LazyOutput(self._table)
+        self._table_key = None
 
         self.result_selector.observe(self._update_group_selector, "value")
         self.result_selector.observe(self._update_table, "value")
@@ -65,6 +67,9 @@ class DifferentialExpressionResults(VBox):
         self.result_selector.options = new_options
         self.result_selector.value = current_selection
 
+    def show_when(self, *path):
+        self.table_output.show_when(*path)
+
     def _update_group_selector(self, *args, **kwargs):
         selected_result = self.result_selector.value
         uns: dict[str, Any] = self.dataset.adata.uns
@@ -73,8 +78,17 @@ class DifferentialExpressionResults(VBox):
         self.group_selector.value = "all"
 
     def _update_table(self, *args, **kwargs):
+        # a new analysis changes both selectors: render once, not per change
+        key = (self.result_selector.value, self.group_selector.value)
+        if key != self._table_key:
+            self._table_key = key
+            self.table_output.invalidate()
+
+    def _table(self) -> tuple[dict, ...]:
         selected_result = self.result_selector.value
         selected_group = self.group_selector.value
+        if selected_result is None:
+            return ()
 
         adata = self.dataset.adata
         params = adata.uns[selected_result]["params"]
@@ -123,8 +137,7 @@ class DifferentialExpressionResults(VBox):
             classes="display cell-border",
             stateSave=False,
         )
-        show_outputs(
-            self.table_output,
+        return (
             {"text/markdown": f"## {table_name}"},
             {"text/html": html},
             {"text/markdown": params_text},

@@ -908,6 +908,11 @@ class TestDifferentialExpressionStep:
         results = step.results
         results.result_selector.value = "differential_expression_ref"
         assert results.group_selector.options == ("all", "B", "C")
+        assert shown == []  # Results tab hidden: nothing built
+        panel = dash.processor.results_panel
+        panel.available_results.value = panel.available_results.options[results.namespace]
+        dash.main_content.selected_index = 1  # open the Results tab
+        assert len(shown) == 1 and results.table_output.outputs
         n = len(shown)
         results.group_selector.value = "B"
         assert len(shown) == n + 1
@@ -921,6 +926,16 @@ class TestDifferentialExpressionStep:
         assert results.result_selector.value == "differential_expression_ref"
         results.sync_results_list(focus_result="differential_expression")
         assert results.result_selector.value == "differential_expression"
+        n = len(shown)
+        dash.main_content.selected_index = 0  # hidden: unloaded, not rebuilt
+        assert results.table_output.outputs == ()
+        results.group_selector.value = "A"
+        assert len(shown) == n
+        dash.main_content.selected_index = 1
+        assert len(shown) == n + 1  # the change made while hidden is shown
+        res = dash.dataset.adata.uns["differential_expression"]
+        assert shown[-1]["names"].tolist() == [str(g) for g in res["names"]["A"]]
+        dash.main_content.selected_index = 0
 
     def test_missing_groupby_fails(self, dash):
         step, ok = run_step(

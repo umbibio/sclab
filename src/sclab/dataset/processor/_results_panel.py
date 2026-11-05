@@ -16,6 +16,7 @@ hr = Box(layout=hr_layout)
 
 class _Results:
     namespace: str
+    # optional show_when(*path): see ResultsPanel.show_when
 
 
 class ResultsPanel(VBox, EventClient):
@@ -35,6 +36,7 @@ class ResultsPanel(VBox, EventClient):
 
         self.available_results = Dropdown(options={}, description="Category")
         self.results_stack = Stack([])
+        self._path = ()  # where this panel is shown, see show_when
 
         link(
             (self.available_results, "value"),
@@ -56,6 +58,16 @@ class ResultsPanel(VBox, EventClient):
             # ),
         )
 
+    def show_when(self, *path) -> None:
+        """Results are shown while ``path`` shows this panel and they are selected."""
+        self._path = path
+        for results in self.results_stack.children:
+            self._show_when(results)
+
+    def _show_when(self, results: _Results) -> None:
+        if self._path and hasattr(results, "show_when"):
+            results.show_when(*self._path, (self.results_stack, results))
+
     def add_result(self, results: _Results):
         current_stack = list(self.results_stack.children)
         namespace = results.namespace
@@ -71,6 +83,7 @@ class ResultsPanel(VBox, EventClient):
             current_stack[idx] = results
 
         self.results_stack.children = tuple(current_stack)
+        self._show_when(results)
         set_options_keep_value(self.available_results, options)
         if self.available_results.value is None:
             self.available_results.value = idx
