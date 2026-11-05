@@ -209,6 +209,12 @@ class SCLabDashboard(GridBox):
             ],
         )
 
+        # heavy tables are built and sent only while their tab is open
+        tab = self.main_content
+        self.dataset.obs_table_output.show_when((tab, self.dataset.obs_table))
+        self.dataset.var_table_output.show_when((tab, self.dataset.var_table))
+        self.processor.results_panel.show_when((tab, self.processor.results_panel))
+
         self.children = (
             VBox([self.broker.jobs.panel, self.processor.main_accordion]),
             self.main_content,

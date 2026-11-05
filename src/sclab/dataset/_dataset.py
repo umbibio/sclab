@@ -5,11 +5,11 @@ import itables.options
 import numpy as np
 import pandas as pd
 from anndata import AnnData
-from ipywidgets import GridBox, Layout, Output
+from ipywidgets import GridBox, Layout
 from numpy.typing import NDArray
 
 from ..event import EventBroker, EventClient
-from ..utils import show_outputs, text_columns
+from ..utils import LazyOutput, text_columns
 from ._exceptions import InvalidRowSubset
 
 itables.options.maxBytes = "50MB"
@@ -102,8 +102,11 @@ class SCLabDataset(EventClient):
 
         self.load_adata(adata, copy=copy)
 
-        self.obs_table_output = Output(layout=Layout(width="98%"))
-        self.var_table_output = Output(layout=Layout(width="98%"))
+        # obs/var tables (7 MB for 16k cells) are built and sent only while their
+        # tab is shown: SCLabDashboard ties them to its tabs with show_when()
+        self._obs_df = self._var_df = None  # None: adata.obs / adata.var
+        self.obs_table_output = LazyOutput(self._obs_table, layout=Layout(width="98%"))
+        self.var_table_output = LazyOutput(self._var_table, layout=Layout(width="98%"))
 
         self.obs_table = GridBox(
             [
@@ -136,70 +139,21 @@ class SCLabDataset(EventClient):
 
         def update_obs_table(incoming_change: pd.DataFrame | dict, *args, **kvargs):
             if isinstance(incoming_change, dict):
-                df = self.adata.obs
+                self._obs_df = None
             elif isinstance(incoming_change, pd.DataFrame):
-                df = incoming_change
+                self._obs_df = incoming_change
             else:
                 raise TypeError("incoming_change must be a DataFrame or a dict")
-
-            html = itables.to_html_datatable(
-                df.reset_index(),
-                table_id=f"singlecell_dataset_obs_itable_{self.uuid}",
-                layout={"top1": "searchBuilder"},
-                buttons=[
-                    "pageLength",
-                    {
-                        "extend": "colvis",
-                        "collectionLayout": "fixed columns",
-                        "popoverTitle": "Column visibility control",
-                    },
-                    "copyHtml5",
-                    {"extend": "csvHtml5", "title": f"{self.name}_cells"},
-                ],
-                columnDefs=[
-                    {"visible": True, "targets": [0]},
-                    {"visible": False, "targets": "_all"},
-                ],
-                style="width:100%",
-                classes="display cell-border",
-                stateSave=False,
-            )
-            show_outputs(self.obs_table_output, {"text/html": html})
+            self.obs_table_output.invalidate()
 
         def update_var_table(incoming_change: pd.DataFrame | dict, *args, **kvargs):
             if isinstance(incoming_change, dict):
-                df = self.adata.var
+                self._var_df = None
             elif isinstance(incoming_change, pd.DataFrame):
-                df = incoming_change
+                self._var_df = incoming_change
             else:
                 raise TypeError("incoming_change must be a DataFrame or a dict")
-
-            html = itables.to_html_datatable(
-                df.reset_index(),
-                table_id=f"singlecell_dataset_var_itable_{self.uuid}",
-                layout={"top1": "searchBuilder"},
-                buttons=[
-                    "pageLength",
-                    {
-                        "extend": "colvis",
-                        "collectionLayout": "fixed columns",
-                        "popoverTitle": "Column visibility control",
-                    },
-                    "copyHtml5",
-                    {"extend": "csvHtml5", "title": f"{self.name}_genes"},
-                ],
-                columnDefs=[
-                    {"visible": True, "targets": [0]},
-                    {"visible": False, "targets": "_all"},
-                ],
-                style="width:100%",
-                classes="display cell-border",
-                stateSave=False,
-            )
-            show_outputs(self.var_table_output, {"text/html": html})
-
-        update_obs_table(self.adata.obs)
-        update_var_table(self.adata.var)
+            self.var_table_output.invalidate()
 
         update_obs_table = broker.coalesce(update_obs_table)
         update_var_table = broker.coalesce(update_var_table)
@@ -208,6 +162,52 @@ class SCLabDataset(EventClient):
 
         broker.subscribe("dset_var_dataframe_change", update_var_table)
         broker.subscribe("dset_total_vars_change", update_var_table)
+
+    def _obs_table(self) -> list[dict]:
+        return [
+            {
+                "text/html": self._table_html(
+                    self.adata.obs if self._obs_df is None else self._obs_df,
+                    "obs",
+                    "cells",
+                )
+            }
+        ]
+
+    def _var_table(self) -> list[dict]:
+        return [
+            {
+                "text/html": self._table_html(
+                    self.adata.var if self._var_df is None else self._var_df,
+                    "var",
+                    "genes",
+                )
+            }
+        ]
+
+    def _table_html(self, df: pd.DataFrame, kind: str, what: str) -> str:
+        return itables.to_html_datatable(
+            df.reset_index(),
+            table_id=f"singlecell_dataset_{kind}_itable_{self.uuid}",
+            layout={"top1": "searchBuilder"},
+            buttons=[
+                "pageLength",
+                {
+                    "extend": "colvis",
+                    "collectionLayout": "fixed columns",
+                    "popoverTitle": "Column visibility control",
+                },
+                "copyHtml5",
+                {"extend": "csvHtml5", "title": f"{self.name}_{what}"},
+            ],
+            columnDefs=[
+                {"visible": True, "targets": [0]},
+                {"visible": False, "targets": "_all"},
+            ],
+            style="width:100%",
+            classes="display cell-border",
+            stateSave=False,
+        )
 
     def load_adata(self, adata: AnnData, copy: bool = True):
         if copy:

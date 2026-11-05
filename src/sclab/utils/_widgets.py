@@ -1,3 +1,5 @@
+import traceback
+
 import anywidget
 from ipywidgets import Dropdown, Output
 from traitlets import Unicode
@@ -17,6 +19,68 @@ def show_outputs(output: Output, *bundles: dict) -> None:
         {"output_type": "display_data", "data": data, "metadata": {}}
         for data in bundles
     )
+
+
+class LazyOutput(Output):
+    """Output built by ``render()`` (an iterable of bundles, see :func:`show_outputs`)
+    only while it is shown.
+
+    It is shown while every ``(container, child)`` given to :meth:`show_when` has
+    ``child`` as the container's selected page (Tab, Stack, Accordion); with no
+    pairs it is always shown. Until :meth:`show_when` is called it is hidden.
+    :meth:`invalidate` (the data changed) renders again now if shown, else on the
+    next show. With ``unload``, hiding clears it, so a page reload does not
+    download it again as widget state; the rendered bundles are kept, so showing
+    it again re-sends them without rendering.
+    """
+
+    def __init__(self, render, unload: bool = True, **kwargs):
+        super().__init__(**kwargs)
+        self._render = render
+        self.unload = unload
+        self.shown = False
+        self.stale = True
+        self._bundles = ()
+        self._path = ()
+
+    def show_when(self, *path) -> None:
+        for container, _ in self._path:
+            container.unobserve(self._update_shown, ["selected_index", "children"])
+        self._path = path
+        for container, _ in path:
+            container.observe(self._update_shown, ["selected_index", "children"])
+        self._update_shown()
+
+    def invalidate(self) -> None:
+        self.stale = True
+        if self.shown:
+            self._show()
+
+    def _update_shown(self, change=None) -> None:
+        shown = all(
+            c.selected_index is not None
+            and c.selected_index < len(c.children)
+            and c.children[c.selected_index] is child
+            for c, child in self._path
+        )
+        if shown == self.shown:
+            return
+        self.shown = shown
+        if shown:
+            self._show()
+        elif self.unload:
+            self.outputs = ()
+
+    def _show(self) -> None:
+        if self.stale:
+            try:
+                self._bundles = tuple(self._render())
+                self.stale = False
+            except Exception:  # shown in place of the content; retried on next show
+                self._bundles = ({"text/plain": traceback.format_exc()},)
+            show_outputs(self, *self._bundles)
+        elif not self.outputs:
+            show_outputs(self, *self._bundles)
 
 
 def set_options_keep_value(dropdown: Dropdown, options) -> None:

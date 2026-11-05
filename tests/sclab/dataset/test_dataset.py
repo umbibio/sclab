@@ -348,11 +348,77 @@ def test_tables_are_set_from_the_kernel():
 
     adata = AnnData(csr_matrix(np.ones((20, 5), dtype=np.float32)))
     dash = SCLabDashboard(adata)
-    for out, kind in (
-        (dash.dataset.obs_table_output, "obs"),
-        (dash.dataset.var_table_output, "var"),
+    for out, kind, tab in (
+        (dash.dataset.obs_table_output, "obs", 2),
+        (dash.dataset.var_table_output, "var", 3),
     ):
+        dash.main_content.selected_index = tab
         (shown,) = out.outputs
         assert shown["output_type"] == "display_data"
         assert f"singlecell_dataset_{kind}_itable_" in shown["data"]["text/html"]
         assert out.msg_id == ""  # nothing captured
+
+
+class TestLazyTables:
+    """The obs/var tables are built and sent only while their tab is open."""
+
+    @pytest.fixture
+    def dash(self, monkeypatch):
+        import itables
+
+        from sclab import SCLabDashboard
+
+        self.built = []
+        to_html = itables.to_html_datatable
+
+        def counting(df, *args, table_id="", **kwargs):
+            self.built.append(("obs" if "_obs_" in table_id else "var", df))
+            return to_html(df, *args, table_id=table_id, **kwargs)
+
+        monkeypatch.setattr(itables, "to_html_datatable", counting)
+        adata = AnnData(csr_matrix(np.ones((20, 5), dtype=np.float32)))
+        adata.obs["grp"] = pd.Categorical(["a", "b"] * 10)
+        return SCLabDashboard(adata)
+
+    def kinds(self):
+        return [kind for kind, _ in self.built]
+
+    def test_nothing_built_until_the_tab_is_opened(self, dash):
+        ds = dash.dataset
+        assert self.built == []
+        assert ds.obs_table_output.outputs == () and ds.var_table_output.outputs == ()
+        dash.main_content.selected_index = 2
+        assert self.kinds() == ["obs"] and ds.obs_table_output.outputs
+        assert ds.var_table_output.outputs == ()
+
+    def test_visible_table_follows_data_changes(self, dash):
+        dash.main_content.selected_index = 2
+        dash.dataset.apply_label(pd.Index(["0", "1"]), "lab", "x")
+        assert self.kinds() == ["obs", "obs"]
+        assert "lab" in self.built[-1][1].columns
+
+    def test_hidden_table_is_unloaded_and_refreshed_when_stale(self, dash):
+        ds = dash.dataset
+        dash.main_content.selected_index = 2
+        dash.main_content.selected_index = 0
+        assert ds.obs_table_output.outputs == ()  # not in a page reload's state
+        dash.main_content.selected_index = 2  # unchanged: re-sent, not rebuilt
+        assert self.kinds() == ["obs"] and ds.obs_table_output.outputs
+        dash.main_content.selected_index = 0
+        ds.apply_label(pd.Index(["0"]), "lab", "x")
+        ds.filter_rows(ds.adata.obs_names[:10])
+        assert self.kinds() == ["obs"]  # hidden: only marked stale
+        dash.main_content.selected_index = 2
+        assert self.kinds() == ["obs", "obs"]
+        df = self.built[-1][1]
+        assert "lab" in df.columns and len(df) == 10
+
+    def test_var_table(self, dash):
+        dash.main_content.selected_index = 3
+        assert self.kinds() == ["var"]
+        dash.main_content.selected_index = 0
+        dash.dataset.adata.var["note"] = "n"
+        dash.broker.publish("dset_var_dataframe_change", dash.dataset.adata.var)
+        assert self.kinds() == ["var"]
+        dash.main_content.selected_index = 3
+        assert self.kinds() == ["var", "var"] and "note" in self.built[-1][1]
