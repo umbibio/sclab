@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- Dashboard steps check their inputs: Run is disabled with the reason shown below it while something required is missing (e.g. Integration without a GroupBy column of at least 2 batches, UMAP/Cluster without a neighbor graph, PCA on raw counts), and `step.run()` raises `ValueError` then. Errors from a run, a background job, a redraw after it or a control callback are shown in red below the step's Run button (details still in Logs), and Keep/Drop/Label errors below the selection actions
+- Pinned views: thumbnails (drawn in the kernel, kept in memory only, redrawn when the data changes), PNG export (per pin, chosen dpi), "Code" with a plotly express snippet reproducing the pin, left/right reordering, gene-expression pins (gene, layer and colorscale; badges when missing), and snapshot-only pins of custom figures. "Min. size" is saved in pins
+- `sclab.utils.LazyOutput`: an Output widget built only while shown
 - Dashboard steps PCA, Neighbors, UMAP, Cluster, Differential Expression and Doublet Detection (except scDblFinder) run in the background when clicked: the plot, tabs and notebook stay usable, a progress panel shows the step and elapsed time, and Cancel (at checkpoints) or Interrupt (stops Python-level loops, e.g. UMAP epochs) leave the data unchanged and record "cancelled" in the history. Data-changing controls and Workspace switch/merge are locked meanwhile; `step.run()` stays synchronous
 - Dashboard "Emphasize values" (on by default): when coloring by a number, cells with zero/negative/missing values shrink (Settings "Min. size", default 0.3) and the rest grow with their percentile; "Size by" and selections take precedence. Works in plotly, jscatter and static plots
 - Dashboard notice in 3D when opacity is below 1 (plotly then draws by trace order, not depth)
@@ -36,6 +39,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `check_counts` parameter on `pseudobulk_pylimma()`, `pseudobulk_limma()` and `pseudobulk_edger()` (default `True`) to reject non-count input
 
 ### Changed
+- Dashboard obs/var tables and the differential expression table are built and sent only while their tab is open, and dropped from widget state when hidden (on 16k cells after DE: page reload 57 MB → 6 MB, DE step 79 MB → ~0 MB sent). Opening a tab now takes a moment while its table is sent
+- Dashboard Integration "GroupBy" defaults to the dashboard's `batch_key`
 - `uv.lock` re-resolved to current releases (clears most Dependabot/OSV advisories: 268 → 79, all remaining in Python 3.10-only versions of pillow, filelock and tornado). Note: the locked rpy2-rinterface needs R ≥ 4.5
 - Dashboard plots are faster and send less data: recolor, size and selection patch the existing traces (numpy arrays sent as binary); size/selection changes are near-instant and recolors 2–6× faster at 100k–1M cells
 - Density contours use a binned Gaussian KDE: under 2 s at 1M cells instead of minutes, within a few percent of the previous contours
@@ -79,6 +84,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Displaying a dashboard or running Preprocess could hang the browser connection ("WebSocket ping timeout") on slower links: the obs/var and DE tables were captured into Output widgets, so the browser sent each multi-MB table back to the kernel. They are now set from the kernel (no upload)
     - Switching the 2D backend to static and back left the plotly plot empty
     - Background steps send about half as many keep-alive messages
+    - A failing Integration, Preprocess, Transfer Metadata, Guided Pseudotime or Doublet Detection run was recorded as a success in a Jupyter kernel (the Output widget swallowed the exception), and its error appeared only in the Logs tab
     - "No such comm" in the log when removing or switching a Workspace dataset (or closing a dashboard): the plot widget no longer syncs its frontend view count
     - Label failed on bool columns, and `False` was treated as an empty label; bool columns now take True/False (other labels raise)
     - Long category filters in generated selection code are wrapped instead of written on one line
