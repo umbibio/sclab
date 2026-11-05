@@ -11,6 +11,10 @@ import sclab.tools
 from sclab.tools.differential_expression import (
     differential_expression,
     edgepython_is_available,
+    pseudobulk_edgepython,
+    pseudobulk_edger,
+    pseudobulk_limma,
+    pseudobulk_pylimma,
     pylimma_is_available,
 )
 from sclab.tools.differential_expression._differential_expression import COLUMNS
@@ -286,3 +290,11 @@ def test_module_is_callable_and_still_a_package(adata):
         pd.testing.assert_frame_equal(
             de(adata, "grp"), differential_expression(adata, "grp")
         )
+
+
+def test_default_pseudo_replicas():
+    def default(f):
+        return inspect.signature(f).parameters["replicas_per_group"].default
+
+    assert default(pseudobulk_pylimma) == default(pseudobulk_edgepython) == 3
+    assert default(pseudobulk_limma) == default(pseudobulk_edger) == 5  # deprecated

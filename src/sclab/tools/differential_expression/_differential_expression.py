@@ -111,8 +111,8 @@ def differential_expression(
         raised. A sample with cells in several groups yields one pseudobulk
         sample per group and enters the design as a blocking (paired) term;
         samples nested in groups do not. None (default) splits each group at
-        random into ``replicas_per_group`` pseudo-replicas, seeded by
-        ``random_state``.
+        random into ``replicas_per_group`` pseudo-replicas (default 3),
+        seeded by ``random_state``.
     key_added : str, optional
         Key in ``adata.uns`` for the results. Default is
         ``"differential_expression"``.

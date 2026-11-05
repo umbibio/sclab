@@ -15,7 +15,7 @@ def pseudobulk_edgepython(
     reference_group: str | None = None,
     cell_identity_key: str | None = None,
     layer: str = "counts",
-    replicas_per_group: int = 5,
+    replicas_per_group: int = 3,
     min_cells_per_group: int = 30,
     bootstrap_sampling: bool = False,
     use_cells: dict[str, list[str]] | None = None,
@@ -55,7 +55,7 @@ def pseudobulk_edgepython(
         ``adata.X``. Passing ``None`` raises a ``ValueError``. Ignored when
         ``aggregate=False``. Default is ``"counts"``.
     replicas_per_group : int, optional
-        Number of pseudobulk replicas to create per group. Default is 5.
+        Number of pseudobulk replicas to create per group. Default is 3.
     min_cells_per_group : int, optional
         Minimum number of cells required for a group to be included.
         Default is 30.
