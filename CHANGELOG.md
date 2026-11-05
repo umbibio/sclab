@@ -76,6 +76,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - `import sclab` crashed when rpy2 is installed but cannot load R (e.g. rpy2-rinterface ≥3.6.7 with R < 4.5); the R-backed methods now report R as unavailable
 - Dashboard
+    - Displaying a dashboard or running Preprocess could hang the browser connection ("WebSocket ping timeout") on slower links: the obs/var and DE tables were captured into Output widgets, so the browser sent each multi-MB table back to the kernel. They are now set from the kernel (no upload)
+    - Switching the 2D backend to static and back left the plotly plot empty
+    - Background steps send about half as many keep-alive messages
     - Label failed on bool columns, and `False` was treated as an empty label; bool columns now take True/False (other labels raise)
     - Long category filters in generated selection code are wrapped instead of written on one line
     - The Workspace dataset label (modified, shape) now updates when the history or pinned views change, not only on top-bar actions
