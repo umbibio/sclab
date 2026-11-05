@@ -37,6 +37,31 @@ class TestAvailability:
         assert limma_mod._r_deps_available() is False
         assert limma_is_available() is False
 
+    @pytest.mark.parametrize(
+        "module",
+        [
+            "sclab.tools.differential_expression._pseudobulk_limma",
+            "sclab.tools.differential_expression._pseudobulk_edger",
+            "sclab.tools.doublet_detection._scdblfinder",
+        ],
+    )
+    def test_unavailable_when_rpy2_cannot_load_r(self, monkeypatch, module):
+        # e.g. rpy2-rinterface 3.6.7 on R 4.4 raises ffi.error, not ImportError
+        import builtins
+        import importlib
+
+        mod = importlib.import_module(module)
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name.startswith("rpy2"):
+                raise RuntimeError("symbol 'R_getVar' not found")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(mod, "find_spec", lambda name: object())
+        monkeypatch.setattr(builtins, "__import__", fake_import)
+        assert mod._r_deps_available() is False
+
     def test_declared_dependencies(self):
         assert limma_mod.PYTHON_DEPENDENCIES == ["rpy2", "anndata2ri"]
         assert {"edgeR", "limma", "MAST", "SingleCellExperiment"} == set(

@@ -352,7 +352,10 @@ def _r_deps_available() -> bool:
     if not find_spec("rpy2"):
         return False
 
-    from rpy2.robjects import r
+    try:
+        from rpy2.robjects import r
 
-    installed_packages = list(r("installed.packages()"))
+        installed_packages = list(r("installed.packages()"))
+    except Exception:  # rpy2 present but cannot load R (e.g. built for a newer R)
+        return False
     return all([dep in installed_packages for dep in R_DEPENDENCIES])
