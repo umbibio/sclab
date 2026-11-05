@@ -26,7 +26,10 @@ def make_dash(backend="plotly", n_obs=300) -> SCLabDashboard:
 
 
 def shown(dash):
-    return dash.plotter.graph_box.children[0]
+    """The plot widget the user sees: the figure or a backend's view."""
+    p = dash.plotter
+    first = next(w for w in p.graph_box.children if w.layout.display != "none")
+    return p.g if first is p._figure_box else first
 
 
 def values(plotter) -> dict:
@@ -51,6 +54,21 @@ def test_settings_tab_switches_the_2d_backend():
     with pytest.raises(ValueError):
         p.backend = "bokeh"
     assert not dash.broker.exceptions_log
+
+
+def test_backend_switch_keeps_the_figure_attached():
+    # a re-attached plotly view misses the traces sent right after it: plotly
+    # stayed empty after static -> plotly, so the figure is hidden, not detached
+    dash = make_dash()
+    p = dash.plotter
+    box = p.graph_box.children[0]
+    assert box.children == (p.g,)
+    p.backend = "static"
+    assert p.graph_box.children[0] is box and box.layout.display == "none"
+    p.backend = "plotly"
+    assert p.graph_box.children[0] is box and box.layout.display == "block"
+    assert not any(isinstance(w, Image) for w in p.graph_box.children)
+    assert shown(dash) is p.g and p.g.data
 
 
 def test_1d_and_3d_always_use_plotly():

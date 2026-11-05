@@ -152,8 +152,14 @@ class Plotter(GridBox, EventClient):
         graph_layout = Layout(
             display="block", width="100%", height="600px", border="0px solid red"
         )
+        # the figure stays attached, hidden while a backend's view shows: a
+        # re-attached plotly view misses the traces sent right after it and stays empty
+        self._figure_box = Box([self.g], layout=Layout(display="block", width="100%"))
+        self._resize_notifier = ResizeNotifier()
+        self._shown = self.g
         self.graph_box = Box(
-            [self.g, ResizeNotifier(), self.download], layout=graph_layout
+            [self._figure_box, self._resize_notifier, self.download],
+            layout=graph_layout,
         )
         self.notice = HTML()  # why a plotly plot is shown instead of the backend's
         # min_width: the card strip scrolls instead of widening the plot column
@@ -288,15 +294,23 @@ class Plotter(GridBox, EventClient):
 
     def _show(self, widget):
         """Put ``widget`` (the figure or a backend's view) in the plot area."""
-        if self.graph_box.children[0] is widget:
+        if self._shown is widget:
             return
-        if widget is not self.g:  # free the hidden plotly traces
+        view = () if widget is self.g else (widget,)
+        if view:  # free the hidden plotly traces
             self.g.data = []
             self._structure, self._trace_rows = None, []
-        self.graph_box.children = (widget, *self.graph_box.children[1:])
+        self._figure_box.layout.display = "none" if view else "block"
+        self.graph_box.children = (
+            self._figure_box,
+            *view,
+            self._resize_notifier,
+            self.download,
+        )
+        self._shown = widget
 
     def _view_shown(self) -> bool:
-        return self.graph_box.children[0] is not self.g
+        return self._shown is not self.g
 
     def _view_2d(self, ndims: str, figure_kwargs: dict):
         """The backend view to draw a 2D plot with, or None to draw with plotly."""
