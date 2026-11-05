@@ -20,6 +20,8 @@ def aggregate_and_filter(
     use_cells: dict[str, list[str]] | None = None,
     make_stats: bool = True,
     make_dummies: bool = True,
+    sample_key: str | None = None,
+    random_state: int | None = None,
 ) -> AnnData:
     """
     Aggregate and filter cells in an AnnData object into cell populations.
@@ -46,6 +48,16 @@ def aggregate_and_filter(
         Whether to create expression statistics for each group. Defaults to True.
     make_dummies : bool, optional
         Whether to make categorical columns into dummies. Defaults to True.
+    sample_key : str, optional
+        Column in ``adata.obs`` with the real biological samples. If given,
+        each group (and cell identity) is aggregated once per sample found in
+        it, and ``replicas_per_group``/``bootstrap_sampling`` are ignored. The
+        ``replica`` column then holds the sample label. Cells with a missing
+        sample label are left out. Defaults to None (random pseudo-replicas).
+    random_state : int, optional
+        Seed for the random pseudo-replica assignment. None uses the global
+        ``random``/``numpy.random`` state. Defaults to None.
+
     Returns
     -------
     AnnData
@@ -73,6 +85,9 @@ def aggregate_and_filter(
     else:
         var_dataframe = pd.DataFrame(index=adata.var_names)
 
+    py_rng = random if random_state is None else random.Random(random_state)
+    np_rng = np.random if random_state is None else np.random.default_rng(random_state)
+
     data = {}
     meta = {}
     for group, group_idxs in _groups(adata, grouping_keys).items():
@@ -90,11 +105,21 @@ def aggregate_and_filter(
                 group_metadata = {group_key: gid}
 
         adata_group = adata[group_idxs]
-        indices = _get_replica_idxs(adata_group, replicas_per_group, bootstrap_sampling)
-        for i, rep_idx in enumerate(indices):
-            replica_number = i + 1
+        if sample_key is None:
+            indices = _get_replica_idxs(
+                adata_group, replicas_per_group, bootstrap_sampling, py_rng, np_rng
+            )
+            replicas = [
+                (str(i + 1), f"rep{i + 1}", idx) for i, idx in enumerate(indices)
+            ]
+        else:
+            replicas = [
+                (str(s), str(s), idx)
+                for s, idx in _groups(adata_group, [sample_key]).items()
+            ]
+        for replica_number, suffix, rep_idx in replicas:
             replica_size = len(rep_idx)
-            replica_sample_id = f"{sample_id}_rep{replica_number}"
+            replica_sample_id = f"{sample_id}_{suffix}"
 
             adata_group_replica = adata_group[rep_idx]
             X = _get_layer(adata_group_replica, layer)
@@ -102,7 +127,7 @@ def aggregate_and_filter(
             data[replica_sample_id] = np.array(X.sum(axis=0)).flatten()
             meta[replica_sample_id] = {
                 **group_metadata,
-                "replica": str(replica_number),
+                "replica": replica_number,
                 "replica_size": replica_size,
             }
 
@@ -308,19 +333,21 @@ def _get_replica_idxs(
     adata_group: AnnData,
     replicas_per_group: int,
     bootstrap_sampling: bool,
+    py_rng=random,
+    np_rng=np.random,
 ):
     group_size = adata_group.n_obs
     indices = list(adata_group.obs_names)
     if bootstrap_sampling:
         indices = np.array(
             [
-                np.random.choice(indices, size=group_size, replace=True)
+                np_rng.choice(indices, size=group_size, replace=True)
                 for _ in range(replicas_per_group)
             ]
         )
 
     else:
-        random.shuffle(indices)
+        py_rng.shuffle(indices)
         indices = np.array_split(np.array(indices), replicas_per_group)
 
     return indices

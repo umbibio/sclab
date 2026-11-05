@@ -360,6 +360,55 @@ class TestHelpers:
         np.testing.assert_array_equal(dense, adata.layers["counts"].toarray())
 
 
+class TestSampleKey:
+    def test_one_pseudobulk_per_sample(self, adata):
+        adata.obs["sample"] = np.where(np.arange(adata.n_obs) % 2, "s1", "s2")
+
+        res = aggregate_and_filter(
+            adata,
+            "batch",
+            sample_key="sample",
+            replicas_per_group=4,
+            min_cells_per_group=1,
+        )
+
+        assert list(res.obs_names) == ["A_s1", "A_s2", "B_s1", "B_s2", "C_s1", "C_s2"]
+        assert res.obs.loc["B_s2", "replica"] == "s2"
+        X = _dense(adata.X)
+        cells = ((adata.obs["batch"] == "B") & (adata.obs["sample"] == "s2")).values
+        np.testing.assert_array_equal(_dense(res[["B_s2"]].X)[0], X[cells].sum(0))
+        assert res.obs.loc["B_s2", "replica_size"] == cells.sum()
+
+    def test_nested_samples_with_identity(self, adata):
+        adata.obs["sample"] = adata.obs["batch"] + "1"
+
+        res = aggregate_and_filter(
+            adata, "batch", "ct", sample_key="sample", min_cells_per_group=1
+        )
+
+        assert "A_x_A1" in res.obs_names and res.n_obs == 6
+
+
+class TestRandomState:
+    def test_seeded_replicas_are_reproducible(self, adata):
+        a = aggregate_and_filter(adata, "batch", min_cells_per_group=1, random_state=1)
+        import random
+
+        random.seed(123)  # global state is not used
+        b = aggregate_and_filter(adata, "batch", min_cells_per_group=1, random_state=1)
+        c = aggregate_and_filter(adata, "batch", min_cells_per_group=1, random_state=2)
+
+        np.testing.assert_array_equal(a.X, b.X)
+        assert not np.array_equal(a.X, c.X)
+
+    def test_seeded_bootstrap_is_reproducible(self, adata):
+        kw = dict(min_cells_per_group=1, bootstrap_sampling=True, random_state=1)
+        np.testing.assert_array_equal(
+            aggregate_and_filter(adata, "batch", **kw).X,
+            aggregate_and_filter(adata, "batch", **kw).X,
+        )
+
+
 class TestPandas4Groupby:
     def test_single_key_groups_are_scalar(self, adata):
         keys = list(_groups(adata, ["batch"]))

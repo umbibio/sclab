@@ -6,7 +6,7 @@ from anndata import AnnData
 from scipy.sparse import issparse
 
 from ..utils import aggregate_and_filter
-from ._pseudobulk_helpers import validate_counts_layer
+from ._pseudobulk_helpers import pseudobulk_contrasts, validate_counts_layer
 
 _TOP_TABLE_COLUMNS = {
     "log_fc": "logFC",
@@ -41,6 +41,8 @@ def pseudobulk_pylimma(
     edger_preprocessing: bool = True,
     verbosity: int = 0,
     check_counts: bool = True,
+    sample_key: str | None = None,
+    random_state: int | None = None,
 ) -> dict[str, pd.DataFrame]:
     """Pseudobulk differential expression analysis using limma-voom in Python.
 
@@ -99,6 +101,18 @@ def pseudobulk_pylimma(
         If True, raise a ``ValueError`` when the selected layer does not look
         like raw counts (non-negative integers). Set to False for
         non-integer corrected counts. Default is True.
+    sample_key : str or None, optional
+        Column in ``adata.obs`` with the biological samples. If given, cells
+        are aggregated per sample within each group (and identity) and these
+        samples are the replicates; ``replicas_per_group`` and
+        ``bootstrap_sampling`` are ignored. Each side of every contrast needs
+        at least 2 samples, otherwise a ``ValueError`` is raised. A sample
+        with cells in several groups gives one pseudobulk sample per group and
+        enters the design as a blocking (paired) term; samples nested in
+        groups do not. Default is None (random pseudo-replicas).
+    random_state : int or None, optional
+        Seed for the random pseudo-replica assignment. None uses the global
+        random state. Default is None.
 
     Returns
     -------
@@ -114,12 +128,15 @@ def pseudobulk_pylimma(
         - ``B`` — log-odds of differential expression.
         - ``pct_expr_cnd`` / ``pct_expr_ref`` — fraction of expressing
           cells in condition/reference group.
+        - ``logCPM_cnd`` / ``logCPM_ref`` — mean log2-CPM (voom's
+          ``log2((count + 0.5) / (library size + 1) * 1e6)``) of the
+          condition/reference pseudobulk samples.
 
     Notes
     -----
-    The design is ``~ 0 + group + replica``. When the aggregated data has a
-    single replica per group, the ``replica`` term is dropped because it
-    would not be estimable.
+    The design is ``~ 0 + group + replica``. The ``replica`` term is dropped
+    when it is not estimable: a single replica per group, or replicas
+    (samples) nested in groups.
     """
     if not pylimma_is_available():
         raise ImportError(
@@ -142,110 +159,34 @@ def pseudobulk_pylimma(
             min_cells_per_group,
             bootstrap_sampling,
             use_cells,
+            sample_key=sample_key,
+            random_state=random_state,
         )
     else:
         aggr_adata = adata.copy()
 
-    if condition_group is None:
-        condition_group_list = aggr_adata.obs[group_key].unique()
-    elif isinstance(condition_group, str):
-        condition_group_list = [condition_group]
-    else:
-        condition_group_list = condition_group
-
-    if cell_identity_key is not None:
-        cids = aggr_adata.obs[cell_identity_key].unique()
-    else:
-        cids = [""]
-
-    def level(name: str, cid: str) -> str:
-        return f"{name}_{cid}" if cid else name
-
-    tt_dict = {}
-    for condition_group in condition_group_list:
-        if reference_group is not None and condition_group == reference_group:
-            continue
-
-        if verbosity > 0:
-            print(f"Fitting model for {condition_group}...")
-
-        if reference_group is not None:
-            gk = group_key
-        else:
-            gk = f"{group_key}_{condition_group}"
-
-        groups = aggr_adata.obs[gk].astype(str)
-        if cell_identity_key is not None:
-            groups = groups + "_" + aggr_adata.obs[cell_identity_key].astype(str)
-
-        try:
-            fit, design, genes = _fit_voom_model(
-                aggr_adata, groups, edger_preprocessing, verbosity
-            )
-        except (ValueError, np.linalg.LinAlgError) as e:
-            print("Error fitting model for", condition_group)
-            print("Error:", e)
-            print("Skipping...", flush=True)
-            continue
-
-        for cid in cids:
-            if reference_group is None:
-                cnd = level(condition_group, cid)
-                ref = level(f"not{condition_group}", cid)
-                contrast_key = f"{condition_group}_vs_rest"
-            else:
-                cnd = level(condition_group, cid)
-                ref = level(reference_group, cid)
-                contrast_key = f"{condition_group}_vs_{reference_group}"
-
-            if cid:
-                contrast_key = f"{cell_identity_key}:{cid}|{contrast_key}"
-
-            if cnd not in design.columns or ref not in design.columns:
-                if verbosity > 0:
-                    print(f"Skipping {contrast_key}: group not present after filtering")
-                continue
-
-            if verbosity > 0:
-                print(f"Computing contrast: {contrast_key}... ({cnd} - {ref})")
-
-            try:
-                tt = _top_table(fit, design, cnd, ref, genes)
-            except ValueError as e:  # e.g. no residual degrees of freedom
-                print("Error computing contrast", contrast_key)
-                print("Error:", e)
-                print("Skipping...", flush=True)
-                continue
-
-            tt["pct_expr_cnd"] = aggr_adata.var[f"pct_expr_{cnd}"].loc[tt.index]
-            tt["pct_expr_ref"] = aggr_adata.var[f"pct_expr_{ref}"].loc[tt.index]
-            tt["num_expr_cnd"] = aggr_adata.var[f"num_expr_{cnd}"].loc[tt.index]
-            tt["num_expr_ref"] = aggr_adata.var[f"num_expr_{ref}"].loc[tt.index]
-            tt["tot_expr_cnd"] = aggr_adata.var[f"tot_expr_{cnd}"].loc[tt.index]
-            tt["tot_expr_ref"] = aggr_adata.var[f"tot_expr_{ref}"].loc[tt.index]
-            tt["mean_cnd"] = tt["tot_expr_cnd"] / tt["num_expr_cnd"]
-            tt["mean_ref"] = tt["tot_expr_ref"] / tt["num_expr_ref"]
-            tt_dict[contrast_key] = tt
-
-    return tt_dict
+    return pseudobulk_contrasts(
+        aggr_adata,
+        group_key,
+        condition_group,
+        reference_group,
+        cell_identity_key,
+        fit=lambda aggr, design: _fit_voom_model(
+            aggr, design, edger_preprocessing, verbosity
+        ),
+        test=_top_table,
+        sample_key=sample_key if aggregate else None,
+        verbosity=verbosity,
+    )
 
 
 def _fit_voom_model(
     aggr_adata: AnnData,
-    groups: pd.Series,
+    design: pd.DataFrame,
     edger_preprocessing: bool,
     verbosity: int,
 ):
     import pylimma
-
-    design = pd.get_dummies(groups).astype(float)
-    if "replica" in aggr_adata.obs and aggr_adata.obs["replica"].nunique() > 1:
-        replica = aggr_adata.obs["replica"].astype(str)
-        # treatment coding, as R's model.matrix(~ 0 + group + replica)
-        replica_dummies = pd.get_dummies(replica, prefix="replica", drop_first=True)
-        design = design.join(replica_dummies.astype(float))
-    elif verbosity > 0:
-        print("Single replicate detected — dropping replica term from design.")
 
     X = aggr_adata.X.toarray() if issparse(aggr_adata.X) else aggr_adata.X
     counts = np.asarray(X, dtype=float).T  # genes x samples
@@ -276,7 +217,7 @@ def _fit_voom_model(
     if ne is not None and verbosity > 0:
         print("Non-estimable:", ne)
 
-    return fit, design, genes
+    return fit, genes
 
 
 def _top_table(fit, design: pd.DataFrame, cnd: str, ref: str, genes: np.ndarray):
