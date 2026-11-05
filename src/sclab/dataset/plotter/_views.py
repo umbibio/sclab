@@ -39,6 +39,7 @@ thread in a kernel. They are cached in memory, never in the h5ad, and redrawn
 when the data changes (``Plotter.data_hash`` or the number of cells).
 """
 
+import base64
 import io
 import json
 import re
@@ -345,6 +346,15 @@ def render_view(frame: dict, controls: dict, **kwargs) -> bytes:
     return render_png(frame, **kwargs)
 
 
+def _array(value) -> np.ndarray:
+    """A trace array; plotly>=6 widgets hold typed arrays as base64 dicts."""
+    if isinstance(value, dict) and "bdata" in value:
+        a = np.frombuffer(base64.b64decode(value["bdata"]), dtype=value["dtype"])
+        shape = value.get("shape")
+        return a.reshape([int(n) for n in str(shape).split(",")]) if shape else a
+    return np.asarray(value)
+
+
 def figure_png(
     fig: go.Figure, dpi: float = 100, minimal: bool = False, format: str = "png"
 ) -> bytes:
@@ -362,16 +372,18 @@ def figure_png(
     for i, t in enumerate(fig.data):
         if t.type not in ("scatter", "scattergl") or t.x is None or t.y is None:
             continue
-        x, y, mode = np.asarray(t.x), np.asarray(t.y), t.mode or "markers"
+        x, y, mode = _array(t.x), _array(t.y), t.mode or "markers"
         default = PALETTE[i % len(PALETTE)]
+        label = t.name if t.name and t.showlegend is not False else None
         if "lines" in mode:
-            ax.plot(x, y, color=_hex(t.line.color or default), linewidth=1)
+            ax.plot(x, y, color=_hex(t.line.color or default), linewidth=1, label=label)
+            label = None  # one legend entry per trace
         if "markers" in mode:
             color, cmap = t.marker.color, None
             if color is None or isinstance(color, str):
                 color = _hex(color or default)
             else:
-                color = np.asarray(color, dtype=float)
+                color = _array(color).astype(float)
                 scale = t.marker.colorscale
                 if scale is None and t.marker.coloraxis:
                     scale = layout[t.marker.coloraxis].colorscale
@@ -386,6 +398,7 @@ def figure_png(
                 s=(size * 0.72) ** 2,
                 linewidths=0,
                 alpha=t.opacity,
+                label=label,
             )
         drawn += 1
     if not drawn:
@@ -402,6 +415,8 @@ def figure_png(
         ax.set_xlabel(layout.xaxis.title.text or "")
         ax.set_ylabel(layout.yaxis.title.text or "")
         ax.set_title(layout.title.text or "")
+        if ax.get_legend_handles_labels()[1]:
+            ax.legend(loc="upper left", bbox_to_anchor=(1.01, 1), frameon=False)
         out.tight_layout()
     buffer = io.BytesIO()
     out.savefig(buffer, format=format, dpi=dpi)
@@ -570,7 +585,7 @@ class ViewGallery(VBox):
             description="PNG dpi",
             tooltip="Resolution of the PNG downloads (100: as on screen)",
             layout=Layout(width="125px", margin="2px"),
-            style={"description_width": "50px"},
+            style={"description_width": "initial"},
         )
         self.header = VBox([self.pin_button, self.dpi], layout=Layout(flex="0 0 auto"))
         self.cards = HBox(layout=Layout(width="100%", overflow="auto"))
