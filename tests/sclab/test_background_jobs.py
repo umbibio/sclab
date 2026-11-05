@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 import pytest
 import scanpy
+import scipy.sparse
 
 from sclab import SCLabDashboard
 from sclab._workspace import Workspace
@@ -70,6 +71,10 @@ def dash(renders):
     d = SCLabDashboard(simple_loop_adata(n_obs=300))
     run_step(d, "QC")
     run_step(d, "Preprocess")
+    adata = d.dataset.adata  # a stand-in graph: Cluster needs one to run
+    adata.uns["neighbors"] = {}
+    adata.obsp["connectivities"] = scipy.sparse.identity(adata.n_obs, format="csr")
+    d.broker.publish("dset_anndata_neighbors_change")
     d.broker.jobs.loop = FakeLoop()
     d.broker.jobs.beat_timeout = 0  # no frontend: resume on the timer
     return d
@@ -279,6 +284,32 @@ def test_worker_error_reaches_the_logs_and_the_button(dash, leiden):
     assert (entry["status"], entry["error"]) == ("failed", "ValueError: boom")
     assert any("ValueError: boom" in e for e in dash.broker.exceptions_log)
     assert "leiden" not in dash.dataset.adata.obs
+    assert "ValueError: boom (details in Logs)" in step.status.value  # in the panel
+    assert not step.run_button.disabled
+
+    leiden.body = lambda adata: None
+    click_run(dash, "Cluster")
+    dash.broker.jobs.loop.pump(dash.broker.jobs)
+    assert step.run_button.button_style == "success"
+    assert step.status.value == ""  # cleared by the successful run
+
+
+def test_validation_does_not_unlock_controls_during_a_job(dash, leiden):
+    step = click_run(dash, "Cluster")
+    jobs = dash.broker.jobs
+    assert leiden.started.wait(10)
+    umap = dash.processor.steps["UMAP"]
+    assert umap.run_button.disabled  # locked
+    umap.refresh()  # e.g. a dataset event while the job runs
+    assert umap.run_button.disabled and step.run_button.disabled
+    leiden.release.set()
+    jobs.loop.pump(jobs)
+    assert not umap.run_button.disabled and not step.run_button.disabled
+
+    del dash.dataset.adata.obsp["connectivities"]  # without the graph
+    step = click_run(dash, "Cluster")  # a stale frontend: refused, and shown
+    assert not jobs.busy
+    assert "Run the Neighbors step first" in step.status.value
 
 
 @pytest.mark.parametrize("background", [False, True])
@@ -294,6 +325,7 @@ def test_failed_redraw_turns_the_button_red(dash, renders, background):
     assert any("render failed" in e for e in dash.broker.exceptions_log)
     assert step.run_button.button_style == "danger"
     assert dash.processor.step_history[-1]["status"] == "success"  # the data step
+    assert "updating the dashboard failed (details in Logs)" in step.status.value
 
 
 def test_controls_are_locked_while_a_job_runs(dash, leiden):
@@ -328,6 +360,9 @@ def test_workspace_refuses_to_switch_or_merge_during_a_job(renders, leiden):
     )
     jobs = ws.dash.broker.jobs
     jobs.loop, jobs.beat_timeout = FakeLoop(), 0
+    adata = ws.dash.dataset.adata  # a stand-in graph: Cluster needs one to run
+    adata.uns["neighbors"] = {}
+    adata.obsp["connectivities"] = scipy.sparse.identity(adata.n_obs, format="csr")
     click_run(ws.dash, "Cluster")
     assert leiden.started.wait(10)
 

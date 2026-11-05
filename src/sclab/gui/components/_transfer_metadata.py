@@ -6,6 +6,8 @@ from pandas.api.types import is_numeric_dtype
 from sclab.dataset.processor import Processor
 from sclab.dataset.processor._codegen import ADATA, call
 from sclab.dataset.processor.step import ProcessorStepBase
+from sclab.event._jobs import capture
+from sclab.examples.processor_steps._neighbors import missing_neighbors
 
 
 class TransferMetadata(ProcessorStepBase):
@@ -84,14 +86,24 @@ class TransferMetadata(ProcessorStepBase):
         self._update_numeric_column_controls()
 
         self.variable_controls["group_key"].observe(
-            self._update_source_group_options, "value", "change"
+            self.guarded(self._update_source_group_options), "value", "change"
         )
         self.variable_controls["column"].observe(
-            self._update_numeric_column_controls, "value", "change"
+            self.guarded(self._update_numeric_column_controls), "value", "change"
         )
         self.variable_controls["periodic"].observe(
             self._update_vmin_vmax_visibility, "value", "change"
         )
+
+    def validate(self, params: dict) -> str | None:
+        for key, label in [
+            ("group_key", "Group Key"),
+            ("source_group", "Source Group"),
+            ("column", "Column"),
+        ]:
+            if params.get(key) in (None, ""):
+                return f"Choose a '{label}'"
+        return missing_neighbors(self.parent.dataset.adata)
 
     def _update_groupby_options(self, *args, **kwargs):
         metadata = self.parent.dataset._metadata.select_dtypes(include=["category"])
@@ -183,7 +195,7 @@ class TransferMetadata(ProcessorStepBase):
         from ...preprocess._transfer_metadata import transfer_metadata
 
         self.output.clear_output(wait=True)
-        with self.output:
+        with capture(self.output):
             transfer_metadata(
                 self.parent.dataset.adata,
                 group_key=group_key,

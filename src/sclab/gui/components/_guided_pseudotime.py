@@ -10,6 +10,7 @@ from plotly.subplots import make_subplots
 from sclab.dataset.processor import Processor
 from sclab.dataset.processor._codegen import ADATA, call
 from sclab.dataset.processor.step import ProcessorStepBase
+from sclab.event._jobs import capture
 
 # TODO: remove self.drawn_path and self.drawn_path_residue from the class
 #       and add them to the dataset as _drawn_path and _drawn_path_residue
@@ -92,22 +93,23 @@ class GuidedPseudotime(ProcessorStepBase):
             fixed_params={},
             variable_controls=variable_controls,
         )
-        self.run_button.disabled = True
         self.run_button.button_style = ""
         self.estimate_start_time_button.layout.visibility = "hidden"
         self.estimate_start_time_button.layout.height = "0px"
 
-        self.start_drawing_button.on_click(self.toggle_drawing_callback)
-        self.plot_signal.on_click(self.send_signal_plot)
+        self.start_drawing_button.on_click(self.guarded(self.toggle_drawing_callback))
+        self.plot_signal.on_click(self.guarded(self.send_signal_plot))
         self.estimate_start_time_button.on_click(
-            self.estimate_periodic_pseudotime_start
+            self.guarded(self.estimate_periodic_pseudotime_start)
         )
-        self.plot_fitted_pseudotime_curve.on_click(self.send_fitted_pseudotime_plot)
+        self.plot_fitted_pseudotime_curve.on_click(
+            self.guarded(self.send_fitted_pseudotime_plot)
+        )
         self.variable_controls["use_rep"].observe(
             self.update_buttons_state, names="value", type="change"
         )
         self.variable_controls["residue_threshold"].observe(
-            self._assign_drawn_path_values, names="value", type="change"
+            self.guarded(self._assign_drawn_path_values), names="value", type="change"
         )
 
         self.variable_controls["use_rep"].observe(
@@ -128,7 +130,9 @@ class GuidedPseudotime(ProcessorStepBase):
         self.auto_drawing_button = Button(
             description="Automatic Drawing", button_style="primary"
         )
-        self.auto_drawing_button.on_click(self._automatic_periodic_path_drawing)
+        self.auto_drawing_button.on_click(
+            self.guarded(self._automatic_periodic_path_drawing)
+        )
 
         self.plot_signal = Button(
             description="Plot Signal", button_style="info", disabled=True
@@ -151,16 +155,27 @@ class GuidedPseudotime(ProcessorStepBase):
             *self.variable_controls.values(),
             self.plot_signal,
             self.run_button,
+            self.status,
             self.plot_fitted_pseudotime_curve,
             self.estimate_start_time_button,
             self.output,
         ]
         super().make_controls()
 
+    def validate(self, params: dict) -> str | None:
+        adata = self.parent.dataset.adata
+        if params.get("use_rep") not in adata.obsm:
+            return "Choose a 'Use rep.' representation"
+        if self.start_drawing_button.description != "Start Drawing":
+            return "Finish drawing first"
+        if "drawn_path" not in adata.uns or "drawn_path" not in adata.obs:
+            return "Draw a path first (Start Drawing or Automatic Drawing)"
+        return None
+
     def update_buttons_state(self, *args, **kwargs):
+        self.refresh()  # the Run button: see validate
         drawing = self.start_drawing_button.description != "Start Drawing"
         if self.variable_controls["use_rep"].value is None or drawing:
-            self.run_button.disabled = True
             self.run_button.button_style = ""
 
             self.plot_signal.disabled = True
@@ -176,7 +191,6 @@ class GuidedPseudotime(ProcessorStepBase):
 
             return
 
-        self.run_button.disabled = False
         self.run_button.button_style = "primary"
 
         self.plot_signal.disabled = False
@@ -362,7 +376,7 @@ class GuidedPseudotime(ProcessorStepBase):
         periodic = self.parent.dataset.adata.uns["drawn_path"]["path_is_closed"]
 
         self.output.clear_output(wait=True)
-        with self.output:
+        with capture(self.output):
             pseudotime(
                 adata=self.parent.dataset.adata,
                 use_rep=use_rep,
@@ -524,6 +538,7 @@ class GuidedPseudotime(ProcessorStepBase):
             periodic=path_is_closed,
             path_is_closed=path_is_closed,
         )
+        self.refresh()
 
     def dplt_soft_path_computed_callback(
         self,

@@ -3,6 +3,7 @@ from ipywidgets import Checkbox, Dropdown
 from sclab.dataset.processor import Processor
 from sclab.dataset.processor._codegen import ADATA, call
 from sclab.dataset.processor.step import ProcessorStepBase
+from sclab.event._jobs import capture
 from sclab.preprocess import preprocess
 from sclab.utils import layer_keys, text_or_category_columns
 
@@ -80,6 +81,17 @@ class Preprocess(ProcessorStepBase):
             variable_controls=variable_controls,
         )
 
+    def validate(self, params: dict) -> str | None:
+        dataset = self.parent.dataset
+        if (params.get("layer") or dataset.counts_layer) not in layer_keys(
+            dataset.adata
+        ):
+            return "Choose a 'Layer' with raw counts"
+        group_by = params.get("group_by")
+        if group_by is not None and group_by not in dataset.adata.obs:
+            return f"No column {group_by!r} in the data"
+        return None
+
     def resolved_params(self, params: dict) -> dict:
         resolved = super().resolved_params(params)
         if resolved.get("layer") is None:
@@ -115,7 +127,7 @@ class Preprocess(ProcessorStepBase):
         start_n_cells, start_n_genes = adata.shape
 
         self.output.clear_output(wait=True)
-        with self.output:  # the library's progress bar
+        with capture(self.output):  # the library's progress bar
             preprocess(
                 adata,
                 counts_layer=layer or dataset.counts_layer,

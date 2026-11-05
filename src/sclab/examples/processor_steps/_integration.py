@@ -3,6 +3,7 @@ from ipywidgets import Dropdown, IntText
 from sclab.dataset.processor import Processor
 from sclab.dataset.processor._codegen import ADATA, call
 from sclab.dataset.processor.step import ProcessorStepBase
+from sclab.event._jobs import capture
 from sclab.utils import text_or_category_columns
 
 
@@ -41,7 +42,8 @@ class Integration(ProcessorStepBase):
             ),
             group_by=Dropdown(
                 options=cat_options,
-                value="batch" if "batch" in cat_options else None,
+                # the dashboard's batch key ("batch" if there is such a column)
+                value=parent.batch_key if parent.batch_key in cat_options else None,
                 description="GroupBy",
             ),
             reference_batch=Dropdown(
@@ -78,15 +80,41 @@ class Integration(ProcessorStepBase):
             }
             variable_controls["reference_batch"].options = options
 
-        variable_controls["group_by"].observe(update_reference_batch, names="value")
-
         super().__init__(
             parent=parent,
             fixed_params={},
             variable_controls=variable_controls,
         )
 
+        variable_controls["group_by"].observe(
+            self.guarded(update_reference_batch), names="value"
+        )
         update_reference_batch()
+
+    def validate(self, params: dict) -> str | None:
+        obs = self.parent.dataset.adata.obs
+        group_by, flavor = params.get("group_by"), params.get("flavor")
+        if group_by is None:
+            return "Choose a 'GroupBy' column with at least 2 batches"
+        if group_by not in obs:
+            return f"No column {group_by!r} in the data"
+        groups = obs[group_by].dropna().unique()
+        if len(groups) < 2:
+            return f"{group_by!r} has a single batch: integration needs at least 2"
+        if flavor == "cca" and len(groups) != 2:
+            return f"CCA integrates 2 batches, {group_by!r} has {len(groups)}"
+        use_rep = params.get("use_rep")
+        if use_rep is None and flavor != "cca":  # cca can use X
+            return "Choose a 'Use rep.' representation (run PCA first)"
+        if use_rep is not None and use_rep not in self.parent.dataset.adata.obsm:
+            return f"No representation {use_rep!r} in the data"
+        reference = params.get("reference_batch")
+        if reference is not None:
+            if flavor == "cca":
+                return "CCA does not take a reference batch: clear it or use harmony"
+            if reference not in groups:
+                return f"Reference batch {reference!r} is not in {group_by!r}"
+        return None
 
     @staticmethod
     def _kwargs(
@@ -135,7 +163,7 @@ class Integration(ProcessorStepBase):
         )
 
         self.broker.std_output.clear_output(wait=False)
-        with self.broker.std_output:
+        with capture(self.broker.std_output):
             match flavor:
                 case "cca":
                     from sclab.preprocess import cca_integrate

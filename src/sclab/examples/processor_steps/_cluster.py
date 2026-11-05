@@ -4,6 +4,8 @@ from sclab.dataset.processor import Processor
 from sclab.dataset.processor._codegen import ADATA, call
 from sclab.dataset.processor.step import ProcessorStepBase
 
+from ._neighbors import missing_neighbors
+
 
 class Cluster(ProcessorStepBase):
     """Leiden graph-based clustering step.
@@ -39,6 +41,9 @@ class Cluster(ProcessorStepBase):
             fixed_params={},
             variable_controls=variable_controls,
         )
+
+    def validate(self, params: dict) -> str | None:
+        return missing_neighbors(self.parent.dataset.adata)
 
     def to_code(self, params: dict) -> str:
         return call(

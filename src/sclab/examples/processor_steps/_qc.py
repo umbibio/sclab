@@ -57,6 +57,14 @@ class QC(ProcessorStepBase):
             variable_controls=variable_controls,
         )
 
+    def validate(self, params: dict) -> str | None:
+        dataset = self.parent.dataset
+        if (params.get("layer") or dataset.counts_layer) not in layer_keys(
+            dataset.adata
+        ):
+            return "Choose a 'Layer' with raw counts"
+        return None
+
     def resolved_params(self, params: dict) -> dict:
         resolved = super().resolved_params(params)
         if resolved.get("layer") is None:

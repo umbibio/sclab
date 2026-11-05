@@ -3,6 +3,8 @@ from ipywidgets import Checkbox, IntText
 from sclab.dataset.processor import Processor
 from sclab.dataset.processor._codegen import ADATA, call
 from sclab.dataset.processor.step import ProcessorStepBase
+
+from ._neighbors import missing_neighbors
 from sclab.tools.embedding import umap
 
 
@@ -38,6 +40,9 @@ class UMAP(ProcessorStepBase):
             fixed_params={},
             variable_controls=variable_controls,
         )
+
+    def validate(self, params: dict) -> str | None:
+        return missing_neighbors(self.parent.dataset.adata)
 
     def to_code(self, params: dict) -> str:
         return call(

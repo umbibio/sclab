@@ -187,13 +187,6 @@ class DifferentialExpression(ProcessorStepBase):
             name=Text(description="Name", value="", continuous_update=False),
         )
 
-        variable_controls["groupby"].observe(
-            self._update_groups_options, "value", "change"
-        )
-        variable_controls["groupby"].observe(
-            self._update_reference_options, "value", "change"
-        )
-
         results = DifferentialExpressionResults(parent.dataset)
         super().__init__(
             parent=parent,
@@ -201,6 +194,30 @@ class DifferentialExpression(ProcessorStepBase):
             variable_controls=variable_controls,
             results=results,
         )
+
+        variable_controls["groupby"].observe(
+            self.guarded(self._update_groups_options), "value", "change"
+        )
+        variable_controls["groupby"].observe(
+            self.guarded(self._update_reference_options), "value", "change"
+        )
+
+    def validate(self, params: dict) -> str | None:
+        adata = self.parent.dataset.adata
+        groupby = params.get("groupby")
+        if groupby is None:
+            return "Choose a 'Group by' column with at least 2 groups"
+        if groupby not in adata.obs:
+            return f"No column {groupby!r} in the data"
+        if adata.obs[groupby].nunique() < 2:
+            return f"{groupby!r} has a single group: comparing needs at least 2"
+        groups = params.get("groups")  # empty or "all": all
+        if groups and groups != "all" and set(groups) <= {params.get("reference")}:
+            return "Choose a group other than the reference"
+        layer = params.get("layer")
+        if layer is not None and layer not in layer_keys(adata):
+            return f"No layer {layer!r} in the data"
+        return None
 
     def _key_added(self, name: str | None) -> str:
         """``differential_expression[_{name}]``, numbered if already in uns."""

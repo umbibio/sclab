@@ -144,6 +144,7 @@ class Processor(EventClient):
         self.selection_controls_container = VBox(layout=dict(width="100%"))
         self.selection_labeling_controls_dict = {}
         self.selection_buttons_dict = {}
+        self.selection_status = HTML()  # the last Keep/Drop/Label error, if any
         self.all_controls_list = []
         # a dataset saved by sclab carries its history; summarized, display-only
         self.step_history = _history.loads_uns(self.dataset.adata)
@@ -210,6 +211,8 @@ class Processor(EventClient):
         self.plotter.data_hash = self.data_hash  # for pinned views
         self.add_step_func("filter_rows", self.filter_rows, use_run_button=False)
         self.add_step_func("apply_label", self.apply_label, use_run_button=False)
+        for name in ("filter_rows", "apply_label"):  # their panels are not shown
+            self.steps[name].status = self.selection_status
 
         if "batch" in self.dataset.adata.obs.columns and not batch_key:
             batch_key = "batch"
@@ -356,6 +359,8 @@ class Processor(EventClient):
             # we register the new steps
             for step in steps_list:
                 self.steps[step.description] = step
+                if isinstance(step, ProcessorStepBase):
+                    step.refresh()  # enable its Run button if its inputs are valid
 
     def add_step_func(
         self,
@@ -755,6 +760,7 @@ class Processor(EventClient):
                     ],
                     titles=["Label", "Keep/Drop"],
                 ),
+                self.selection_status,
             ]
         )
 
@@ -1202,16 +1208,24 @@ class Processor(EventClient):
         if column == "":
             return
 
-        if (params := self._selection_params()) is not None:
-            self.steps["apply_label"].run(**params, column=column, label=label)
+        self._run_on_selection("apply_label", column=column, label=label)
 
     def dspr_keep_selected_click_callback(self):
-        if (params := self._selection_params()) is not None:
-            self.steps["filter_rows"].run(**params)
+        self._run_on_selection("filter_rows")
 
     def dspr_drop_selected_click_callback(self):
-        if (params := self._selection_params()) is not None:
-            self.steps["filter_rows"].run(**params, drop=True)
+        self._run_on_selection("filter_rows", drop=True)
+
+    def _run_on_selection(self, step: str, **params):
+        """Run ``step`` on the selection, if any; its errors show below the buttons."""
+        from .step._processor_step_base import error_html
+
+        try:
+            if (selection := self._selection_params()) is not None:
+                self.steps[step].run(**selection, **params)
+        except Exception as e:  # e.g. a background job runs
+            self.broker._log_exception(e)
+            self.selection_status.value = error_html(e)
 
     def dplt_selected_points_change_callback(self, new_value: pd.Index | None):
         # a new plot selection replaces the previous one; the filters stay

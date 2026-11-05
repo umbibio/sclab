@@ -227,11 +227,9 @@ def test_label_follows_history_and_views_of_the_active_dataset(files, tmp_path):
     assert ws.selector.value == "a"
     run_step(ws.dash, "QC")
     assert "modified" in labels(ws)[0] and "clean" in labels(ws)[1]
+    watcher = ws._watcher
     ws.activate("b")
-    assert (
-        "dset_state_change" not in broker._subscribers
-        or not broker._subscribers["dset_state_change"]
-    )
+    assert watcher not in broker._subscribers.get("dset_state_change", [])
     run_step(ws.dash, "QC")
     assert "modified" in labels(ws)[1]
 

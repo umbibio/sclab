@@ -127,6 +127,7 @@ class EventBroker:
             self._publish(event, *args, **kwargs)
 
     def _publish(self, event: str, *args, **kwargs):
+        owner = None  # of the running callback: shows its error, if it can
         try:
             self.depth += 1
             tab = " " * self.depth * 4
@@ -168,9 +169,11 @@ class EventBroker:
                         with self.execution_output.output:
                             display(HTML(f"<pre>{msg}</pre>"))
 
+                        owner = getattr(callback, "__self__", None)
                         callback(*args, **kwargs)
         except Exception as e:
             self._log_exception(e, tab)
+            self._show_error(owner, e)
 
         finally:
             self.depth -= 1
@@ -187,6 +190,15 @@ class EventBroker:
 
         with self.exceptions_output.output:
             display(HTML(f"<pre>{traceback.format_exc()}</pre>"))
+
+    def _show_error(self, owner, e: Exception):
+        """Show ``e`` where the user is: the panel of the callback's owner (a step)."""
+        if (show := getattr(owner, "show_error", None)) is None:
+            return
+        try:
+            show(e)
+        except Exception as e2:
+            self._log_exception(e2)
 
     @contextmanager
     def batch(self):
@@ -259,6 +271,7 @@ class EventBroker:
             fn(*args, **kwargs)
         except Exception as e:
             self._log_exception(e)
+            self._show_error(getattr(key, "__self__", None), e)
 
     def disable_event(self, event: str):
         self._disabled_events.append(event)

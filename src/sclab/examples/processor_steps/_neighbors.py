@@ -6,6 +6,13 @@ from sclab.dataset.processor.step import ProcessorStepBase
 from sclab.preprocess import neighbors
 
 
+def missing_neighbors(adata) -> str | None:
+    """A step's :meth:`validate` reason if ``adata`` has no neighbor graph."""
+    if "neighbors" not in adata.uns or "connectivities" not in adata.obsp:
+        return "Run the Neighbors step first"
+    return None
+
+
 class Neighbors(ProcessorStepBase):
     """k-nearest-neighbor graph construction step.
 
@@ -66,6 +73,12 @@ class Neighbors(ProcessorStepBase):
             fixed_params={},
             variable_controls=variable_controls,
         )
+
+    def validate(self, params: dict) -> str | None:
+        adata = self.parent.dataset.adata
+        if params.get("use_rep") not in adata.obsm:
+            return "Choose a 'Use rep.' representation (run PCA first)"
+        return None
 
     def resolved_params(self, params: dict) -> dict:
         return {**super().resolved_params(params), "batch_key": self.parent.batch_key}

@@ -28,6 +28,8 @@ class PCA(ProcessorStepBase):
     name: str = "pca"
     description: str = "PCA"
     background = True
+    _checked_X = None  # the adata.X last checked by validate, and the result
+    _X_is_raw = False
 
     def __init__(self, parent: Processor) -> None:
         try:
@@ -60,15 +62,26 @@ class PCA(ProcessorStepBase):
             button_style="info",
             disabled=True,
         )
-        self.plot_variance_ratio_button.on_click(self.plot_variance_ratio_callback)
+        self.plot_variance_ratio_button.on_click(
+            self.guarded(self.plot_variance_ratio_callback)
+        )
 
         self.controls_list = [
             *self.variable_controls.values(),
             self.run_button,
             self.plot_variance_ratio_button,
+            self.status,
             self.output,
         ]
         return super().make_controls()
+
+    def validate(self, params: dict) -> str | None:
+        X = self.parent.dataset.adata.X
+        if self._checked_X is not X:  # checked once per matrix: it reads all values
+            self._checked_X, self._X_is_raw = X, looks_like_raw_counts(X)
+        if self._X_is_raw:
+            return "adata.X looks like raw counts. Run the Preprocess step first"
+        return None
 
     def resolved_params(self, params: dict) -> dict:
         return {
@@ -98,14 +111,6 @@ class PCA(ProcessorStepBase):
         zero_center: bool = False,
         random_state: int = 0,
     ):
-        adata = self.parent.dataset.adata
-
-        if looks_like_raw_counts(adata.X):
-            raise ValueError(
-                "PCA expects preprocessed data in adata.X, but it looks like "
-                "raw counts. Run the Preprocess step first."
-            )
-
         yield from self.compute(
             pca,
             n_comps=n_comps,

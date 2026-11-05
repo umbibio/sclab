@@ -323,9 +323,11 @@ class TestPCA:
     def test_refuses_raw_counts_in_X(self):
         d = SCLabDashboard(make_adata())
         step = d.processor.steps["PCA"]
-        _, ok = run_step(d, "PCA")
-        assert not ok
-        assert "Run the Preprocess step first" in d.broker.exceptions_log[-1]
+        assert step.run_button.disabled
+        assert "Run the Preprocess step first" in step.status.value
+        with pytest.raises(ValueError, match="Run the Preprocess step first"):
+            step.run()
+        assert d.processor.step_history == []
         assert "X_pca" not in d.dataset.adata.obsm
         assert step.plot_variance_ratio_button.disabled is True
 
@@ -424,23 +426,19 @@ class TestIntegration:
         assert Z.shape[0] == emb.shape[0] and np.isfinite(Z).all()
         assert _batch_gap(Z, is_b2) < _batch_gap(emb, is_b2)
 
-    def test_cca_with_reference_batch_fails(self, dash, shifted_embedding):
+    def test_cca_with_reference_batch_is_refused(self, dash, shifted_embedding):
         before = set(dash.dataset.adata.obsm)
-        n_exc = len(dash.broker.exceptions_log)
-        step, ok = run_step(
-            dash,
-            "Integration",
-            use_rep="X_emb",
-            group_by="batch",
-            flavor="cca",
-            reference_batch="b1",
-            max_iters=5,
-        )
-        assert not ok
-        assert step.run_button.button_style == "danger"
+        hist = len(dash.processor.step_history)
+        with pytest.raises(ValueError, match="CCA does not take a reference batch"):
+            dash.processor.steps["Integration"].run(
+                use_rep="X_emb",
+                group_by="batch",
+                flavor="cca",
+                reference_batch="b1",
+                max_iters=5,
+            )
         assert set(dash.dataset.adata.obsm) == before
-        errors = dash.broker.exceptions_log[n_exc:]
-        assert any("reference_batch is not supported" in e for e in errors)
+        assert len(dash.processor.step_history) == hist  # nothing recorded
 
     def test_unknown_flavor_fails_without_side_effects(self, dash, shifted_embedding):
         before = set(dash.dataset.adata.obsm)
@@ -464,17 +462,15 @@ class TestIntegration:
         )
         assert "Unknown flavor: bogus" in dash.broker.exceptions_log[-1]
 
-    def test_missing_group_column_fails(self, dash, shifted_embedding):
-        step, ok = run_step(
-            dash,
-            "Integration",
-            use_rep="X_emb",
-            group_by="no_such_column",
-            flavor="harmony",
-            reference_batch=None,
-            max_iters=5,
-        )
-        assert not ok
+    def test_missing_group_column_is_refused(self, dash, shifted_embedding):
+        with pytest.raises(ValueError, match="No column 'no_such_column'"):
+            dash.processor.steps["Integration"].run(
+                use_rep="X_emb",
+                group_by="no_such_column",
+                flavor="harmony",
+                reference_batch=None,
+                max_iters=5,
+            )
 
     def test_reference_options_follow_group_by(self, dash):
         controls = dash.processor.steps["Integration"].variable_controls
@@ -632,7 +628,7 @@ class TestDoubletDetection:
         used = []
         monkeypatch.setattr(mod, function, lambda **kw: used.append(kw["random_state"]))
         step.run(flavor=flavor)  # flavor need not be installed: the call is faked
-        assert step.run_button.button_style == "success"
+        assert d.processor.step_history[-1]["status"] == "success"
         assert used == [seed]
         entry = d.processor.step_history[-1]
         assert entry["params"]["random_state"] == seed  # explicit in the history
@@ -937,17 +933,15 @@ class TestDifferentialExpressionStep:
         assert shown[-1]["names"].tolist() == [str(g) for g in res["names"]["A"]]
         dash.main_content.selected_index = 0
 
-    def test_missing_groupby_fails(self, dash):
-        step, ok = run_step(
-            dash,
-            "Differential Expression",
-            groupby=None,
-            groups="all",
-            reference="rest",
-            layer=None,
-            name="bad",
-        )
-        assert not ok
+    def test_missing_groupby_is_refused(self, dash):
+        with pytest.raises(ValueError, match="Choose a 'Group by' column"):
+            dash.processor.steps["Differential Expression"].run(
+                groupby=None,
+                groups="all",
+                reference="rest",
+                layer=None,
+                name="bad",
+            )
         assert "differential_expression_bad" not in dash.dataset.adata.uns
 
     def test_empty_groups_means_all(self, dash):

@@ -76,10 +76,16 @@ class GeneExpression(ProcessorStepBase):
             variable_controls=variable_controls,
         )
 
-        self.variable_controls["gene_input"].observe(self.send_plot, names="value")
-        self.variable_controls["layer"].observe(self.send_plot, names="value")
-        self.variable_controls["time_key"].observe(self.send_plot, names="value")
-        self.variable_controls["colorscale"].observe(self.send_plot, names="value")
+        send_plot = self.guarded(self.send_plot)
+        for key in ("gene_input", "layer", "time_key", "colorscale"):
+            self.variable_controls[key].observe(send_plot, names="value")
+
+    def validate(self, params: dict) -> str | None:
+        if not params.get("gene_input"):
+            return "Choose a gene"
+        if not params.get("layer"):
+            return "Choose a layer"
+        return None
 
     def dset_total_vars_change_callback(self, *args, **kwargs):
         control = self.variable_controls["gene_input"]

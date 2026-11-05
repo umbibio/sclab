@@ -38,7 +38,7 @@ import ctypes
 import sys
 import threading
 import time
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from html import escape
 
 from ipywidgets import HTML, Button, HBox, Layout, Play, VBox
@@ -54,6 +54,23 @@ class _Beat(Play):
     """
 
     value = CInt(0).tag(sync=True, echo_update=False)
+
+
+@contextmanager
+def capture(output):
+    """``with output:`` (an ``Output`` widget) that lets exceptions propagate.
+
+    In a kernel ``Output.__exit__`` shows the traceback in the widget and
+    swallows the exception: a failing step would carry on as if it succeeded.
+    """
+    error = None
+    with output:
+        try:
+            yield
+        except BaseException as e:  # noqa: BLE001 - re-raised below
+            error = e
+    if error is not None:
+        raise error
 
 
 class StepCancelled(KeyboardInterrupt):
@@ -201,7 +218,7 @@ class JobRunner:
         On the main thread (:meth:`run`) the Output widget itself; in the
         worker nothing, as the runner already collects what it prints.
         """
-        return nullcontext() if self.is_worker() else self.broker.std_output
+        return nullcontext() if self.is_worker() else capture(self.broker.std_output)
 
     def run(self, job):
         """Drive ``job`` to its end on this thread, in one batch."""
@@ -386,6 +403,13 @@ class JobRunner:
             if hasattr(widget, "disabled") and id(widget) not in self._locked:
                 self._locked[id(widget)] = (widget, widget.disabled)
                 widget.disabled = True
+
+    def set_disabled(self, widget, disabled: bool):
+        """Set ``widget.disabled``; while the job locks it, the state it gets back."""
+        if id(widget) in self._locked:
+            self._locked[id(widget)] = (widget, disabled)
+        else:
+            widget.disabled = disabled
 
     def _unlock(self):
         for widget, disabled in self._locked.values():

@@ -304,12 +304,13 @@ def test_load_line_from_path(tmp_path):
 # --------------------------------------------------------------------------
 def test_skips_failed_and_plot_only_steps():
     dash = SCLabDashboard(make_adata())
-    dash.processor.steps["PCA"].run()  # fails: raw counts in X
-    assert dash.processor.step_history[-1]["status"] == "failed"
     run_steps(dash, BASE)
-    dash.processor.steps["Gene Expression"].run()
+    dash.processor.steps["Integration"].run(use_rep="X_pca", flavor="bogus")
+    assert dash.processor.step_history[-1]["status"] == "failed"
+    dash.processor.steps["Gene Expression"].run(gene_input="var_0001", layer="counts")
     code = dash.generate_code()
     assert code.count("# PCA\n") == 1
+    assert "Integration" not in code
     assert "Gene Expression" not in code
 
 

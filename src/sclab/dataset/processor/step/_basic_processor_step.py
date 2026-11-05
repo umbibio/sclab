@@ -13,6 +13,7 @@ from ipywidgets.widgets.widget_description import DescriptionWidget
 
 from ....event import EventClient
 from .._processor import Processor
+from ._processor_step_base import error_html
 
 
 class BasicProcessorStep(EventClient):
@@ -82,6 +83,7 @@ class BasicProcessorStep(EventClient):
         self.fixed_params = fixed_params
         self.variable_controls = variable_controls
         self.output = Output()
+        self.status = HTML()  # the last error, if any
 
         controls = []
         for control in self.variable_controls.values():
@@ -95,6 +97,7 @@ class BasicProcessorStep(EventClient):
             self.run_button.on_click(self.callback)
             controls.append(self.run_button)
 
+        controls.append(self.status)
         controls.append(self.output)
         self.controls = VBox(controls)
         super().__init__(parent.broker)
@@ -131,6 +134,7 @@ class BasicProcessorStep(EventClient):
 
                 if self.use_run_button:
                     self.run_button.button_style = "success"
+                self.status.value = ""
 
                 self.broker.publish(
                     f"step_{self.function_name}_ended", status="success"
@@ -153,6 +157,7 @@ class BasicProcessorStep(EventClient):
 
                 with self.broker.exceptions_output.output:
                     display(HTML(f"<pre>{traceback.format_exc()}</pre>"))
+                self.status.value = error_html(e)
 
             finally:
                 if self.use_run_button:
