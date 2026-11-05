@@ -1,3 +1,4 @@
+import warnings
 from importlib.util import find_spec
 
 import pandas as pd
@@ -32,6 +33,12 @@ def pseudobulk_edger(
     """
     Fits a model using edgeR and computes top tags for a given condition vs
     reference group.
+
+    .. deprecated:: 0.5.0
+        Use :func:`pseudobulk_edgepython` (pure Python, no R needed) or
+        ``sclab.tools.differential_expression(adata, ..., method="pseudobulk_edger")``.
+        This R-backed function still works but will be removed in a future
+        release.
 
     Parameters
     ----------
@@ -103,6 +110,12 @@ def pseudobulk_edger(
     powerful than a multi-replicate design; results should be interpreted
     with additional caution.
     """
+    warnings.warn(
+        "pseudobulk_edger (R) is deprecated; use pseudobulk_edgepython or "
+        "sclab.tools.differential_expression(method='pseudobulk_edger').",
+        FutureWarning,
+        stacklevel=2,
+    )
     _try_imports()
     import anndata2ri  # noqa: F401
     import rpy2.robjects as robjects

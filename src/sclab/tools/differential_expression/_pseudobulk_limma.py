@@ -1,3 +1,4 @@
+import warnings
 from importlib.util import find_spec
 
 import pandas as pd
@@ -30,6 +31,12 @@ def pseudobulk_limma(
     check_counts: bool = True,
 ) -> dict[str, pd.DataFrame]:
     """Pseudobulk differential expression analysis using limma-voom.
+
+    .. deprecated:: 0.5.0
+        Use :func:`pseudobulk_pylimma` (pure Python, no R needed) or
+        ``sclab.tools.differential_expression(adata, ..., method="pseudobulk_limma")``.
+        This R-backed function still works but will be removed in a future
+        release.
 
     Aggregates single cells into pseudobulk samples, then fits a linear
     model with limma-voom (via R) and computes top-table statistics for
@@ -104,6 +111,12 @@ def pseudobulk_limma(
     powerful than a multi-replicate design; results should be interpreted
     with additional caution.
     """
+    warnings.warn(
+        "pseudobulk_limma (R) is deprecated; use pseudobulk_pylimma or "
+        "sclab.tools.differential_expression(method='pseudobulk_limma').",
+        FutureWarning,
+        stacklevel=2,
+    )
     _try_imports()
     import anndata2ri
     import rpy2.robjects as robjects
