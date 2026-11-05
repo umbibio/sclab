@@ -144,6 +144,15 @@ def _shape_lines(shape: dict) -> tuple[list[str], str]:
     return lines, term
 
 
+def _isin_term(column: str, values: list) -> str:
+    """``adata.obs[column].isin([...])``, one value per line if it is long."""
+    term = f"adata.obs[{_lit(column)}].isin({_lit(values)})"
+    if len(term) + len("mask &= ") <= 88:
+        return term
+    items = "".join(f"        {_lit(v)},\n" for v in values)
+    return f"adata.obs[{_lit(column)}].isin(\n    [\n{items}    ]\n)"
+
+
 def _mask_lines(params: dict) -> list[str]:
     setup, terms = [], []
     for column, f in (params.get("filters") or {}).items():
@@ -151,7 +160,7 @@ def _mask_lines(params: dict) -> list[str]:
             lo, hi = f["between"]
             terms.append(f"adata.obs[{_lit(column)}].between({_lit(lo)}, {_lit(hi)})")
         else:
-            terms.append(f"adata.obs[{_lit(column)}].isin({_lit(list(f['isin']))})")
+            terms.append(_isin_term(column, list(f["isin"])))
     if params.get("shape"):
         setup, term = _shape_lines(params["shape"])
         terms.append(term)

@@ -350,3 +350,15 @@ def test_label_on_bool_column(dash):
     label(dash, "flag", "", new=False)  # clearing makes the column nullable
     assert str(dash.dataset.adata.obs["flag"].dtype) == "boolean"
     assert_reproduced(dash, ["flag"])
+
+
+def test_long_isin_filter_is_wrapped():
+    adata = anndata.AnnData(np.zeros((60, 1)))
+    names = [f"a_rather_long_cluster_name_{i}" for i in range(60)]
+    adata.obs["cluster_name"] = names
+    code = filter_rows_code({"filters": {"cluster_name": {"isin": names[::2]}}})
+    assert all(len(line) < 100 for line in code.splitlines())
+    assert len(code.splitlines()) > 30  # one value per line
+    namespace = {"adata": adata, "np": np, "pd": pd, "sclab": sclab}
+    exec(code, namespace)
+    assert namespace["adata"].obs_names.tolist() == adata.obs_names[::2].tolist()
