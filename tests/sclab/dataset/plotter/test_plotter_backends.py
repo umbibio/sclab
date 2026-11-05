@@ -193,7 +193,7 @@ def test_pinned_view_restores_settings(backend):
     assert values(p) == expected
     assert p._view.frame["color_title"] == "quadrant"
     assert p._view.frame["opacity"] == 0.6
-    badge = p.views._cards[spec["id"]][-1].value
+    badge = p.views._cards[spec["id"]]["badge"].value
     assert ("zoom not saved (jscatter)" in badge) == (backend == "jscatter")
     assert not dash.broker.exceptions_log
 

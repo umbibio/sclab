@@ -180,9 +180,10 @@ class Download(anywidget.AnyWidget):
     _esm = """
     export default {
       initialize({ model }) {
-        model.on("msg:custom", ({ text, filename, type }) => {
+        model.on("msg:custom", ({ text, filename, type }, buffers) => {
           const a = document.createElement("a");
-          a.href = URL.createObjectURL(new Blob([text], { type }));
+          const parts = buffers && buffers.length ? buffers : [text];
+          a.href = URL.createObjectURL(new Blob(parts, { type }));
           a.download = filename;
           a.click();
           setTimeout(() => URL.revokeObjectURL(a.href), 1000);
@@ -191,5 +192,8 @@ class Download(anywidget.AnyWidget):
     };
     """
 
-    def save(self, text: str, filename: str, type: str = "text/html"):
-        self.send({"text": text, "filename": filename, "type": type})
+    def save(self, text: str | bytes, filename: str, type: str = "text/html"):
+        if isinstance(text, bytes):  # e.g. a PNG: a binary buffer, not JSON
+            self.send({"filename": filename, "type": type}, buffers=[text])
+        else:
+            self.send({"text": text, "filename": filename, "type": type})

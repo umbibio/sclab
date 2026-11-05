@@ -26,12 +26,11 @@ from ...utils._widgets import Download, ResizeNotifier
 from .._dataset import SCLabDataset
 from ._backends import (
     BACKENDS,
-    color_spec,
-    density_lines,
+    make_frame,
     make_view,
     png_html,
     render_png,
-    value_size_factors,
+    size_factors,
 )
 from ._controls import PlotterControls
 from ._views import ViewGallery
@@ -347,42 +346,20 @@ class Plotter(GridBox, EventClient):
 
     def _frame_2d(self, df, col_x, col_y, colorby, sizeby, scale, figure_kwargs):
         """What a backend draws, see sclab.dataset.plotter._backends."""
-        c = self.controls
-        sizeby = c.sizeby.value if sizeby is None else sizeby
-        scale = c.marker_size.value if scale is None else scale
-        size = scale  # px diameter, as plotly draws marker.size with sizeref
-        if sizeby is not None:
-            values = df[sizeby].astype(float).clip(lower=0).fillna(0.0).to_numpy()
-            if values.max() > 0:
-                size = scale * np.sqrt(values / values.max())
-        elif (factors := self._size_factors(df, colorby, sizeby)) is not None:
-            size = scale * factors
         selected = self.dataset._selected_rows
-        x, y = (df[col].to_numpy(dtype=float) for col in (col_x, col_y))
-        density = None
-        if c.show_density.value:
-            density = density_lines(np.column_stack([x, y]), c)
-        return {
-            "index": df.index,
-            "x": x,
-            "y": y,
-            "x_title": col_x,
-            "y_title": col_y,
-            "title": self.dataset._selected_data_key,
-            "color": None
-            if not colorby
-            else color_spec(df[colorby], figure_kwargs.get("color_continuous_scale")),
-            "color_title": colorby,
-            "size": size,
-            "marker_size": scale,
-            "selected": None if selected is None else df.index.isin(selected),
-            "opacity": c.marker_opacity.value,
-            "density": density,
-            "height": c.plot_height.value,
-            "width": c.plot_width.value,
-            "aspect_equal": c.aspect_equal.value,
-            "hover": c.enable_hover_info.value and col_x != "rank",
-        }
+        return make_frame(
+            df,
+            col_x,
+            col_y,
+            colorby,
+            {k: w.value for k, w in self.controls.dict.items() if hasattr(w, "value")},
+            sizeby=sizeby,
+            scale=scale,
+            colorscale=figure_kwargs.get("color_continuous_scale"),
+            min_size=self.min_size_input.value,
+            selected=None if selected is None else df.index.isin(selected),
+            title=self.dataset._selected_data_key,
+        )
 
     def _size_factors(self, df, colorby, sizeby) -> np.ndarray | None:
         """Per-cell marker diameters relative to the marker size (None: uniform).
@@ -393,15 +370,8 @@ class Plotter(GridBox, EventClient):
         a selection (selected cells large, the others small), the "Size by"
         column, then these factors. 1D histograms ignore sizes.
         """
-        if (
-            sizeby is not None
-            or not colorby
-            or not self.controls.emphasize_values.value
-        ):
-            return None
-        if colorby not in df or not is_any_real_numeric_dtype(df[colorby]):
-            return None  # categorical or boolean colors
-        return value_size_factors(df[colorby], self.min_size_input.value)
+        emphasize = self.controls.emphasize_values.value
+        return size_factors(df, colorby, sizeby, emphasize, self.min_size_input.value)
 
     def _init_figure(self):
         self.g = go.FigureWidget(

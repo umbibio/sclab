@@ -1,7 +1,7 @@
 """2D plot backends other than plotly: jupyter-scatter (``jscatter``) and ``static``.
 
 The :class:`~sclab.dataset.plotter.Plotter` stays in charge: it computes a
-*frame* (what to draw, see ``Plotter._frame_2d``) and calls ``view.draw(frame)``
+*frame* (what to draw, see :func:`make_frame`) and calls ``view.draw(frame)``
 whenever the 2D plot changes. A frame is a dict::
 
     index     cell ids (pd.Index), the order of x, y and every array below
@@ -27,7 +27,11 @@ import numpy as np
 import pandas as pd
 import plotly.io as pio
 from ipywidgets import Box, Image, Layout
-from pandas.api.types import is_bool_dtype, is_numeric_dtype
+from pandas.api.types import (
+    is_any_real_numeric_dtype,
+    is_bool_dtype,
+    is_numeric_dtype,
+)
 from plotly.colors import get_colorscale, hex_to_rgb, sample_colorscale, unlabel_rgb
 from scipy.stats import rankdata
 
@@ -107,42 +111,136 @@ def value_size_factors(values, min_factor: float = 0.3) -> np.ndarray:
     return factors
 
 
-def density_lines(xy: np.ndarray, controls) -> list[np.ndarray]:
-    """The density contour lines plotly draws, from the same grid."""
+def size_factors(df, colorby, sizeby, emphasize: bool, min_size: float):
+    """Per-cell marker diameters relative to the marker size (None: uniform).
+
+    See ``Plotter._size_factors``: only for a numeric color column, without "Size
+    by", with "Emphasize values" on.
+    """
+    if sizeby is not None or not colorby or not emphasize:
+        return None
+    if colorby not in df or not is_any_real_numeric_dtype(df[colorby]):
+        return None  # categorical or boolean colors
+    return value_size_factors(df[colorby], min_size)
+
+
+def density_lines(xy: np.ndarray, values: dict) -> list[np.ndarray]:
+    """The density contour lines plotly draws, from the same grid.
+
+    ``values``: the plot control values (``PlotterControls.dict`` names).
+    """
     import contourpy  # a matplotlib dependency
 
     trace = _make_density_heatmap(
         xy,
-        controls.density_bandwidth_factor.value,
-        controls.density_grid_resolution.value,
-        controls.density_line_smoothing.value,
-        controls.density_contours.value,
+        values["density_bandwidth_factor"],
+        values["density_grid_resolution"],
+        values["density_line_smoothing"],
+        values["density_contours"],
     )
     x, y, z = (np.asarray(trace[k], dtype=float) for k in "xyz")
     generator = contourpy.contour_generator(x, y, z)
-    levels = np.linspace(z.min(), z.max(), controls.density_contours.value + 1)[1:-1]
+    levels = np.linspace(z.min(), z.max(), values["density_contours"] + 1)[1:-1]
     return [line for level in levels for line in generator.lines(level)]
 
 
-def render_png(frame: dict) -> bytes:
-    """The frame as a matplotlib PNG (no pyplot: no global figure state)."""
+def make_frame(
+    df,
+    col_x: str,
+    col_y: str,
+    colorby: str | None,
+    values: dict,
+    sizeby: str | None = None,
+    scale: float | None = None,
+    colorscale=None,
+    min_size: float = 0.3,
+    selected: np.ndarray | None = None,
+    title: str = "",
+) -> dict:
+    """A 2D frame (see the module docstring) of ``df``'s columns.
+
+    ``values``: the plot control values (``PlotterControls.dict`` names); ``sizeby``
+    and ``scale`` override theirs.
+    """
+    sizeby = values["sizeby"] if sizeby is None else sizeby
+    scale = values["marker_size"] if scale is None else scale
+    size = scale  # px diameter, as plotly draws marker.size with sizeref
+    if sizeby is not None:
+        sizes = df[sizeby].astype(float).clip(lower=0).fillna(0.0).to_numpy()
+        if sizes.max() > 0:
+            size = scale * np.sqrt(sizes / sizes.max())
+    elif (
+        factors := size_factors(
+            df, colorby, sizeby, values["emphasize_values"], min_size
+        )
+    ) is not None:
+        size = scale * factors
+    x, y = (df[col].to_numpy(dtype=float) for col in (col_x, col_y))
+    density = None
+    if values["show_density"]:
+        density = density_lines(np.column_stack([x, y]), values)
+    return {
+        "index": df.index,
+        "x": x,
+        "y": y,
+        "x_title": col_x,
+        "y_title": col_y,
+        "title": title,
+        "color": None if not colorby else color_spec(df[colorby], colorscale),
+        "color_title": colorby,
+        "size": size,
+        "marker_size": scale,
+        "selected": selected,
+        "opacity": values["marker_opacity"],
+        "density": density,
+        "height": values["plot_height"],
+        "width": values["plot_width"],
+        "aspect_equal": values["aspect_equal"],
+        "hover": values["enable_hover_info"] and col_x != "rank",
+    }
+
+
+def render_png(
+    frame: dict, dpi: float = 100, minimal: bool = False, format: str = "png"
+) -> bytes:
+    """The frame as a matplotlib image (no pyplot: no global figure state).
+
+    The figure is ``frame["width"] x frame["height"]`` px at 100 dpi, as on
+    screen; ``dpi`` scales the image. ``minimal`` (thumbnails): no legend, color
+    bar, labels or ticks. Optional frame keys, for pinned views: ``ndims`` (1: a
+    histogram of x, ``nbins`` bins; 3: x, y and ``z``, seen from ``camera``, a
+    plotly scene camera) and ``ranges`` (``{"x": [lo, hi], "y": ...}``, the zoom).
+    """
     from matplotlib.colors import ListedColormap, Normalize
     from matplotlib.figure import Figure
 
-    dpi = 100
     width = frame["width"] or 900
-    fig = Figure(figsize=(width / dpi, frame["height"] / dpi), dpi=dpi)
-    ax = fig.add_subplot()
-    x, y = frame["x"], frame["y"]
+    fig = Figure(figsize=(width / 100, frame["height"] / 100), dpi=100)
+    ndims = frame.get("ndims", 2)
+    ax = fig.add_subplot(projection="3d" if ndims == 3 else None)
+    coords = [frame["x"], frame["y"]] + ([frame["z"]] if ndims == 3 else [])
+    x = coords[0]
     diameter = np.broadcast_to(np.asarray(frame["size"], dtype=float), x.shape)
     if frame["selected"] is not None:  # as plotly: the selection sets the size
         area = np.where(frame["selected"], 3.0, 0.5)  # Plotter.update_marker_sizes
         diameter = frame["marker_size"] * np.sqrt(area)
-    common = dict(s=(diameter * 72 / dpi) ** 2, alpha=frame["opacity"], linewidths=0)
+    common = dict(s=(diameter * 72 / 100) ** 2, alpha=frame["opacity"], linewidths=0)
 
     spec = frame["color"]
-    if spec is None:
-        ax.scatter(x, y, c=PALETTE[0], **common)
+    if ndims == 1:
+        categorical = spec is not None and spec["kind"] == "categorical"
+        labels = list(spec["colors"]) if categorical else [None]
+        ax.hist(
+            [x[spec["values"] == c] for c in labels] if categorical else [x],
+            bins=frame.get("nbins") or 10,
+            stacked=True,
+            color=[spec["colors"][c] for c in labels] if categorical else PALETTE[0],
+            label=labels,
+        )
+        if categorical and not minimal:
+            ax.legend(loc="upper left", bbox_to_anchor=(1.01, 1), frameon=False)
+    elif spec is None:
+        ax.scatter(*coords, c=PALETTE[0], **common)
     elif spec["kind"] == "categorical":
         codes = spec["values"].codes
         order = sorted(spec["colors"], key=lambda c: c != "NA")  # NA drawn first
@@ -150,51 +248,76 @@ def render_png(frame: dict) -> bytes:
             i = spec["values"].categories.get_loc(label)
             mask = codes == i
             ax.scatter(
-                x[mask],
-                y[mask],
+                *(v[mask] for v in coords),
                 c=spec["colors"][label],
                 label=label,
                 **{**common, "s": common["s"][mask]},
             )
-        legend = ax.legend(
-            loc="upper left", bbox_to_anchor=(1.01, 1), frameon=False, fontsize=9
-        )
-        # handles are named legendHandles before matplotlib 3.7
-        for handle in getattr(legend, "legend_handles", None) or legend.legendHandles:
-            handle.set_sizes([30])
-            handle.set_alpha(1)
+        if not minimal:
+            legend = ax.legend(
+                loc="upper left", bbox_to_anchor=(1.01, 1), frameon=False, fontsize=9
+            )
+            # handles are named legendHandles before matplotlib 3.7
+            handles = getattr(legend, "legend_handles", None) or legend.legendHandles
+            for handle in handles:
+                handle.set_sizes([30])
+                handle.set_alpha(1)
     else:
         values = spec["values"]
         order = np.argsort(np.nan_to_num(values, nan=-np.inf), kind="stable")
         cmap = ListedColormap(spec["colors"])
         cmap.set_bad(NA_COLOR)
         sc = ax.scatter(
-            x[order],
-            y[order],
+            *(v[order] for v in coords),
             c=values[order],
             cmap=cmap,
             norm=Normalize(*spec["range"]),
             plotnonfinite=True,
             **{**common, "s": common["s"][order]},
         )
-        fig.colorbar(sc, ax=ax)
+        if not minimal:
+            fig.colorbar(sc, ax=ax)
 
-    for line in frame["density"] or []:
-        ax.plot(line[:, 0], line[:, 1], color="#555555", linewidth=0.8)
+    if ndims == 2:
+        for line in frame["density"] or []:
+            ax.plot(line[:, 0], line[:, 1], color="#555555", linewidth=0.8)
 
-    for set_lim, v in ((ax.set_xlim, x), (ax.set_ylim, y)):
-        lo, hi = np.nanmin(v), np.nanmax(v)
-        pad = (hi - lo) * 0.1 or 1.0
-        set_lim(lo - pad, hi + pad)
-    if frame["aspect_equal"]:
+    ranges = frame.get("ranges") or {}
+    limits = [ax.set_xlim, ax.set_ylim] + ([ax.set_zlim] if ndims == 3 else [])
+    for axis, set_lim, v in zip("xyz", limits, coords):
+        if ranges.get(axis):
+            set_lim(*ranges[axis])
+        elif ndims > 1 or axis == "x":
+            lo, hi = np.nanmin(v), np.nanmax(v)
+            pad = (hi - lo) * 0.1 or 1.0
+            set_lim(lo - pad, hi + pad)
+    if ndims == 3:
+        eye = {"x": 1.25, "y": 1.25, "z": 1.25, **(frame.get("camera") or {})}
+        ax.view_init(  # plotly's eye: the camera position seen from the center
+            elev=np.degrees(np.arctan2(eye["z"], np.hypot(eye["x"], eye["y"]))),
+            azim=np.degrees(np.arctan2(eye["y"], eye["x"])),
+        )
+        spans = [np.ptp(np.nan_to_num(v)) or 1.0 for v in coords]
+        ax.set_box_aspect(spans if frame["aspect_equal"] else (1, 1, 1))
+    elif frame["aspect_equal"]:
         ax.set_aspect("equal", adjustable="datalim")
-    ax.set_xlabel(frame["x_title"])
-    ax.set_ylabel(frame["y_title"])
-    ax.set_title(frame["title"] or "")
-    ax.spines[["top", "right"]].set_visible(False)
-    fig.tight_layout()
+    if minimal:
+        ax.set_xticks([])
+        ax.set_yticks([])
+        if ndims == 3:
+            ax.set_zticks([])
+        fig.subplots_adjust(0.01, 0.01, 0.99, 0.99)
+    else:
+        ax.set_xlabel(frame["x_title"])
+        ax.set_ylabel("count" if ndims == 1 else frame["y_title"])
+        if ndims == 3:
+            ax.set_zlabel(frame["z_title"])
+        ax.set_title(frame["title"] or "")
+        fig.tight_layout()
+    if ndims < 3:
+        ax.spines[["top", "right"]].set_visible(False)
     buffer = io.BytesIO()
-    fig.savefig(buffer, format="png")
+    fig.savefig(buffer, format=format, dpi=dpi)
     return buffer.getvalue()
 
 

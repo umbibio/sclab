@@ -130,6 +130,8 @@ class GeneExpression(ProcessorStepBase):
         metadata = metadata.join(df)
 
         if time_key is None:
+            gene = {"gene": gene_id, "layer": layer, "colorscale": colorscale}
+            self.parent.plotter.state["gene"] = gene  # what pinned views restore
             self.broker.publish(
                 "dplt_plot_figure_request",
                 metadata=metadata,
