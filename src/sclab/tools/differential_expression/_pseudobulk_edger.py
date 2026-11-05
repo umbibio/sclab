@@ -36,7 +36,7 @@ def pseudobulk_edger(
 
     .. deprecated:: 0.5.0
         Use :func:`pseudobulk_edgepython` (pure Python, no R needed) or
-        ``sclab.tools.differential_expression(adata, ..., method="pseudobulk_edger")``.
+        ``sclab.tools.de(adata, ..., method="pseudobulk_edger")``.
         This R-backed function still works but will be removed in a future
         release.
 
@@ -112,7 +112,7 @@ def pseudobulk_edger(
     """
     warnings.warn(
         "pseudobulk_edger (R) is deprecated; use pseudobulk_edgepython or "
-        "sclab.tools.differential_expression(method='pseudobulk_edger').",
+        "sclab.tools.de(method='pseudobulk_edger').",
         FutureWarning,
         stacklevel=2,
     )

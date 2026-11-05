@@ -46,6 +46,18 @@ Advanced analysis functions available via `sclab.tools`.
 
 ## Differential Expression
 
+::: sclab.tools.de
+
+---
+
+::: sclab.tools.differential_expression.pseudobulk_edgepython
+
+---
+
+::: sclab.tools.differential_expression.pseudobulk_pylimma
+
+---
+
 ::: sclab.tools.differential_expression.pseudobulk_edger
 
 ---

@@ -280,15 +280,20 @@ def test_reproducible_with_random_state(adata, method):
     pd.testing.assert_frame_equal(a, b)
 
 
-def test_module_is_callable_and_still_a_package(adata):
-    import sclab.tools.differential_expression as de
+def test_de_is_the_function_and_subpackage_still_imports(adata):
+    import sclab.tools.differential_expression as subpackage
 
-    assert de is sclab.tools.differential_expression
-    assert de.pseudobulk_pylimma.__name__ == "pseudobulk_pylimma"
-    assert list(inspect.signature(de).parameters)[:2] == ["adata", "group_key"]
+    assert sclab.tools.de is differential_expression
+    assert subpackage.differential_expression is differential_expression
+    assert subpackage.pseudobulk_pylimma.__name__ == "pseudobulk_pylimma"
+    assert not callable(subpackage)
+    assert list(inspect.signature(sclab.tools.de).parameters)[:2] == [
+        "adata",
+        "group_key",
+    ]
     if has_scanpy:
         pd.testing.assert_frame_equal(
-            de(adata, "grp"), differential_expression(adata, "grp")
+            sclab.tools.de(adata, "grp"), differential_expression(adata, "grp")
         )
 
 

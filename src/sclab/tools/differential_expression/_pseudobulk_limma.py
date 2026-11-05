@@ -34,7 +34,7 @@ def pseudobulk_limma(
 
     .. deprecated:: 0.5.0
         Use :func:`pseudobulk_pylimma` (pure Python, no R needed) or
-        ``sclab.tools.differential_expression(adata, ..., method="pseudobulk_limma")``.
+        ``sclab.tools.de(adata, ..., method="pseudobulk_limma")``.
         This R-backed function still works but will be removed in a future
         release.
 
@@ -113,7 +113,7 @@ def pseudobulk_limma(
     """
     warnings.warn(
         "pseudobulk_limma (R) is deprecated; use pseudobulk_pylimma or "
-        "sclab.tools.differential_expression(method='pseudobulk_limma').",
+        "sclab.tools.de(method='pseudobulk_limma').",
         FutureWarning,
         stacklevel=2,
     )

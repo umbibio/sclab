@@ -172,6 +172,20 @@ def differential_expression(
     Cell-level tests treat cells as independent replicates, which inflates
     p-values; prefer a pseudobulk method with ``sample_key`` for comparisons
     between conditions.
+
+    Examples
+    --------
+    >>> import sclab
+    >>> df = sclab.tools.de(adata, "leiden")  # each cluster vs the rest
+    >>> df = sclab.tools.de(
+    ...     adata,
+    ...     "condition",
+    ...     method="pseudobulk_edger",
+    ...     reference_group="control",
+    ...     cell_identity_key="cell_type",
+    ...     sample_key="donor",
+    ... )
+    >>> adata.uns["differential_expression"]["table"]  # the same table
     """
     group_values = adata.obs[group_key]
     present = set(group_values.dropna())
