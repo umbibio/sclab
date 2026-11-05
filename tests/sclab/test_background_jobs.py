@@ -155,6 +155,16 @@ def test_frontend_beats_resume_the_job(dash, renders, leiden):
     assert step.run_button.button_style == "success"
 
 
+def test_beats_are_not_echoed(dash):
+    # an echo per tick was a third message per tick to every connection,
+    # stalled ones included (unsent messages fail when the server drops them)
+    beat = dash.broker.jobs.beat
+    sent = []
+    beat._send = lambda msg, buffers=None: sent.append(msg)
+    beat.set_state({"value": 7})  # a frontend tick
+    assert beat.value == 7 and sent == []
+
+
 def test_worker_publishes_are_replayed_on_the_main_thread(dash, renders, leiden):
     received = []
     dash.broker.subscribe(

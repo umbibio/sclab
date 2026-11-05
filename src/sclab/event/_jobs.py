@@ -12,7 +12,7 @@ always for :meth:`JobRunner.run`, the work runs inline.
 In a kernel, :meth:`JobRunner.start` returns once the work is started, so the
 kernel serves other widget events (tab switches, plot pan/zoom) meanwhile.
 The job resumes on the main thread when a hidden ``Play`` widget ticks (the
-"beat", 4 per second; see :meth:`JobRunner._poll`). A tick is a frontend
+"beat", 2 per second; see :meth:`JobRunner._poll`). A tick is a frontend
 request, like a click, so the step's code runs as in a synchronous click; in
 particular ``with output:``
 captures into Output widgets (step messages, Logs, the obs/var and results
@@ -42,6 +42,18 @@ from contextlib import nullcontext
 from html import escape
 
 from ipywidgets import HTML, Button, HBox, Layout, Play, VBox
+from traitlets import CInt
+
+
+class _Beat(Play):
+    """The job's beat. The kernel does not echo its ticks back to the frontend.
+
+    Each tick already costs a comm message and two kernel status messages; an
+    echo is a third, sent to every connection, also to a stalled one that the
+    server later drops with every unsent message failing (WebSocketClosedError).
+    """
+
+    value = CInt(0).tag(sync=True, echo_update=False)
 
 
 class StepCancelled(KeyboardInterrupt):
@@ -161,8 +173,8 @@ class JobRunner:
         )
         self.cancel_button.on_click(lambda _: self.cancel())
         self.interrupt_button.on_click(lambda _: self.interrupt())
-        self.beat = Play(
-            interval=250,
+        self.beat = _Beat(
+            interval=500,
             max=10**9,
             repeat=True,
             show_repeat=False,
