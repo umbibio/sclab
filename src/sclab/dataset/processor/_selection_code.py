@@ -180,17 +180,22 @@ def apply_label_code(params: dict) -> str:
     if "index" in params:
         return _legacy("apply_label")
     column, label = _lit(params["column"]), _lit(params["label"])
+    empty = params["label"] in ("", None)  # False is a label (bool columns)
+    obs = f"adata.obs[{column}]"
     lines = [
         *_mask_lines(params),
         f"if {column} not in adata.obs:",
         f"    adata.obs[{column}] = pd.Categorical("
         f"[None] * adata.n_obs, categories=[{label}])",
     ]
-    if params["label"]:
+    if empty:  # a numpy bool column needs NA support to be cleared
+        lines += [f"elif {obs}.dtype == bool:", f'    {obs} = {obs}.astype("boolean")']
+    else:  # bool columns take True / False as is
         lines += [
-            f"elif {label} not in adata.obs[{column}].cat.categories:",
-            f"    adata.obs[{column}] = adata.obs[{column}].cat.add_categories({label})",
+            f"elif isinstance({obs}.dtype, pd.CategoricalDtype) "
+            f"and {label} not in {obs}.cat.categories:",
+            f"    {obs} = {obs}.cat.add_categories({label})",
         ]
-    value = label if params["label"] else "np.nan"
+    value = "np.nan" if empty else label
     lines.append(f"adata.obs.loc[mask, {column}] = {value}")
     return "\n".join(lines)

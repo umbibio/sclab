@@ -418,15 +418,38 @@ class SCLabDataset(EventClient):
 
         self.broker.publish("dset_total_rows_change", self.metadata)
 
-    def apply_label(self, index: pd.Index, column: str, label: str):
-        if column not in self._metadata.columns:
-            dtype = pd.CategoricalDtype([label], ordered=False)
-            self._metadata[column] = pd.Series(index=self.row_names, dtype=dtype)
+    def apply_label(self, index: pd.Index, column: str, label: str | bool):
+        """Set ``label`` on the rows ``index`` of obs column ``column``.
 
-        if label and label not in self._metadata[column].cat.categories:
-            self._metadata[column] = self._metadata[column].cat.add_categories(label)
-        elif not label:
-            label = np.nan
+        New columns are categorical. A bool column (numpy or nullable) takes
+        ``True``/``False``; an empty label clears to NA (a numpy bool column
+        becomes nullable ``boolean``) and any other label raises ``ValueError``.
+        """
+        is_bool = column in self._metadata.columns and (
+            self._metadata[column].dtype == bool
+            or isinstance(self._metadata[column].dtype, pd.BooleanDtype)
+        )
+        if is_bool:
+            if isinstance(label, bool | np.bool_):
+                label = bool(label)
+            elif label is None or label == "":
+                label = pd.NA
+                self._metadata[column] = self._metadata[column].astype("boolean")
+            else:
+                raise ValueError(
+                    f"column {column!r} is boolean: label must be True, False or empty"
+                )
+        else:
+            if column not in self._metadata.columns:
+                dtype = pd.CategoricalDtype([label], ordered=False)
+                self._metadata[column] = pd.Series(index=self.row_names, dtype=dtype)
+
+            if label is None or label == "":
+                label = np.nan
+            elif label not in self._metadata[column].cat.categories:
+                self._metadata[column] = self._metadata[column].cat.add_categories(
+                    label
+                )
 
         self._metadata.loc[index, column] = label
 

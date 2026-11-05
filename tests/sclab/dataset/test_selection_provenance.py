@@ -336,3 +336,17 @@ def test_legacy_entries_and_mask_without_uns(dash, tmp_path):
     d2.processor.apply_step_history()
     entry = d2.processor.step_history[-1]
     assert entry["status"] == "failed" and "'sel1' not in adata.uns" in entry["error"]
+
+
+def test_label_on_bool_column(dash):
+    dash.processor.selection_controls_dict["batch"].value = ("b1",)
+    label(dash, "flag", True, new=False)
+    label(dash, "flag", False, new=False)  # False is a label, not "clear"
+    flag = dash.dataset.adata.obs["flag"]
+    assert (
+        flag.dtype == bool and not flag[dash.dataset.adata.obs["batch"] == "b1"].any()
+    )
+    assert_reproduced(dash, ["flag"])
+    label(dash, "flag", "", new=False)  # clearing makes the column nullable
+    assert str(dash.dataset.adata.obs["flag"].dtype) == "boolean"
+    assert_reproduced(dash, ["flag"])

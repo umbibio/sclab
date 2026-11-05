@@ -318,3 +318,24 @@ class TestApplyLabel:
     def test_label_appears_in_metadata(self, ds):
         ds.apply_label(pd.Index(["cell0"]), "lab", "A")
         assert "lab" in ds.metadata.columns
+
+    @pytest.mark.parametrize("dtype", ["bool", "boolean"])
+    def test_bool_column_takes_true_false(self, ds, dtype):
+        ds.adata.obs["flag"] = ds.adata.obs["flag"].astype(dtype)
+        ds.apply_label(pd.Index(["cell0", "cell1"]), "flag", False)
+        ds.apply_label(pd.Index(["cell1", "cell2"]), "flag", True)
+        col = ds.adata.obs["flag"]
+        assert col.loc[["cell0", "cell1", "cell2"]].tolist() == [False, True, True]
+
+    @pytest.mark.parametrize("dtype", ["bool", "boolean"])
+    def test_bool_column_empty_label_clears_to_na(self, ds, dtype):
+        ds.adata.obs["flag"] = ds.adata.obs["flag"].astype(dtype)
+        ds.apply_label(pd.Index(["cell0"]), "flag", "")
+        col = ds.adata.obs["flag"]
+        assert str(col.dtype) == "boolean"
+        assert pd.isna(col.loc["cell0"]) and col.loc["cell2"] == True  # noqa: E712
+
+    def test_bool_column_rejects_text_label(self, ds):
+        with pytest.raises(ValueError, match="boolean"):
+            ds.apply_label(pd.Index(["cell0"]), "flag", "yes")
+        assert ds.adata.obs["flag"].dtype == bool
