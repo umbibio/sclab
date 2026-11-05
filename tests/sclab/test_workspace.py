@@ -246,3 +246,33 @@ def test_label_is_refreshed_after_a_background_step(files, tmp_path):
     jobs.loop.pump(jobs)
     assert ws.dash.processor.step_history[-1]["step"] == "QC"
     assert "modified" in labels(ws)[0]
+
+
+def test_rename_updates_the_dashboard_and_the_cache_file(files, tmp_path):
+    ws = Workspace(files, workspace_dir=tmp_path / "ws")
+    edit(ws)
+    ws.activate("b")  # a is written to its cache
+    old = ws.datasets["a"].cache_path
+    ws.rename("a", "first")
+    assert not old.exists() and ws.datasets["first"].cache_path == old.with_name(
+        "first.h5ad"
+    )
+    assert ws.datasets["first"].cache_path.exists()
+    ws.activate("first")
+    assert [e["step"] for e in ws.dash.processor.step_history] == ["load", "QC"]
+    ws.rename("first", "second")
+    assert ws.dash.name == ws.dash.dataset.name == "second"
+    assert ws.datasets["second"].cache_path.name == "second.h5ad"
+    assert "second" in labels(ws)[0]
+
+
+def test_rename_refuses_an_existing_cache_file(files, tmp_path):
+    ws = Workspace(files, workspace_dir=tmp_path / "ws")
+    edit(ws)
+    ws.activate("b")
+    (tmp_path / "ws" / "taken.h5ad").write_bytes(b"x")
+    with pytest.raises(FileExistsError):
+        ws.rename("a", "taken")
+    assert list(ws.datasets) == ["a", "b"]
+    assert ws.datasets["a"].cache_path.name == "a.h5ad"
+    assert ws.datasets["a"].cache_path.exists()

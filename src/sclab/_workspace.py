@@ -243,8 +243,16 @@ class Workspace(VBox):
         return entry.dash
 
     def rename(self, name: str, new_name: str):
+        """Rename a dataset, its live dashboard and its cache file, if any."""
         entry = self.datasets[name]
         self._check_name(new_name)
+        if entry.cache_path is not None:
+            cache = self.workspace_dir / f"{new_name}.h5ad"
+            if cache.exists():
+                raise FileExistsError(f"{cache} exists; remove it or pick another name")
+            entry.cache_path = entry.cache_path.rename(cache)
+        if entry.dash is not None:
+            entry.dash.name = entry.dash.dataset.name = new_name
         self.datasets = {
             new_name if k == name else k: v for k, v in self.datasets.items()
         }
