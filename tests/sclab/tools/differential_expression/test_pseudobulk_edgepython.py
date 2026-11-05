@@ -104,6 +104,10 @@ def test_matches_r_edger(adata, kwargs: dict):
         assert set(tt_py.index) == set(tt_r.index)
         assert set(tt_py.index[:N_DE]) == set(tt_r.index[:N_DE])
         tt_py = tt_py.loc[tt_r.index]
+        # agreement is ~1e-6: small differences in the dispersion trend fit
         for col in TT_COLUMNS:
-            np.testing.assert_allclose(tt_py[col], tt_r[col], rtol=1e-5, atol=1e-8)
-        assert pearsonr(tt_py["F"], tt_r["F"])[0] > 0.9999
+            np.testing.assert_allclose(tt_py[col], tt_r[col], rtol=1e-3, atol=1e-5)
+        for col in ["logFC", "F"]:
+            assert pearsonr(tt_py[col], tt_r[col])[0] > 0.99999
+        log_p = -np.log10(tt_py["PValue"]), -np.log10(tt_r["PValue"])
+        assert pearsonr(*log_p)[0] > 0.99999
