@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- Dashboard Settings tab sections Data (counts layer, batch key), Steps (background steps on/off, random seed), Plots (theme, colorscale, categorical palette, plus the existing backend, 3D points, min. size, 3D full resolution) and Tables (keep tables loaded when hidden). Settings are saved in `adata.uns["sclab"]["settings"]` and restored when a dashboard is built; explicit `SCLabDashboard(...)` arguments take precedence. Changing a setting moves step controls that still hold the previous setting's value and leaves the others alone
 - Dashboard steps check their inputs: Run is disabled with the reason shown below it while something required is missing (e.g. Integration without a GroupBy column of at least 2 batches, UMAP/Cluster without a neighbor graph, PCA on raw counts), and `step.run()` raises `ValueError` then. Errors from a run, a background job, a redraw after it or a control callback are shown in red below the step's Run button (details still in Logs), and Keep/Drop/Label errors below the selection actions
 - Pinned views: thumbnails (drawn in the kernel, kept in memory only, redrawn when the data changes), PNG export (per pin, chosen dpi), "Code" with a plotly express snippet reproducing the pin, left/right reordering, gene-expression pins (gene, layer and colorscale; badges when missing), and snapshot-only pins of custom figures. "Min. size" is saved in pins
 - `sclab.utils.LazyOutput`: an Output widget built only while shown
@@ -45,6 +46,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Dashboard obs/var tables and the differential expression table are built and sent only while their tab is open, and dropped from widget state when hidden (on 16k cells after DE: page reload 57 MB → 6 MB, DE step 79 MB → ~0 MB sent). Opening a tab now takes a moment while its table is sent
 - Dashboard Integration "GroupBy" defaults to the dashboard's `batch_key`
+- `SCLabDashboard(counts_layer=None, plot_backend=None)` defaults (resolved from stored settings, else `"counts"` / `"plotly"`); `batch_key=""` (and `Processor(batch_key="")`) now means no batch key instead of picking `"batch"`
+- Changing a Workspace dataset's settings marks it modified
 - **Breaking:** `pseudobulk_pylimma()` defaults to 3 pseudo-replicates per group (was 5), which changes default results
 - `uv.lock` re-resolved to current releases (clears most Dependabot/OSV advisories: 268 → 79, all remaining in Python 3.10-only versions of pillow, filelock and tornado). Note: the locked rpy2-rinterface needs R ≥ 4.5
 - Dashboard plots are faster and send less data: recolor, size and selection patch the existing traces (numpy arrays sent as binary); size/selection changes are near-instant and recolors 2–6× faster at 100k–1M cells
