@@ -326,10 +326,10 @@ class SCLabDashboard(GridBox):
             self.counts_layer_dropdown,
             self.batch_key_dropdown,
             self.seed_input,
+            self.background_checkbox,
+            self.keep_tables_checkbox,
         ):
             widget.style = dict(description_width="100px")  # as the plot settings
-        for checkbox in (self.background_checkbox, self.keep_tables_checkbox):
-            checkbox.indent = False
 
         def section(title, *children):
             return VBox(
