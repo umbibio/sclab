@@ -110,13 +110,13 @@ def test_seed_sets_random_state_unless_the_user_did():
     dash = SCLabDashboard(make_adata())
     steps = dash.processor.steps
     seeded = ["PCA", "Neighbors", "UMAP", "Cluster", "Integration"]
-    dash.seed_input.value = 42
+    dash.seed_input.value = "42"
     for name in seeded:
         assert steps[name].fixed_params["random_state"] == 42, name
     assert "random_state" not in steps["QC"].fixed_params
 
     steps["UMAP"].fixed_params["random_state"] = 7  # set by the user
-    dash.seed_input.value = 5
+    dash.seed_input.value = "5"
     assert steps["UMAP"].fixed_params["random_state"] == 7
     assert steps["PCA"].fixed_params["random_state"] == 5
 
@@ -126,8 +126,30 @@ def test_seed_sets_random_state_unless_the_user_did():
     assert dash.processor.step_history[-1]["params"]["random_state"] == 5
     assert "random_state=5" in dash.generate_code()
 
-    dash.seed_input.value = 0  # back to each step's own default
+    dash.seed_input.value = ""  # empty: back to each step's own default
     assert "random_state" not in steps["PCA"].fixed_params
+    assert steps["UMAP"].fixed_params["random_state"] == 7  # still the user's
+
+
+def test_seed_zero_is_a_seed_and_invalid_text_does_not_apply():
+    dash = SCLabDashboard(make_adata())
+    pca = dash.processor.steps["PCA"].fixed_params
+    dash.seed_input.value = "0"
+    assert pca["random_state"] == 0
+    assert dash.dataset.adata.uns["sclab"]["settings"]["random_state"] == 0
+    dash.seed_input.value = "4"
+    assert pca["random_state"] == 4  # 0 was applied, so it was followed
+
+    dash.seed_input.value = "four"
+    assert pca["random_state"] == 4 and dash.seed_message.value
+    assert dash.dataset.adata.uns["sclab"]["settings"]["random_state"] == 4
+    dash.seed_input.value = " 5 "
+    assert pca["random_state"] == 5 and not dash.seed_message.value
+
+    pca["random_state"] = 0  # chosen by the user while the setting is empty
+    dash.seed_input.value = ""
+    dash.seed_input.value = "9"
+    assert pca["random_state"] == 0
 
 
 @pytest.fixture
@@ -194,7 +216,7 @@ def change_settings(dash):
     dash.counts_layer_dropdown.value = "raw"
     dash.batch_key_dropdown.value = "donor"
     dash.background_checkbox.value = False
-    dash.seed_input.value = 3
+    dash.seed_input.value = "3"
     dash.plotter.backend = "static"
     dash.plotter.template_dropdown.value = "plotly_white"
     dash.plotter.colorscale_dropdown.value = "plasma"
@@ -234,6 +256,24 @@ def test_settings_round_trip_through_h5ad(tmp_path):
     path = tmp_path / "a.h5ad"
     adata.write_h5ad(path)
     assert_restored(SCLabDashboard(anndata.read_h5ad(path)))
+
+
+@pytest.mark.parametrize("seed, stored", [("", None), ("0", 0)])
+def test_seed_round_trips_through_h5ad(tmp_path, seed, stored):
+    adata = make_adata()
+    dash = SCLabDashboard(adata)
+    dash.seed_input.value = "1"  # a change is needed to store anything
+    dash.seed_input.value = seed
+    assert adata.uns["sclab"]["settings"]["random_state"] == stored
+    path = tmp_path / "a.h5ad"
+    adata.write_h5ad(path)
+    back = anndata.read_h5ad(path)
+    assert back.uns["sclab"]["settings"]["random_state"] == stored
+
+    dash = SCLabDashboard(back)
+    assert dash.seed_input.value == seed
+    fixed = dash.processor.steps["PCA"].fixed_params
+    assert fixed.get("random_state") == stored  # empty: the key is absent
 
 
 def test_arguments_win_over_stored_settings():

@@ -14,7 +14,6 @@ from ipywidgets.widgets import (
     FileUpload,
     GridBox,
     HBox,
-    IntText,
     Layout,
     Output,
     Select,
@@ -88,7 +87,8 @@ class SCLabDashboard(GridBox):
     Notes
     -----
     The Settings tab holds the counts layer, the batch key, background steps,
-    the default random seed, the plot backend and appearance, and whether the
+    the random seed (empty: each step's own default; 0 is a seed like any
+    other), the plot backend and appearance, and whether the
     tables stay loaded when hidden. Each change is stored in
     ``adata.uns["sclab"]["settings"]`` (a dict, saved with the h5ad) and read
     back when a dashboard is built on that data. Precedence: arguments given
@@ -296,11 +296,14 @@ class SCLabDashboard(GridBox):
             description="Background steps",
             tooltip="Off: steps run on the main thread, as step.run() does",
         )
-        self.seed_input = IntText(
-            value=0,
+        self.seed_input = Text(
+            placeholder="step default",
             description="Random seed",
-            tooltip="random_state of the steps that have one; 0: their defaults",
+            tooltip="random_state of the steps that have one; empty: their defaults",
+            continuous_update=False,
         )
+        self.seed_message = HTML()
+        self._seed = None  # the applied seed: None is empty
         self.keep_tables_checkbox = Checkbox(
             value=False,
             description="Keep tables loaded when hidden",
@@ -349,7 +352,12 @@ class SCLabDashboard(GridBox):
         self.settings = VBox(
             [
                 section("Data", self.counts_layer_dropdown, self.batch_key_dropdown),
-                section("Steps", self.background_checkbox, self.seed_input),
+                section(
+                    "Steps",
+                    self.background_checkbox,
+                    self.seed_input,
+                    self.seed_message,
+                ),
                 plotter.settings,
                 section("Tables", self.keep_tables_checkbox),
             ]
@@ -360,6 +368,8 @@ class SCLabDashboard(GridBox):
                 if key in widgets and key not in BUILD_SETTINGS:
                     widget = widgets[key]
                     try:  # h5ad gives numpy scalars
+                        if key == "random_state":  # None or "": empty
+                            value = "" if value in (None, "") else int(value)
                         widget.value = type(widget.value)(value)
                     except (TraitError, TypeError, ValueError):
                         pass  # e.g. a theme this plotly lacks: the default
@@ -385,6 +395,7 @@ class SCLabDashboard(GridBox):
 
     def _save_settings(self, _=None):
         settings = {k: w.value for k, w in self._settings_widgets().items()}
+        settings["random_state"] = self._seed  # None: empty
         self.dataset.adata.uns.setdefault(UNS_KEY, {})["settings"] = settings
 
     # both keep the current value: a deleted layer or column is not a new setting
@@ -399,8 +410,15 @@ class SCLabDashboard(GridBox):
         return {"(none)": "", **{c: c for c in columns}, **({key: key} if key else {})}
 
     def _set_seed(self, change: dict):
-        """The steps' ``random_state``, unless the user set another (0: their defaults)."""
-        old, new = change["old"], change["new"]
+        """The steps' ``random_state``, unless the user set another (empty: their defaults)."""
+        try:
+            text = change["new"].strip()
+            new = int(text) if text else None
+        except ValueError:
+            self.seed_message.value = "Enter an integer, or leave empty."
+            return
+        self.seed_message.value = ""
+        old, self._seed = self._seed, new
         for step in self.processor.steps.values():
             params = getattr(step, "fixed_params", None)
             if (
@@ -408,9 +426,9 @@ class SCLabDashboard(GridBox):
                 or "random_state" not in inspect.signature(step.function).parameters
             ):
                 continue
-            if params.get("random_state", 0) != old:
+            if params.get("random_state") != old:
                 continue  # set by the user
-            if new == 0:
+            if new is None:
                 params.pop("random_state", None)
             else:
                 params["random_state"] = new
