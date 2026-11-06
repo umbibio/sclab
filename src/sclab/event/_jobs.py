@@ -150,6 +150,7 @@ class JobRunner:
 
     tick_seconds = 0.5
     beat_timeout = 3.0  # no beat for this long: the IOLoop timer resumes the job
+    threaded = True  # False: start() is run(), see the Settings tab "Background steps"
 
     def __init__(self, broker):
         self.broker = broker
@@ -238,11 +239,11 @@ class JobRunner:
     def start(self, job, name: str, lock=()):
         """Drive ``job`` with its work in a worker thread (see the module doc).
 
-        Without a kernel (and no ``loop`` set) this is :meth:`run`. The widgets
-        in ``lock`` are disabled while the work runs.
+        Without a kernel (and no ``loop`` set), or with ``threaded`` off, this
+        is :meth:`run`. The widgets in ``lock`` are disabled while the work runs.
         """
         loop = self.loop or _kernel_loop()
-        if loop is None:
+        if loop is None or not self.threaded:
             return self.run(job)
         self._check_idle(job)
         self._job, self._loop, self.name = job, loop, name

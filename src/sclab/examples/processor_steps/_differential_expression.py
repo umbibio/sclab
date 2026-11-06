@@ -345,6 +345,9 @@ class DifferentialExpression(ProcessorStepBase):
         for key in ("cell_identity", "sample_key"):
             set_options_keep_value(self.variable_controls[key], options)
 
+    def dset_counts_layer_change_callback(self, old: str, new: str):
+        self._update_method()  # the auto layer, unless overridden
+
     def _auto_layer(self, method: str | None) -> str:
         """The layer ``method`` uses unless overridden."""
         return self.parent.dataset.counts_layer if method in PSEUDOBULK_METHODS else "X"

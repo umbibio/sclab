@@ -51,17 +51,18 @@ def _hex(color: str) -> str:
 PALETTE = [_hex(c) for c in COLOR_DISCRETE_SEQUENCE]
 
 
-def color_spec(series: pd.Series, colorscale=None) -> dict | None:
+def color_spec(series: pd.Series, colorscale=None, palette=None) -> dict | None:
     """How a color column is drawn: the plotly backend's colors and NA handling."""
+    palette = PALETTE if palette is None else [_hex(c) for c in palette]
     if is_bool_dtype(series):
         labels = series.map({True: "True", False: "False"})
-        colors = {"True": PALETTE[0], "False": NA_COLOR}
+        colors = {"True": palette[0], "False": NA_COLOR}
     elif isinstance(series.dtype, pd.CategoricalDtype):
         labels = (
             series.astype(object).where(series.notna()).map(str, na_action="ignore")
         )
         colors = {
-            str(c): PALETTE[i % len(PALETTE)]
+            str(c): palette[i % len(palette)]
             for i, c in enumerate(series.cat.categories)
         }
     elif is_numeric_dtype(series):
@@ -156,11 +157,12 @@ def make_frame(
     min_size: float = 0.3,
     selected: np.ndarray | None = None,
     title: str = "",
+    palette: list[str] | None = None,
 ) -> dict:
     """A 2D frame (see the module docstring) of ``df``'s columns.
 
     ``values``: the plot control values (``PlotterControls.dict`` names); ``sizeby``
-    and ``scale`` override theirs.
+    and ``scale`` override theirs. ``colorscale``, ``palette``: None for the defaults.
     """
     sizeby = values["sizeby"] if sizeby is None else sizeby
     scale = values["marker_size"] if scale is None else scale
@@ -186,7 +188,7 @@ def make_frame(
         "x_title": col_x,
         "y_title": col_y,
         "title": title,
-        "color": None if not colorby else color_spec(df[colorby], colorscale),
+        "color": None if not colorby else color_spec(df[colorby], colorscale, palette),
         "color_title": colorby,
         "size": size,
         "marker_size": scale,

@@ -91,6 +91,11 @@ class Integration(ProcessorStepBase):
         )
         update_reference_batch()
 
+    def dspr_batch_key_change_callback(self, old: str | None, new: str | None):
+        group_by = self.variable_controls["group_by"]
+        if group_by.value == old and new in group_by.options.values():  # not chosen
+            group_by.value = new
+
     def validate(self, params: dict) -> str | None:
         obs = self.parent.dataset.adata.obs
         group_by, flavor = params.get("group_by"), params.get("flavor")

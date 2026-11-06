@@ -124,6 +124,7 @@ class Processor(EventClient):
         "dspr_keep_selected_click",
         "dspr_drop_selected_click",
         "dspr_apply_label_click",
+        "dspr_batch_key_change",  # (old, new), see set_batch_key
     ]
 
     def __init__(
@@ -214,26 +215,15 @@ class Processor(EventClient):
         for name in ("filter_rows", "apply_label"):  # their panels are not shown
             self.steps[name].status = self.selection_status
 
-        if "batch" in self.dataset.adata.obs.columns and not batch_key:
-            batch_key = "batch"
-
-        if batch_key:
-            batch_values = (
-                self.dataset.adata.obs[batch_key]
-                .sort_values()
-                .astype(str)
-                .unique()
-                .tolist()
-            )
-
-        else:
-            batch_values = None
-
-        self.batch_key = batch_key
-        self.batch_values = batch_values
-
         super().__init__(self.broker)
         self.broker.subscribe("dset_metadata_change", self._make_selection_controls)
+
+        # None: "batch" if there is such a column; "": no batch key
+        if "batch" in self.dataset.adata.obs.columns and batch_key is None:
+            batch_key = "batch"
+        self.batch_key = self.batch_values = None
+        self._batch_dropdowns: list[Dropdown] = []  # see make_selectbatch_drowpdown
+        self.set_batch_key(batch_key)
 
         registered_methods = get_sclab_methods()
         self.add_steps(registered_methods)
@@ -1112,6 +1102,23 @@ class Processor(EventClient):
             index = self._recorded_selection(filters, shape, mask, n)
         self.dataset.apply_label(pd.Index(index), column, label)
 
+    def set_batch_key(self, batch_key: str | None):
+        """Set ``batch_key`` (None or "": none); steps update their defaults.
+
+        Controls made only with a batch key (e.g. Neighbors' "Group By Batch")
+        appear when the dashboard is built with one.
+        """
+        old, self.batch_key = self.batch_key, batch_key or None
+        self.batch_values = None
+        if self.batch_key:
+            column = self.dataset.adata.obs[self.batch_key]
+            self.batch_values = column.sort_values().astype(str).unique().tolist()
+        options = {"": None, **{v: v for v in self.batch_values or ()}}
+        for dropdown in self._batch_dropdowns:
+            set_options_keep_value(dropdown, options)
+        if self.batch_key != old:
+            self.broker.publish("dspr_batch_key_change", old, self.batch_key)
+
     def make_selectbatch_drowpdown(self, description="Select Batch"):
         control = dict()
         if self.batch_key:
@@ -1121,6 +1128,7 @@ class Processor(EventClient):
                 value=None,
                 description=description,
             )
+            self._batch_dropdowns.append(control[control_key])
         return control
 
     def make_groupbybatch_checkbox(self, description="Group By Batch"):

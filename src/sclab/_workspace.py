@@ -2,7 +2,7 @@
 
 Each dataset gets its own :class:`SCLabDashboard`, built when the dataset is
 activated and closed when another one is. Leaving a dataset read from a file
-frees its AnnData; if it was edited (its step history or pinned views in
+frees its AnnData; if it was edited (its step history, pinned views or settings in
 ``adata.uns["sclab"]`` changed since it was loaded) it is first written to
 ``<workspace_dir>/<name>.h5ad``, which is read back on the next activation.
 Without a ``workspace_dir`` such a switch is refused. Datasets passed in as
@@ -61,7 +61,8 @@ class DatasetEntry:
 
 def _state_hash(adata: AnnData) -> str:
     uns = adata.uns.get(UNS_KEY, {})
-    return sha256(repr((uns.get("history"), uns.get("views"))).encode()).hexdigest()
+    state = (uns.get("history"), uns.get("views"), uns.get("settings"))
+    return sha256(repr(state).encode()).hexdigest()
 
 
 def _uns_history(path: Path) -> list[dict]:
@@ -279,7 +280,7 @@ class Workspace(VBox):
     __del__ = SCLabDashboard.__del__  # GC: close only this widget, see there
 
     def is_dirty(self, name: str) -> bool:
-        """Whether the loaded dataset's history or pinned views changed since loading."""
+        """Whether the loaded dataset's history, views or settings changed since loading."""
         entry = self.datasets[name]
         return entry.adata is not None and _state_hash(entry.adata) != entry.base_hash
 
@@ -308,6 +309,8 @@ class Workspace(VBox):
                 )
         if entry.source is not None or entry.cache_path is not None:
             entry.adata = None
+        # passed back on activation: else a merge's label beats the Settings tab's
+        entry.batch_key = entry.dash.processor.batch_key
         entry.dash.broker.unsubscribe("dset_state_change", self._watcher)
         self._watcher = None
         entry.dash.close()

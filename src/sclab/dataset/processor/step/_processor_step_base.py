@@ -27,6 +27,7 @@ _DATASET_EVENTS = (
     "dset_total_vars_change",
     "dset_var_dataframe_change",
     "dset_state_change",  # after every step run
+    "dset_counts_layer_change",
 )
 
 

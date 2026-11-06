@@ -92,6 +92,11 @@ class Preprocess(ProcessorStepBase):
             return f"No column {group_by!r} in the data"
         return None
 
+    def dset_counts_layer_change_callback(self, old: str, new: str):
+        layer = self.variable_controls["layer"]
+        if layer.value == old and new in layer.options:  # else chosen by the user
+            layer.value = new
+
     def resolved_params(self, params: dict) -> dict:
         resolved = super().resolved_params(params)
         if resolved.get("layer") is None:

@@ -67,6 +67,7 @@ class SCLabDataset(EventClient):
         "dset_var_dataframe_change",
         "dset_total_vars_change",
         "dset_state_change",  # history or pinned views changed
+        "dset_counts_layer_change",  # (old, new), see set_counts_layer
     ]
     preemptions: dict[str, list[str]] = {
         "dset_data_key_selection_change": [
@@ -217,6 +218,12 @@ class SCLabDataset(EventClient):
 
         if self.counts_layer not in self.adata.layers:
             self.adata.layers[self.counts_layer] = self.adata.X.copy()
+
+    def set_counts_layer(self, layer: str):
+        """Use the existing ``layer`` as the counts layer; steps update their defaults."""
+        old, self.counts_layer = self.counts_layer, layer
+        if layer != old:
+            self.broker.publish("dset_counts_layer_change", old, layer)
 
     @property
     def data_dict(self) -> dict:

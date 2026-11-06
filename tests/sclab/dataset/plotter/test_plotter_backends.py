@@ -40,7 +40,8 @@ def test_settings_tab_switches_the_2d_backend():
     dash = make_dash()
     p = dash.plotter
     assert dash.main_content.titles[-1] == "Settings"
-    assert dash.main_content.children[-1] is p.settings
+    assert dash.main_content.children[-1] is dash.settings
+    assert p.settings in dash.settings.children
     assert p.controls.full_resolution in p.settings.children
     assert shown(dash) is p.g and p.g.data
 

@@ -3,8 +3,10 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+import plotly.colors as pc
 import plotly.express as px
 import plotly.graph_objects as go
+import plotly.io as pio
 import svgpathtools as spt
 from ipywidgets.widgets import (
     HTML,
@@ -49,6 +51,12 @@ MAX_TRACE_POINTS = 500_000
 POS = "__sclab_row__"  # df column: row position of each cell in Plotter._rows
 # plotly.js draws opaque 3D markers with a depth test, translucent ones in trace order
 OPACITY_3D_NOTE = "3D: opacity below 1 draws by trace order, not depth"
+# plotly's categorical palettes, for the Settings tab
+PALETTES = {
+    name: colors
+    for name, colors in vars(pc.qualitative).items()
+    if isinstance(colors, list) and not name.startswith("_")
+}
 
 
 def _flat(props: dict, prefix: str = ""):
@@ -226,11 +234,38 @@ class Plotter(GridBox, EventClient):
         self.min_size_input.observe(
             lambda _: self.ctrl_sizeby_change_callback(None), "value"
         )
-        style = dict(description_width="80px")
+        self.template_dropdown = Dropdown(
+            options=list(pio.templates),
+            value="simple_white",
+            description="Theme",
+            tooltip="plotly theme; static and jupyter-scatter plots stay white",
+        )
+        self.colorscale_dropdown = Dropdown(
+            options=px.colors.named_colorscales(),
+            value="viridis",  # simple_white's
+            description="Col. scale",
+            tooltip="Colors of numeric values (Gene Expression has its own)",
+        )
+        self.palette_dropdown = Dropdown(
+            options=["sclab", *(n for n in PALETTES if not n.endswith("_r"))],
+            value="sclab",
+            description="Palette",
+            tooltip="Colors of categories",
+        )
+        for widget in (
+            self.template_dropdown,
+            self.colorscale_dropdown,
+            self.palette_dropdown,
+        ):
+            widget.observe(lambda _: self.make_new_figure(**self._last_call), "value")
+        style = dict(description_width="100px")  # as the dashboard's settings
         settings = (
             self.backend_dropdown,
             self.max_3d_points_input,
             self.min_size_input,
+            self.template_dropdown,
+            self.colorscale_dropdown,
+            self.palette_dropdown,
         )
         for widget in settings:
             widget.style = style
@@ -242,6 +277,22 @@ class Plotter(GridBox, EventClient):
             ],
             layout=Layout(padding="8px"),
         )
+
+    @property
+    def template(self) -> str:
+        """The plotly template (theme) of the plots."""
+        return self.template_dropdown.value
+
+    @property
+    def colorscale(self) -> str:
+        """The colorscale of numeric color columns."""
+        return self.colorscale_dropdown.value
+
+    @property
+    def palette(self) -> list[str]:
+        """The colors of categories, in order."""
+        name = self.palette_dropdown.value
+        return COLOR_DISCRETE_SEQUENCE if name == "sclab" else PALETTES[name]
 
     @property
     def backend(self) -> str:
@@ -355,7 +406,8 @@ class Plotter(GridBox, EventClient):
             {k: w.value for k, w in self.controls.dict.items() if hasattr(w, "value")},
             sizeby=sizeby,
             scale=scale,
-            colorscale=figure_kwargs.get("color_continuous_scale"),
+            colorscale=figure_kwargs.get("color_continuous_scale", self.colorscale),
+            palette=self.palette,
             min_size=self.min_size_input.value,
             selected=None if selected is None else df.index.isin(selected),
             title=self.dataset._selected_data_key,
@@ -586,7 +638,7 @@ class Plotter(GridBox, EventClient):
         if self.dataset.data.empty or invalid_axes:
             self._show(self.g)
             layout = dict(
-                xaxis_title="", yaxis_title="", title="No Data", template="simple_white"
+                xaxis_title="", yaxis_title="", title="No Data", template=self.template
             )
             self.g.update(dict(layout=layout, data=[]), overwrite=True)
             self._structure, self._trace_rows = None, []
@@ -678,14 +730,20 @@ class Plotter(GridBox, EventClient):
             keep = np.argpartition(rank, limit)[:limit]
             df = df.iloc[np.sort(keep)]  # keeps the color sort order
 
+        palette = self.palette
+        figure_kwargs = {  # the Settings tab's appearance, unless given
+            "color_discrete_sequence": palette,
+            "template": self.template,
+            # 1D: colors are binned, px.histogram has no continuous scale
+            **({} if ndims == "1D" else {"color_continuous_scale": self.colorscale}),
+            **figure_kwargs,
+        }
         if ndims == "1D":
             fig = px.histogram(
                 df,
                 x=col_x,
                 log_x=log_x,
                 color=colorby,
-                color_discrete_sequence=COLOR_DISCRETE_SEQUENCE,
-                template="simple_white",
                 nbins=self.controls.histogram_nbins.value,
                 **figure_kwargs,
             )
@@ -697,9 +755,7 @@ class Plotter(GridBox, EventClient):
                 log_x=log_x,
                 log_y=log_y,
                 color=colorby,
-                color_discrete_sequence=COLOR_DISCRETE_SEQUENCE,
                 custom_data=[POS],  # -> the index map, see _compact_traces
-                template="simple_white",
                 render_mode="webgl",
                 **figure_kwargs,
             )
@@ -713,9 +769,7 @@ class Plotter(GridBox, EventClient):
                 log_y=log_y,
                 log_z=log_z,
                 color=colorby,
-                color_discrete_sequence=COLOR_DISCRETE_SEQUENCE,
                 custom_data=[POS],  # -> the index map, see _compact_traces
-                template="simple_white",
                 **figure_kwargs,
             )
         else:
@@ -723,7 +777,7 @@ class Plotter(GridBox, EventClient):
                 xaxis_title="",
                 yaxis_title="",
                 title="No Data",
-                template="simple_white",
+                template=self.template,
                 height=self.controls.plot_height.value,
                 modebar=self.modebar,
                 dragmode=False,
@@ -738,16 +792,13 @@ class Plotter(GridBox, EventClient):
         fig.update_traces(marker_color="lightgray", selector={"name": "NA"})
         if colorby and is_bool_dtype(series):
             fig.update_traces(marker_color="lightgray", selector={"name": "False"})
-            fig.update_traces(
-                marker_color=COLOR_DISCRETE_SEQUENCE[0], selector={"name": "True"}
-            )
+            fig.update_traces(marker_color=palette[0], selector={"name": "True"})
             fig.data = fig.data[::-1]
 
         if colorby and isinstance(series.dtype, pd.CategoricalDtype):
-            color_pallete_size = len(COLOR_DISCRETE_SEQUENCE)
             for i, cat in enumerate(series.cat.categories):
                 fig.update_traces(
-                    marker_color=COLOR_DISCRETE_SEQUENCE[i % color_pallete_size],
+                    marker_color=palette[i % len(palette)],
                     selector={"name": cat},
                 )
 

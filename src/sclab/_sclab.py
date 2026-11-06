@@ -5,10 +5,14 @@ from pathlib import Path
 from anndata import AnnData
 from IPython.display import display
 from ipywidgets.widgets import (
+    HTML,
     Button,
+    Checkbox,
+    Dropdown,
     FileUpload,
     GridBox,
     HBox,
+    IntText,
     Label,
     Layout,
     Output,
@@ -18,12 +22,24 @@ from ipywidgets.widgets import (
     VBox,
     Widget,
 )
+from traitlets import TraitError
 
 from ._io import _read_adata_bytes, is_valid_url, load_adata_from_url, read_adata
 from .dataset import SCLabDataset
 from .dataset.plotter import Plotter
+from .dataset.plotter._backends import BACKENDS
 from .dataset.processor import Processor
+from .dataset.processor._history import UNS_KEY
 from .event import EventBroker
+from .utils import (
+    LazyOutput,
+    layer_keys,
+    set_options_keep_value,
+    text_or_category_columns,
+)
+
+# set at build: the steps' controls are made from them
+BUILD_SETTINGS = ("counts_layer", "batch_key", "plot_backend")
 
 
 class SCLabDashboard(GridBox):
@@ -41,21 +57,36 @@ class SCLabDashboard(GridBox):
         loader widget is displayed instead.
     name : str, optional
         Display name for the dashboard. Default is "SCLab Dashboard".
-    counts_layer : str, optional
+    counts_layer : str or None, optional
         Name of the layer to use (and create if absent) for raw counts.
-        Default is "counts".
+        None: the stored setting, else "counts".
     batch_key : str or None, optional
         Key in ``adata.obs`` identifying batches/samples for batch-aware
-        steps such as Integration and Neighbors. Default is None.
+        steps such as Integration and Neighbors; "" for none. None: the
+        stored setting, else "batch" if there is such a column.
     copy : bool, optional
         If True, work on a copy of the input AnnData. Default is False.
     source : str or None, optional
         Path or URL the AnnData was read from, for the load line of the
         generated script. Set automatically when a path or URL is given.
-    plot_backend : {"plotly", "jscatter", "static"}, optional
-        Backend of the 2D plots, also in the Settings tab and settable later
-        as ``dashboard.plotter.backend``. "jscatter" needs jupyter-scatter.
-        1D and 3D plots always use plotly. Default is "plotly".
+    plot_backend : {"plotly", "jscatter", "static"} or None, optional
+        Backend of the 2D plots, also settable later as
+        ``dashboard.plotter.backend``. "jscatter" needs jupyter-scatter.
+        1D and 3D plots always use plotly. None: the stored setting, else
+        "plotly".
+
+    Notes
+    -----
+    The Settings tab holds the counts layer, the batch key, background steps,
+    the default random seed, the plot backend and appearance, and whether the
+    tables stay loaded when hidden. Each change is stored in
+    ``adata.uns["sclab"]["settings"]`` (a dict, saved with the h5ad) and read
+    back when a dashboard is built on that data. Precedence: arguments given
+    here, then the stored settings, then the defaults. A setting changes the
+    defaults of the steps' controls, not values the user chose: a control is
+    updated only while it holds the previous setting's value. The batch key
+    controls of PCA and Neighbors exist only if the dashboard is built with
+    a batch key.
 
     Attributes
     ----------
@@ -85,11 +116,11 @@ class SCLabDashboard(GridBox):
         self,
         adata_or_filepath_or_url: AnnData | str | None = None,
         name: str = "SCLab Dashboard",
-        counts_layer: str = "counts",
+        counts_layer: str | None = None,
         batch_key: str | None = None,
         copy: bool = False,
         source: str | None = None,
-        plot_backend: str = "plotly",
+        plot_backend: str | None = None,
     ):
         self._preexisting = _live_widget_ids()  # not ours to close, see close()
         self.source = source  # path or URL, for the generated script's load line
@@ -173,20 +204,32 @@ class SCLabDashboard(GridBox):
 
     def _load(self, adata: AnnData, copy: bool = False):
         before = _live_widget_ids()
+        # the arguments, else the stored settings (if still valid), else defaults
+        stored = dict(adata.uns.get(UNS_KEY, {}).get("settings", {}))
+        counts_layer, batch_key, backend = (stored.get(k) for k in BUILD_SETTINGS)
+        if self.counts_layer is not None or counts_layer not in layer_keys(adata):
+            counts_layer = self.counts_layer or "counts"
+        stored_key = batch_key == "" or batch_key in adata.obs  # "": none
+        if self.batch_key is not None or not stored_key:
+            batch_key = self.batch_key
+        if self.plot_backend is not None or backend not in BACKENDS:
+            backend = self.plot_backend or "plotly"
+
         self.dataset = SCLabDataset(
             adata,
             name=self.name,
-            counts_layer=self.counts_layer,
+            counts_layer=str(counts_layer),
             copy=copy,
             broker=self.broker,
         )
-        self.plotter = Plotter(self.dataset, backend=self.plot_backend)
+        self.plotter = Plotter(self.dataset, backend=str(backend))
         self.processor = Processor(
             self.dataset,
             self.plotter,
-            batch_key=self.batch_key,
+            batch_key=batch_key if batch_key is None else str(batch_key),
             source=self.source,
         )
+        self._init_settings(stored)
 
         self.main_content = Tab(
             children=[
@@ -196,7 +239,7 @@ class SCLabDashboard(GridBox):
                 self.dataset.var_table,
                 self.processor.history_panel,
                 self.broker.logs_tab,
-                self.plotter.settings,
+                self.settings,
             ],
             titles=[
                 "Main graph",
@@ -221,6 +264,158 @@ class SCLabDashboard(GridBox):
         )
         self.layout = self.dashboard_layout
         self._built |= _live_widget_ids() - before
+
+    def _init_settings(self, stored: dict):
+        """The Settings tab, with the ``stored`` settings applied (see the class doc)."""
+        dataset, processor, plotter = self.dataset, self.processor, self.plotter
+        self.counts_layer_dropdown = Dropdown(
+            options=self._counts_layer_options(),
+            value=dataset.counts_layer,
+            description="Counts layer",
+            tooltip="Raw counts: the default layer of QC, Preprocess, PCA, "
+            "Doublet Detection and pseudobulk DE",
+        )
+        self.batch_key_dropdown = Dropdown(
+            options=self._batch_key_options(),
+            value=processor.batch_key or "",
+            description="Batch key",
+            tooltip="Batches or samples, for Integration, PCA and Neighbors",
+        )
+        self.background_checkbox = Checkbox(
+            value=True,
+            description="Background steps",
+            tooltip="Off: steps run on the main thread, as step.run() does",
+        )
+        self.seed_input = IntText(
+            value=0,
+            description="Random seed",
+            tooltip="random_state of the steps that have one; 0: their defaults",
+        )
+        self.keep_tables_checkbox = Checkbox(
+            value=False,
+            description="Keep tables loaded when hidden",
+            tooltip="Reopening a table is instant, but a page reload downloads "
+            "every loaded table again",
+        )
+        self.counts_layer_dropdown.observe(
+            lambda c: dataset.set_counts_layer(c["new"]), "value"
+        )
+        self.batch_key_dropdown.observe(
+            lambda c: processor.set_batch_key(c["new"]), "value"
+        )
+        self.background_checkbox.observe(
+            lambda c: setattr(self.broker.jobs, "threaded", c["new"]), "value"
+        )
+        self.seed_input.observe(self._set_seed, "value")
+        self.keep_tables_checkbox.observe(self._set_keep_tables, "value")
+        self.broker.subscribe(
+            "dset_anndata_layers_change",
+            lambda *_, **__: set_options_keep_value(
+                self.counts_layer_dropdown, self._counts_layer_options()
+            ),
+        )
+        self.broker.subscribe(
+            "dset_metadata_change",
+            lambda *_, **__: set_options_keep_value(
+                self.batch_key_dropdown, self._batch_key_options()
+            ),
+        )
+
+        widgets = self._settings_widgets()
+        for widget in (
+            self.counts_layer_dropdown,
+            self.batch_key_dropdown,
+            self.seed_input,
+        ):
+            widget.style = dict(description_width="100px")  # as the plot settings
+        for checkbox in (self.background_checkbox, self.keep_tables_checkbox):
+            checkbox.indent = False
+
+        def section(title, *children):
+            return VBox(
+                [HTML(f"<b>{title}</b>"), *children], layout=Layout(padding="8px")
+            )
+
+        self.settings = VBox(
+            [
+                section("Data", self.counts_layer_dropdown, self.batch_key_dropdown),
+                section("Steps", self.background_checkbox, self.seed_input),
+                plotter.settings,
+                section("Tables", self.keep_tables_checkbox),
+            ]
+        )
+
+        with self.broker.batch():  # one redraw
+            for key, value in stored.items():
+                if key in widgets and key not in BUILD_SETTINGS:
+                    widget = widgets[key]
+                    try:  # h5ad gives numpy scalars
+                        widget.value = type(widget.value)(value)
+                    except (TraitError, TypeError, ValueError):
+                        pass  # e.g. a theme this plotly lacks: the default
+        for widget in widgets.values():  # stored on change only: opening is no edit
+            widget.observe(self._save_settings, "value")
+
+    def _settings_widgets(self) -> dict[str, Widget]:
+        """The settings, by their key in ``adata.uns["sclab"]["settings"]``."""
+        plotter = self.plotter
+        return {
+            "counts_layer": self.counts_layer_dropdown,
+            "batch_key": self.batch_key_dropdown,
+            "background": self.background_checkbox,
+            "random_state": self.seed_input,
+            "plot_backend": plotter.backend_dropdown,
+            "max_3d_points": plotter.max_3d_points_input,
+            "min_size": plotter.min_size_input,
+            "template": plotter.template_dropdown,
+            "colorscale": plotter.colorscale_dropdown,
+            "palette": plotter.palette_dropdown,
+            "keep_tables": self.keep_tables_checkbox,
+        }
+
+    def _save_settings(self, _=None):
+        settings = {k: w.value for k, w in self._settings_widgets().items()}
+        self.dataset.adata.uns.setdefault(UNS_KEY, {})["settings"] = settings
+
+    # both keep the current value: a deleted layer or column is not a new setting
+    def _counts_layer_options(self) -> list[str]:
+        layers = layer_keys(self.dataset.adata)
+        current = self.dataset.counts_layer
+        return layers if current in layers else [*layers, current]
+
+    def _batch_key_options(self) -> dict:
+        columns = text_or_category_columns(self.dataset.adata.obs)
+        key = self.processor.batch_key  # e.g. a numeric "batch" column
+        return {"(none)": "", **{c: c for c in columns}, **({key: key} if key else {})}
+
+    def _set_seed(self, change: dict):
+        """The steps' ``random_state``, unless the user set another (0: their defaults)."""
+        old, new = change["old"], change["new"]
+        for step in self.processor.steps.values():
+            params = getattr(step, "fixed_params", None)
+            if (
+                params is None
+                or "random_state" not in inspect.signature(step.function).parameters
+            ):
+                continue
+            if params.get("random_state", 0) != old:
+                continue  # set by the user
+            if new == 0:
+                params.pop("random_state", None)
+            else:
+                params["random_state"] = new
+
+    def _set_keep_tables(self, change: dict):
+        results = self.processor.results_panel.results_stack.children
+        tables = [getattr(r, "table_output", None) for r in results]
+        for output in (
+            self.dataset.obs_table_output,
+            self.dataset.var_table_output,
+            *(t for t in tables if isinstance(t, LazyOutput)),
+        ):
+            output.unload = not change["new"]
+            if output.unload and not output.shown:
+                output.outputs = ()
 
     def generate_code(self, header: bool = True) -> str:
         """Python script reproducing the steps applied in the dashboard."""

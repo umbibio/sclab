@@ -103,6 +103,9 @@ class DoubletDetection(ProcessorStepBase):
             if counts_layer in self._layer_dropdown.options:
                 self._layer_dropdown.value = counts_layer
 
+    def dset_counts_layer_change_callback(self, old: str, new: str):
+        self._on_override_change({"new": self._override_checkbox.value})
+
     def validate(self, params: dict) -> str | None:
         layers = layer_keys(self.parent.dataset.adata)
         if params.get("override_layer"):
