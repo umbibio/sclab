@@ -336,10 +336,16 @@ class TestReadAdataBytes:
 
 class TestDataLoaderOnUpload:
     @staticmethod
-    def _loader():
+    def _loader(tmp_path):
         from sclab._sclab import DataLoader
 
-        return DataLoader(None)
+        loaded = []
+        loader = DataLoader(
+            lambda adata, source: loaded.append((adata, source)),
+            user_ns={},
+            dest_dir=tmp_path / "ws",
+        )
+        return loader, loaded
 
     @staticmethod
     def _upload(name: str, content: bytes) -> tuple:
@@ -354,16 +360,18 @@ class TestDataLoaderOnUpload:
         )
 
     def test_upload_10x_h5(self, tmp_path):
-        loader = self._loader()
+        loader, loaded = self._loader(tmp_path)
         p = tx.write_10x_h5_v3(tmp_path / "v3.h5")
         loader.upload.value = self._upload("v3.h5", p.read_bytes())
-        assert loader.adata.shape == (4, 2)
-        assert loader.adata.var_names.tolist() == tx.GENE_IDS[:2]
+        ((adata, source),) = loaded
+        assert source == str(tmp_path / "ws" / "uploads" / "v3.h5")
+        assert adata.shape == (4, 2)
+        assert adata.var_names.tolist() == tx.GENE_IDS[:2]
 
-    def test_upload_unsupported_suffix_leaves_adata_unset(self):
-        loader = self._loader()
+    def test_upload_unsupported_suffix_loads_nothing(self, tmp_path):
+        loader, loaded = self._loader(tmp_path)
         loader.upload.value = self._upload("data.csv", b"a,b\n")
-        assert getattr(loader, "adata", None) is None
+        assert loaded == [] and "Cannot read data.csv" in loader.status.value
 
 
 # --------------------------------------------------------------------------

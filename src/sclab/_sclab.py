@@ -1,5 +1,7 @@
 import inspect
+import tempfile
 from collections.abc import Callable
+from html import escape
 from pathlib import Path
 
 from anndata import AnnData
@@ -13,9 +15,9 @@ from ipywidgets.widgets import (
     GridBox,
     HBox,
     IntText,
-    Label,
     Layout,
     Output,
+    Select,
     Tab,
     Text,
     ToggleButtons,
@@ -24,7 +26,15 @@ from ipywidgets.widgets import (
 )
 from traitlets import TraitError
 
-from ._io import _read_adata_bytes, is_valid_url, load_adata_from_url, read_adata
+from ._io import (
+    download,
+    is_mtx_dir,
+    is_valid_url,
+    load_adata_from_url,
+    peek_shape,
+    read_adata,
+    unique_path,
+)
 from .dataset import SCLabDataset
 from .dataset.plotter import Plotter
 from .dataset.plotter._backends import BACKENDS
@@ -477,83 +487,144 @@ def _close_tree(root, keep: set[str]):
             Widget.close(widget)  # not the override: root may be a dashboard
 
 
-class DataLoader(VBox):
-    """Pick an AnnData to load; ``on_load(adata, source)`` gets the choice.
+UPLOAD_WARN_BYTES = 200 * 2**20  # larger uploads can starve the websocket's pings
+_FILE_SUFFIXES = (".h5ad", ".h5")  # what read_adata reads, besides mtx folders
 
-    ``user_ns`` is the namespace listed under "Defined datasets"; by default,
-    the locals of whoever called the code that built this loader.
+
+def _fmt_size(n: float) -> str:
+    for unit in ("B", "KB", "MB", "GB"):
+        if n < 1024:
+            return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
+        n /= 1024
+    return f"{n:.1f} TB"
+
+
+def _is_dataset(path: Path) -> bool:
+    """Whether :func:`read_adata` reads ``path``: listed by the file browser."""
+    return is_mtx_dir(path) or (path.is_file() and path.suffix in _FILE_SUFFIXES)
+
+
+def _describe(path: Path) -> str:
+    """``name · kind · size · shape``, the shape only if cheap to know."""
+    if path.is_dir():
+        size = sum(f.stat().st_size for f in path.iterdir() if f.is_file())
+        parts = [f"{path.name}/", "10x mtx folder"]
+    else:
+        size = path.stat().st_size
+        parts = [path.name, "10x h5" if path.suffix == ".h5" else "h5ad"]
+    parts.append(_fmt_size(size))
+    if shape := peek_shape(path):
+        parts.append("×".join(map(str, shape)))
+    return " · ".join(parts)
+
+
+def _error_html(e: Exception) -> str:
+    message = escape(str(e) or type(e).__name__)
+    return f"<span style='color:#b91c1c;font-size:12px'>{message}</span>"
+
+
+class DataLoader(VBox):
+    """Pick a dataset: a file, a URL, an upload or an AnnData defined in the notebook.
+
+    Tabs: "Files" browses the notebook's working directory (and its
+    subfolders, never above it) for .h5ad, 10x .h5 files and 10x mtx folders;
+    "URL" downloads a .h5ad or 10x .h5 file and "Upload" saves one sent from
+    the browser, both into ``dest_dir`` (``downloads/`` and ``uploads/``; a
+    temporary folder if None); "Defined in notebook" lists the AnnData objects
+    of ``user_ns`` (by default the locals of whoever called the code that
+    built this loader). It opens on "Defined in notebook" if there are any.
+
+    A file goes to ``on_file(path, url=..., uploaded=...)`` (``url``: where
+    it was downloaded from); without ``on_file`` it is read and goes, like a
+    defined AnnData, to ``on_load(adata, source)``. Errors are shown in the
+    panel.
     """
 
     on_load: Callable[[AnnData, str | None], None]
     adata: AnnData
 
-    upload: FileUpload
-    upload_info: Output
-    upload_row: HBox
-    upload_row_label: Label
-
-    url: Text
-    load_button: Button
-    url_row: HBox
-    url_row_label: Label
-
-    defined_adatas_dict: dict[str, AnnData]
-    defined_adatas: ToggleButtons
-    defined_adatas_row: HBox
-    defined_adatas_label: Label
-
-    progress_output: Output
-    continue_button: Button
-
     def __init__(
         self,
         on_load: Callable[[AnnData, str | None], None],
         user_ns: dict | None = None,
+        on_file: Callable[..., None] | None = None,
+        dest_dir: str | Path | None = None,
     ):
         self.on_load = on_load
+        self.on_file = on_file or self._read_file
+        self.dest_dir = Path(dest_dir) if dest_dir else None
         self.source = None  # path or URL of self.adata, if loaded from one
+        self.root = self.folder = Path.cwd().resolve()
+        self._listing = False
+        self.status = HTML()
 
-        self.upload_row_label = Label("Load from file:", layout=Layout(width="120px"))
-        self.upload = FileUpload(layout=Layout(width="200px"))
-        self.upload_info = Output(layout=Layout(width="95%"))
-        self.upload_row = HBox(
-            [
-                self.upload_row_label,
-                self.upload,
-                self.upload_info,
-            ],
+        # Files: the kernel lists them, nothing goes through the browser
+        self.breadcrumbs = HTML()
+        self.files = Select(rows=10, layout=Layout(width="100%"))
+        self.add_button = Button(
+            description="Load", button_style="success", layout=Layout(width="120px")
+        )
+        self.path_text = Text(
+            placeholder="or type a path (relative to this folder)",
             layout=Layout(width="100%"),
         )
-        self.upload.observe(self.on_upload, "value")
+        self.go_button = Button(description="Go", layout=Layout(width="60px"))
+        files_tab = VBox(
+            [
+                self.breadcrumbs,
+                self.files,
+                HBox([self.add_button]),
+                HBox([self.path_text, self.go_button], layout=Layout(width="100%")),
+            ]
+        )
+        self.files.observe(self._on_file_select, "value")
+        self.add_button.on_click(lambda _: self._guard(self._load_selected))
+        self.go_button.on_click(lambda _: self._guard(self._go, self.path_text.value))
 
-        self.url_row_label = Label("Load from URL:", layout=Layout(width="120px"))
-        self.url = Text(placeholder="https://...", layout=Layout(width="100%"))
-        self.load_button = Button(description="Load", layout=Layout(width="200px"))
-        self.url_row = HBox(
-            [self.url_row_label, self.url, self.load_button],
-            layout=Layout(width="100%"),
+        if self.dest_dir is not None:
+            saved_in = f"Saved in {escape(str(self.dest_dir))}"
+        else:
+            saved_in = "No workspace_dir: saved in a temporary folder"
+        note = "<span style='font-size:12px;color:#555'>{}</span>"
+
+        self.url = Text(
+            placeholder="https://.../data.h5ad", layout=Layout(width="100%")
+        )
+        self.load_button = Button(description="Download", layout=Layout(width="120px"))
+        self.url_progress = HTML()
+        self.url_row = VBox(
+            [
+                HBox([self.url, self.load_button], layout=Layout(width="100%")),
+                HTML(note.format(f"A .h5ad or 10x .h5 file. {saved_in}/downloads.")),
+                self.url_progress,
+            ]
         )
         self.load_button.on_click(self.on_load_url)
 
+        self.upload = FileUpload(accept=".h5ad,.h5", layout=Layout(width="200px"))
+        warning = (
+            "For small files only: uploads go through the browser connection. "
+            f"Over ~{UPLOAD_WARN_BYTES // 2**20} MB, put the file next to the "
+            f"notebook and use Files instead. {saved_in}/uploads."
+        )
+        self.upload_info = HTML(note.format(warning))
+        self.upload_row = VBox([self.upload, self.upload_info])
+        self.upload.observe(self.on_upload, "value")
+
         if user_ns is None:
             user_ns = inspect.stack()[2].frame.f_locals
-        user_f_locals = user_ns
-        self.defined_adatas_dict = {}
-        for name, variable_type in [(k, type(v)) for k, v in user_f_locals.items()]:
-            if variable_type is AnnData and not name.startswith("_"):
-                self.defined_adatas_dict[name] = user_f_locals[name]
-
-        self.defined_adatas_label = Label(
-            "Defined datasets:", layout=Layout(width="120px")
-        )
+        self.defined_adatas_dict = {
+            name: value
+            for name, value in user_ns.items()
+            if type(value) is AnnData and not name.startswith("_")
+        }
         self.defined_adatas = ToggleButtons(
             options=list(self.defined_adatas_dict.keys()),
             value=None,
             layout=Layout(width="100%"),
         )
         self.defined_adatas_row = HBox(
-            [self.defined_adatas_label, self.defined_adatas],
-            layout=Layout(width="100%"),
+            [self.defined_adatas], layout=Layout(width="100%")
         )
         self.defined_adatas.observe(self.on_defined_adatas_toggle, "value")
 
@@ -563,16 +634,143 @@ class DataLoader(VBox):
         )
         self.continue_button.on_click(self.on_continue)
 
+        self.tabs = Tab(
+            children=[
+                files_tab,
+                self.url_row,
+                self.upload_row,
+                self.defined_adatas_row,
+            ],
+            titles=["Files", "URL", "Upload", "Defined in notebook"],
+        )
+        self.tabs.selected_index = 3 if self.defined_adatas_dict else 0
+        self._guard(self._cd, self.root)
+
         VBox.__init__(
             self,
-            [
-                # self.url_row,
-                # self.upload_row,
-                self.defined_adatas_row,
-                self.progress_output,
-            ],
+            [self.tabs, self.status, self.progress_output],
             layout=Layout(width="100%"),
         )
+
+    def _guard(self, fn, *args, **kwargs) -> bool:
+        """Run ``fn``; show its error in the panel instead of raising it."""
+        self.status.value = ""
+        try:
+            fn(*args, **kwargs)
+        except Exception as e:  # noqa: BLE001 - a widget callback: show every error
+            self.status.value = _error_html(e)
+            return False
+        return True
+
+    def _inside_root(self, path: Path) -> Path:
+        path = path.expanduser().resolve()
+        if not path.is_relative_to(self.root):
+            raise ValueError(f"{path} is outside the notebook folder {self.root}")
+        return path
+
+    def _cd(self, folder: Path):
+        folder = self._inside_root(Path(folder))
+        if not folder.is_dir():
+            raise NotADirectoryError(f"Not a folder: {folder}")
+        children = sorted(
+            (p for p in folder.iterdir() if not p.name.startswith(".")),
+            key=lambda p: p.name.lower(),
+        )
+        datasets = [(_describe(p), p) for p in children if _is_dataset(p)]
+        folders = [(f"{p.name}/", p) for p in children if p.is_dir()]
+        folders = [item for item in folders if not is_mtx_dir(item[1])]
+        up = [("../", folder.parent)] if folder != self.root else []
+        self.folder = folder
+        crumbs = [
+            self.root.name or str(self.root),
+            *folder.relative_to(self.root).parts,
+        ]
+        empty = "" if datasets else " (no .h5ad, 10x .h5 or mtx folders here)"
+        self.breadcrumbs.value = f"<b>{escape(' / '.join(crumbs))}</b>{escape(empty)}"
+        self._listing = True  # setting options selects the first: not a pick
+        try:
+            self.files.options = up + folders + datasets
+            self.files.value = None
+        finally:
+            self._listing = False
+
+    def _on_file_select(self, change):
+        path = change["new"]
+        if self._listing or path is None:
+            return
+        if path.is_dir() and not is_mtx_dir(path):
+            self._guard(self._cd, path)
+
+    def _load_selected(self):
+        if self.files.value is None:
+            raise ValueError("Pick a file in the list first")
+        self._load_file(self.files.value)
+
+    def _go(self, text: str):
+        path = self._inside_root(self.folder / text.strip())
+        if _is_dataset(path):
+            self._load_file(path)
+        elif path.is_dir():
+            self._cd(path)
+        elif path.exists():
+            raise ValueError(
+                f"Cannot read {path.name}: pick a .h5ad, 10x .h5 or mtx folder"
+            )
+        else:
+            raise FileNotFoundError(f"No such file or folder: {path}")
+
+    def _load_file(self, path: Path, url: str | None = None, uploaded=False):
+        self.on_file(path, url=url, uploaded=uploaded)
+
+    def _read_file(self, path: Path, url: str | None = None, uploaded=False):
+        """``on_file`` without a Workspace: read it and pass it on."""
+        self.on_load(read_adata(path), url or str(path))
+
+    def _dest(self, sub: str) -> Path:
+        if self.dest_dir is None:  # kept: the dataset is read from it later
+            self.dest_dir = Path(tempfile.mkdtemp(prefix="sclab-"))
+        return self.dest_dir / sub
+
+    def on_load_url(self, *args, **kwargs):
+        self._guard(self._download, self.url.value.strip())
+
+    def _download(self, url: str):
+        def progress(done: int, total: int | None):
+            of = f" of {_fmt_size(total)}" if total else ""
+            self.url_progress.value = f"Downloading: {_fmt_size(done)}{of}"
+
+        self.url_progress.value = ""
+        self.load_button.disabled = True
+        try:
+            path = download(url, self._dest("downloads"), progress=progress)
+        finally:
+            self.load_button.disabled = False
+        self.url_progress.value = f"Saved to {escape(str(path))}"
+        self._load_file(path, url=url)
+
+    def on_upload(self, *args, **kwargs):
+        if files := self.upload.value:
+            try:
+                self._guard(self._save_upload, files[0])
+            finally:
+                self.upload.value = ()  # frees the bytes; the same file can be sent again
+
+    def _save_upload(self, file: dict):
+        name = Path(file["name"]).name
+        if Path(name).suffix not in _FILE_SUFFIXES:
+            raise ValueError(f"Cannot read {name}: upload a .h5ad or 10x .h5 file")
+        if file["size"] > UPLOAD_WARN_BYTES:
+            self.upload_info.value = _error_html(
+                Warning(
+                    f"{name} is {_fmt_size(file['size'])}: large uploads can stall "
+                    "the notebook. Next time, put it next to the notebook and use Files."
+                )
+            )
+        folder = self._dest("uploads")
+        folder.mkdir(parents=True, exist_ok=True)
+        path = unique_path(folder / name)
+        path.write_bytes(file["content"])
+        self._load_file(path, uploaded=True)
 
     def on_defined_adatas_toggle(self, *args, **kwargs):
         adata = self.defined_adatas_dict[self.defined_adatas.value]
@@ -585,49 +783,6 @@ class DataLoader(VBox):
 
         self.adata = adata
         self.source = None
-
-    def on_upload(self, *args, **kwargs):
-        files = self.upload.value
-        if len(files) == 0:
-            return
-
-        file = files[0]
-
-        self.upload_info.clear_output()
-        with self.upload_info:
-            for k, v in file.items():
-                if k == "content":
-                    continue
-                print(f"{k}: {v}")
-
-        filename = file["name"]
-        suffix = Path(filename).suffix
-
-        if suffix not in (".h5", ".h5ad"):
-            self.upload_info.clear_output()
-            with self.upload_info:
-                print(f"`{filename}` is not valid")
-                print("Please upload a 10x .h5 or .h5ad file")
-            return
-
-        adata = _read_adata_bytes(
-            file["content"].tobytes(), suffix, var_names="gene_ids"
-        )
-
-        with self.progress_output:
-            print(f"Loaded {adata.shape[0]} observations and {adata.shape[1]} genes\n")
-            print(adata)
-            display(self.continue_button)
-
-        self.adata = adata
-        self.source = None  # uploaded bytes: no path to load from
-
-    def on_load_url(self, *args, **kwargs):
-        self.progress_output.clear_output()
-        with self.progress_output:
-            self.adata = load_adata_from_url(self.url.value)
-            self.source = self.url.value
-            display(self.continue_button)
 
     def on_continue(self, *args, **kwargs):
         self.on_load(self.adata, self.source)

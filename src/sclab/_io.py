@@ -1,8 +1,11 @@
+import gzip
 import hashlib
+import os
 import tempfile
+from collections.abc import Callable
 from io import BytesIO
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 import requests
 from anndata import AnnData, read_h5ad
@@ -43,7 +46,7 @@ def read_adata(path: str | Path, var_names: str = "gene_ids") -> AnnData:
 
     path = Path(path)
 
-    match path.suffix:
+    match "" if is_mtx_dir(path) else path.suffix:  # an mtx folder, whatever its name
         case ".h5":
             adata = read_10x_h5(path)
         case ".h5ad":
@@ -60,6 +63,133 @@ def read_adata(path: str | Path, var_names: str = "gene_ids") -> AnnData:
         adata.var = adata.var.set_index(var_names)
 
     return adata
+
+
+def is_mtx_dir(path: str | Path) -> bool:
+    """Whether ``path`` is a folder of 10x mtx files that :func:`read_adata` reads."""
+    path = Path(path)
+    if (path / "genes.tsv").is_file():  # legacy (Cell Ranger < 3), not compressed
+        names = ("matrix.mtx", "genes.tsv", "barcodes.tsv")
+    else:
+        names = ("matrix.mtx.gz", "features.tsv.gz", "barcodes.tsv.gz")
+    return path.is_dir() and all((path / n).is_file() for n in names)
+
+
+def peek_shape(path: str | Path) -> tuple[int, int] | None:
+    """``read_adata(path).shape`` from the file's metadata, without reading X.
+
+    For 10x files only the "Gene Expression" features are counted, as
+    :func:`read_adata` keeps only those. None if unknown or unreadable.
+    """
+    import h5py
+
+    path = Path(path)
+    try:
+        if is_mtx_dir(path):
+            legacy = (path / "genes.tsv").is_file()
+            opener = open if legacy else gzip.open
+            matrix = path / ("matrix.mtx" if legacy else "matrix.mtx.gz")
+            with opener(matrix, "rt") as f:  # features x barcodes
+                header = next(line for line in f if not line.startswith("%"))
+            n_vars, n_obs = map(int, header.split()[:2])
+            if not legacy:
+                with gzip.open(path / "features.tsv.gz", "rt") as f:
+                    types = [line.rstrip("\n").split("\t")[2] for line in f]
+                n_vars = types.count("Gene Expression")
+            return n_obs, n_vars
+        if path.suffix == ".h5ad":
+            with h5py.File(path, "r") as f:
+                X = f.get("X")
+                if isinstance(X, h5py.Dataset):
+                    return tuple(int(n) for n in X.shape)
+                if X is None:
+                    return None
+                return tuple(int(n) for n in X.attrs["shape"])  # sparse group
+        if path.suffix == ".h5":
+            with h5py.File(path, "r") as f:
+                if "matrix" in f:  # Cell Ranger >= 3
+                    types = f["matrix/features/feature_type"][:].astype(str)
+                    n_obs = int(f["matrix/shape"][1])
+                    return n_obs, int((types == "Gene Expression").sum())
+                (genome,) = f.values()  # legacy: one genome, else read_adata fails too
+                n_vars, n_obs = genome["shape"][:]
+                return int(n_obs), int(n_vars)
+    except (OSError, KeyError, ValueError, IndexError, StopIteration, TypeError):
+        return None
+    return None
+
+
+def unique_path(path: Path) -> Path:
+    """``path``, or ``<stem>-2<suffix>``, ``-3``, ... if it exists."""
+    stem, suffix, i = path.stem, path.suffix, 1
+    while path.exists():
+        i += 1
+        path = path.with_name(f"{stem}-{i}{suffix}")
+    return path
+
+
+def download(
+    url: str,
+    dest_dir: str | Path,
+    progress: Callable[[int, int | None], None] | None = None,
+) -> Path:
+    """Download a 10x .h5 or .h5ad file from ``url`` into ``dest_dir``.
+
+    The file is named after the URL's last path component (``-2``, ``-3``...
+    appended if that file exists) and written via a temporary ``.part`` file,
+    so a failed download leaves nothing behind.
+
+    Parameters
+    ----------
+    url : str
+        URL whose path ends in ``.h5`` or ``.h5ad``.
+    dest_dir : str or Path
+        Folder to save the file in; created if missing.
+    progress : callable, optional
+        Called as ``progress(bytes_done, bytes_total)`` after each chunk;
+        ``bytes_total`` is None if the server does not send a length.
+
+    Returns
+    -------
+    Path
+        The downloaded file.
+
+    Raises
+    ------
+    ValueError
+        If ``url`` is not valid or does not point to a ``.h5`` or ``.h5ad`` file.
+    requests.HTTPError
+        If the server returns an error status.
+    """
+    if not is_valid_url(url):
+        raise ValueError(f"URL is not valid: {url!r}")
+    name = Path(unquote(urlparse(url).path)).name
+    if Path(name).suffix not in _URL_SUFFIXES:
+        supported = ", ".join(_URL_SUFFIXES)
+        raise ValueError(
+            f"Unsupported file type {Path(name).suffix!r} in URL; "
+            f"supported types: {supported}"
+        )
+    dest_dir = Path(dest_dir)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    path = unique_path(dest_dir / name)
+    tmp = path.with_name(f".{path.name}.part")
+    with requests.get(url, stream=True, timeout=60) as response:
+        response.raise_for_status()
+        total = int(response.headers.get("content-length", 0)) or None
+        done = 0
+        try:
+            with open(tmp, "wb") as f:
+                for chunk in response.iter_content(1 << 20):
+                    f.write(chunk)
+                    done += len(chunk)
+                    if progress is not None:
+                        progress(done, total)
+            os.replace(tmp, path)
+        except BaseException:
+            tmp.unlink(missing_ok=True)
+            raise
+    return path
 
 
 def _read_adata_bytes(

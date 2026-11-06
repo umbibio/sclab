@@ -9,7 +9,8 @@ Without a ``workspace_dir`` such a switch is refused. Datasets passed in as
 AnnData objects stay in memory: the caller holds them already.
 
 The history of a dataset read from a file starts with a ``"load"`` entry
-(``source``, ``name``). :meth:`Workspace.merge` makes a new dataset from
+(``source``, ``name``; for a file downloaded in "+ Load", ``source`` is its
+URL and ``path`` the file; ``uploaded`` marks an upload). :meth:`Workspace.merge` makes a new dataset from
 several (see :func:`sclab.preprocess.merge_datasets`), kept in memory; once
 edited, it is written to ``workspace_dir`` (if set) when you leave it.
 :func:`workspace_to_code` writes the script that rebuilds it from its parents.
@@ -38,7 +39,7 @@ from ipywidgets.widgets import (
     VBox,
 )
 
-from ._io import read_adata
+from ._io import peek_shape, read_adata
 from ._sclab import DataLoader, SCLabDashboard, _close_tree, _live_widget_ids
 from .dataset.processor import _history
 from .dataset.processor._codegen import _imports, _load_line, history_to_code, literal
@@ -57,6 +58,13 @@ class DatasetEntry:
     base_hash: str | None = None  # _state_hash when loaded: differs once edited
     shape: tuple[int, int] | None = None  # (n_obs, n_vars); None until known
     batch_key: str | None = None  # its dashboard's batch_key (a merge's label)
+    url: str | None = None  # where ``source`` was downloaded from, if it was
+    uploaded: bool = False  # ``source`` holds bytes uploaded through "+ Load"
+
+    @property
+    def load_source(self) -> str | None:
+        """What the generated script loads: the URL, else the file."""
+        return self.url or (str(self.source) if self.source else None)
 
 
 def _state_hash(adata: AnnData) -> str:
@@ -83,7 +91,11 @@ def _with_load_entry(history: list[dict], entry: "DatasetEntry", shape) -> list[
     """A file dataset's history starts with where it was read from."""
     if entry.source is None or (history and history[0]["step"] == "load"):
         return history
-    params = {"source": str(entry.source), "name": entry.name}
+    params = {"source": entry.load_source, "name": entry.name}
+    if entry.url:
+        params["path"] = str(entry.source)
+    if entry.uploaded:
+        params["uploaded"] = True
     load = _history.make_entry("load", params, "success", None, None, shape)
     return [load, *history]
 
@@ -102,11 +114,10 @@ def _lazy_reader():
 def _open_lazy(source: Path) -> tuple[int, int] | None:
     """Shape of the dataset at ``source`` without reading X.
 
-    None for 10x ``.h5`` files and mtx folders: their shape is known once the
-    dataset is activated.
+    10x ``.h5`` files and mtx folders: from their metadata (:func:`peek_shape`).
     """
     if source.suffix != ".h5ad":
-        return None
+        return peek_shape(source)
     if read_lazy := _lazy_reader():
         import h5py
 
@@ -223,9 +234,8 @@ class Workspace(VBox):
         loaded = entry.adata is None
         if loaded:
             entry.adata = self._read(entry)
-        source = str(entry.source) if entry.source else None
         entry.dash = SCLabDashboard(
-            entry.adata, name=name, source=source, batch_key=entry.batch_key
+            entry.adata, name=name, source=entry.load_source, batch_key=entry.batch_key
         )
         if entry.parents:  # "Show code": the script that rebuilds it from its parents
             entry.dash.processor.code_generator = lambda: workspace_to_code(
@@ -434,7 +444,40 @@ class Workspace(VBox):
             self._ui(self.activate, change["new"])
 
     def _show_loader(self, user_ns: dict):
-        self._show_panel(DataLoader(self._on_loaded, user_ns=user_ns))
+        self.message.value = ""
+        loader = DataLoader(
+            self._on_loaded,
+            user_ns=user_ns,
+            on_file=self._on_file,
+            dest_dir=self.workspace_dir,
+        )
+        self._show_panel(loader)
+
+    def _unique_name(self, base: str) -> str:
+        name, i = base, 1
+        while name in self.datasets:
+            i += 1
+            name = f"{base} {i}"
+        return name
+
+    def _on_file(self, path: Path, *, url: str | None = None, uploaded=False):
+        """A file picked, downloaded or uploaded in "+ Load": add it, unread.
+
+        Activated only if no dataset is: reading it is what activation costs.
+        Raises (the loader shows the error) if the file cannot be added.
+        """
+        name = self._unique_name(path.stem if path.is_file() else path.name)
+        entry = self.add(name, path)
+        entry.url, entry.uploaded = url, uploaded
+        self._show_panel()
+        if self.active is None:
+            self._ui(self.activate, name)
+        else:
+            shape = "×".join(map(str, entry.shape)) if entry.shape else "?×?"
+            self.message.value = (
+                f"<span style='font-size:12px'>Added {escape(name)} ({shape}); "
+                "pick it in the Dataset menu to open it.</span>"
+            )
 
     def _show_panel(self, panel=None):
         """Show ``panel`` (the loader or the merge dialog) under the top bar."""
@@ -455,11 +498,7 @@ class Workspace(VBox):
 
     def _on_loaded(self, adata: AnnData, source: str | None):
         loader = self.loader_box.children[0]
-        name = base = loader.defined_adatas.value or "dataset"
-        i = 1
-        while name in self.datasets:
-            i += 1
-            name = f"{base} {i}"
+        name = self._unique_name(loader.defined_adatas.value or "dataset")
         self.loader_box.children = ()
         _close_tree(loader, self._preexisting)
         self.add(name, adata)
@@ -604,9 +643,8 @@ def workspace_to_code(workspace: Workspace, name: str) -> str:
     steps = workspace.dash.processor.steps if workspace.dash else {}
     merge = next((e for e in history if e["step"] == "merge"), None)
     if merge is None:
-        source = str(entry.source) if entry.source else None
         return history_to_code(
-            history, steps=steps, source=source, batch_key=entry.batch_key
+            history, steps=steps, source=entry.load_source, batch_key=entry.batch_key
         )
 
     params = merge["params"]
@@ -637,7 +675,7 @@ def workspace_to_code(workspace: Workspace, name: str) -> str:
             counts_layer=counts_layer,
             batch_key=batch_key,
         )
-        lines += [_load_line(source), _ENSURE_COUNTS]
+        lines += [_load_line(source, at_merge), _ENSURE_COUNTS]
         lines += ["", body.strip()] if body.strip() else []
         lines.append(f"adatas[{literal(parent['name'])}] = adata")
         blocks.append("\n".join(lines))
