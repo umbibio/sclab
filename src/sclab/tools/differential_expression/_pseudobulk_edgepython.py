@@ -124,7 +124,7 @@ def pseudobulk_edgepython(
 
     Without numba (e.g. in Pyodide) edgepython's compiled kernels are replaced
     by sclab's vectorised NumPy ports of them (same results to rounding error,
-    about 20 times slower than numba).
+    about 10 to 15 times slower than numba once compiled).
 
     References
     ----------
