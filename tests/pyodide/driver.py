@@ -1,6 +1,7 @@
 """Run by smoke.mjs inside Pyodide, after sclab and its dependencies are installed.
 
-Builds the dashboard without scanpy and runs the steps that work natively.
+Builds the dashboard without scanpy and runs the steps that work natively,
+and pseudobulk limma and edgeR (edgepython without numba).
 Any failed assertion fails the smoke test.
 """
 
@@ -14,6 +15,7 @@ import scipy.sparse as sp
 
 import sclab
 from sclab import SCLabDashboard, _compat
+from sclab.tools.differential_expression import _edgepython_kernels, _pseudobulk_pylimma
 
 
 def ok(label, value=""):
@@ -73,17 +75,26 @@ run("Gene Expression")
 assert d.plotter.state["source"] == "gene"
 ok("Gene Expression")
 
-table = sclab.tools.de(
-    adata.copy(),
-    "grp",
-    method="pseudobulk_limma",
-    reference_group="A",
-    layer="counts",
-    replicas_per_group=3,
-    edger_preprocessing=find_spec("edgepython") is not None,
-)
+de_kw = dict(reference_group="A", layer="counts", replicas_per_group=3, random_state=0)
+assert find_spec("edgepython") is not None and find_spec("numba") is None
+table = sclab.tools.de(adata.copy(), "grp", method="pseudobulk_limma", **de_kw)
 assert {"gene", "logFC", "pval", "padj"} <= set(table.columns), table.columns
-ok("sclab.tools.de pseudobulk_limma", f"({len(table)} rows)")
+ok("sclab.tools.de pseudobulk_limma (edgepython filterByExpr, TMM)", f"({len(table)} rows)")
+
+# sclab's own filterByExpr and TMM, used when edgepython is not installed
+_pseudobulk_pylimma.edgepython_is_available = lambda: False
+port = sclab.tools.de(adata.copy(), "grp", method="pseudobulk_limma", **de_kw)
+_pseudobulk_pylimma.edgepython_is_available = lambda: True
+pd.testing.assert_frame_equal(port, table)
+ok("sclab.tools.de pseudobulk_limma (sclab filterByExpr, TMM)", "(same table)")
+
+table = sclab.tools.de(adata.copy(), "grp", method="pseudobulk_edger", **de_kw)
+assert {"gene", "logFC", "pval", "padj", "F"} <= set(table.columns), table.columns
+assert len(table) > 0 and table["pval"].between(0, 1).all()
+import edgepython.glm_kernels  # noqa: E402  (imported by sclab without numba)
+
+assert edgepython.glm_kernels.fit_leven_mat is _edgepython_kernels.fit_leven_mat
+ok("sclab.tools.de pseudobulk_edger (edgepython, NumPy kernels)", f"({len(table)} rows)")
 
 de = steps["Differential Expression"]
 c = de.variable_controls

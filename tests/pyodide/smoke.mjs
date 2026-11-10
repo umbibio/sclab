@@ -38,7 +38,10 @@ import micropip
 # anndata needs typing-extensions>=4.16, newer than Pyodide's
 await micropip.install("typing-extensions>=4.16", reinstall=True)
 await micropip.install("emfs:/wheels/${basename(wheel)}")
-await micropip.install("pylimma")  # the 'de' extra; edgepython needs numba
+await micropip.install("pylimma")  # the 'de' extra
+# the 'de-edger' extra without numba (no wasm build): sclab swaps in NumPy kernels
+await micropip.install(["statsmodels", "matplotlib"])
+await micropip.install("edgepython", deps=False)
 `);
   console.log(`[OK] installed sclab and its dependencies (${Date.now() - t0} ms)`);
   await py.runPythonAsync(readFileSync(join(here, "driver.py"), "utf8"));
