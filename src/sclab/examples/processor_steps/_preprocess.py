@@ -1,11 +1,13 @@
-from ipywidgets import Checkbox, Dropdown
+from ipywidgets import Checkbox, Dropdown, SelectMultiple
 
-from sclab._compat import missing
+from sclab._compat import missing, requirement
 from sclab.dataset.processor import Processor
 from sclab.dataset.processor._codegen import ADATA, call
 from sclab.dataset.processor.step import ProcessorStepBase
 from sclab.event._jobs import capture
 from sclab.preprocess import preprocess
+from sclab.preprocess._hvg import HVG_COMBINE, HVG_METHODS
+from sclab.preprocess._scanpy_port import native_backend, resolve_backend
 from sclab.utils import layer_keys, text_or_category_columns
 
 # dropdown label -> ``sclab.preprocess.preprocess(normalization_method=...)``
@@ -20,13 +22,16 @@ class Preprocess(ProcessorStepBase):
     """Normalization and scaling step for single-cell RNA-seq data.
 
     Runs :func:`sclab.preprocess.preprocess`: cell/gene filtering, HVG
-    selection (optionally per group), normalization (library size,
+    selection by one or several methods combined by union or intersection
+    (optionally per group), normalization (library size,
     entropy-weighted, or none), log1p transformation, optional covariate
     regression, and (per-group) scaling. The processed matrix is stored in a
     new named layer and the plotter is updated to show ``n_genes_by_counts``
     vs ``total_counts``.
 
-    Requires ``scanpy`` to be installed.
+    Uses scanpy if it is installed, else sclab's native port of the scanpy
+    functions (``backend="auto"``); the history records which ran. The
+    seurat_v3 HVG methods need ``scikit-misc``.
     """
 
     parent: Processor
@@ -52,6 +57,13 @@ class Preprocess(ProcessorStepBase):
             ),
             regress_total_counts=Checkbox(description="Regr. out total counts"),
             regress_n_genes=Checkbox(description="Regr. out n genes"),
+            hvg_methods=SelectMultiple(
+                options=tuple(HVG_METHODS),
+                value=("seurat", "seurat_v3_paper"),
+                rows=len(HVG_METHODS),
+                description="HVG methods",
+            ),
+            hvg_combine=Dropdown(options=HVG_COMBINE, description="HVG combine"),
             normalization_method=Dropdown(
                 options=tuple(NORMALIZATION_METHODS),
                 value="Library size",
@@ -78,8 +90,12 @@ class Preprocess(ProcessorStepBase):
         )
 
     def validate(self, params: dict) -> str | None:
-        if reason := missing("scanpy"):
-            return reason
+        methods = params.get("hvg_methods")
+        if not methods:
+            return "Choose at least one 'HVG methods'"
+        v3 = [m for m in methods if m.startswith("seurat_v3")]
+        if v3 and missing("skmisc"):
+            return f"HVG {v3[0]} needs {requirement('skmisc')}"
         dataset = self.parent.dataset
         if (params.get("layer") or dataset.counts_layer) not in layer_keys(
             dataset.adata
@@ -114,7 +130,7 @@ class Preprocess(ProcessorStepBase):
         resolved = super().resolved_params(params)
         if resolved.get("layer") is None:
             resolved["layer"] = self.parent.dataset.counts_layer
-        return resolved
+        return {**resolved, "backend": resolve_backend("auto")}
 
     def to_code(self, params: dict) -> str:
         method = NORMALIZATION_METHODS[params["normalization_method"]]
@@ -123,17 +139,21 @@ class Preprocess(ProcessorStepBase):
             ADATA,
             counts_layer=params["layer"],
             group_by=params["group_by"],
+            **{k: params[k] for k in ("hvg_methods", "hvg_combine") if k in params},
             regress_total_counts=params["regress_total_counts"],
             regress_n_genes=params["regress_n_genes"],
             normalization_method=method,
             log1p=params["log1p"],
             scale=params["scale"],
+            **native_backend(params),
         )
 
     def function(
         self,
         layer: str | None = None,
         group_by: str | None = None,
+        hvg_methods: tuple[str, ...] = ("seurat", "seurat_v3_paper"),
+        hvg_combine: str = "union",
         regress_total_counts: bool = False,
         regress_n_genes: bool = False,
         normalization_method: str = "No normalization",
@@ -150,6 +170,8 @@ class Preprocess(ProcessorStepBase):
                 adata,
                 counts_layer=layer or dataset.counts_layer,
                 group_by=group_by,
+                hvg_methods=tuple(hvg_methods),
+                hvg_combine=hvg_combine,
                 regress_total_counts=regress_total_counts,
                 regress_n_genes=regress_n_genes,
                 normalization_method=NORMALIZATION_METHODS[normalization_method],

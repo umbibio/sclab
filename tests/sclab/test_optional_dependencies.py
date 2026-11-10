@@ -31,7 +31,7 @@ OPTIONAL = [
     "edgepython",
     "scanorama",
 ]
-SCANPY_STEPS = ["QC", "Preprocess", "PCA", "Neighbors", "UMAP", "Cluster"]
+SCANPY_STEPS = ["Neighbors", "UMAP", "Cluster"]
 
 
 def test_import_sclab_without_optional_packages():
@@ -67,7 +67,9 @@ def test_dashboard_builds_without_optional_packages(without_optional):
         assert steps[name]._reason == "Needs scanpy: pip install 'sclab[scanpy]'"
         assert "sclab[scanpy]" in steps[name].status.value
     with pytest.raises(ValueError, match="Needs scanpy"):
-        steps["QC"].run()
+        steps["Neighbors"].run()
+    assert steps["QC"]._reason is steps["Preprocess"]._reason is None
+    assert steps["PCA"]._reason.endswith("Run the Preprocess step first")
 
     # its constructor needs a backend: a placeholder saying what to install
     dd = steps["Doublet Detection"]
@@ -85,6 +87,48 @@ def test_dashboard_builds_without_optional_packages(without_optional):
     c["method"].value = "pseudobulk_limma"
     if pylimma_is_available():
         assert de._reason is None
+
+
+@pytest.mark.skipif(find_spec("skmisc") is None, reason="scikit-misc not installed")
+def test_qc_preprocess_pca_run_without_scanpy(without_optional):
+    d = SCLabDashboard(make_adata(), counts_layer="counts", batch_key="grp")
+    run_step(d, "QC", min_counts=0, min_genes=0, min_cells=0)
+    run_step(d, "Preprocess", hvg_methods=("cell_ranger", "seurat_v3"))
+    run_step(d, "PCA", n_comps=5, mask_var="highly_variable", reference_batch="A")
+    adata = d.dataset.adata
+    var = adata.var
+    assert (
+        var["highly_variable"]
+        == var["highly_variable_cell_ranger"] | var["highly_variable_seurat_v3"]
+    ).all()
+    assert adata.obsm["X_pca"].shape == (adata.n_obs, 5)
+    history = d.processor.step_history
+    assert [e["params"]["backend"] for e in history] == ["native"] * 3
+    code = d.generate_code()
+    assert code.count('backend="native"') == 3 and "import scanpy" not in code
+    assert sys.modules["scanpy"] is None  # not imported meanwhile
+
+
+def test_seurat_v3_hvg_needs_skmisc(monkeypatch):
+    monkeypatch.setitem(sys.modules, "skmisc", None)
+    reason = "HVG seurat_v3_paper needs skmisc: pip install scikit-misc"
+    d = SCLabDashboard(make_adata(), counts_layer="counts", batch_key="grp")
+    step = d.processor.steps["Preprocess"]
+    assert step._reason == reason  # the default methods
+    step.variable_controls["hvg_methods"].value = ("seurat", "cell_ranger")
+    assert step._reason is None
+    step.variable_controls["hvg_methods"].value = ()
+    assert step._reason == "Choose at least one 'HVG methods'"
+
+    pca = d.processor.steps["PCA"]
+    pca._X_is_raw, pca._checked_X = False, d.dataset.adata.X
+    pca.variable_controls["reference_batch"].value = "A"
+    d.dataset.adata.var["highly_variable"] = True
+    d.broker.publish("dset_var_dataframe_change", d.dataset.adata.var)
+    pca.variable_controls["mask_var"].value = "highly_variable"
+    assert pca._reason.endswith("need skmisc: pip install scikit-misc"), pca._reason
+    with pytest.raises(ImportError, match="Needs skmisc"):
+        sclab.preprocess.highly_variable_genes(make_adata(), backend="native")
 
 
 @pytest.mark.skipif(not pylimma_is_available(), reason="pylimma not installed")

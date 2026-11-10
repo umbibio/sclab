@@ -2,11 +2,12 @@ import pandas as pd
 import plotly.express as px
 from ipywidgets import Button, Checkbox, Dropdown, IntText
 
-from sclab._compat import missing
+from sclab._compat import missing, requirement
 from sclab.dataset.processor import Processor
 from sclab.dataset.processor._codegen import ADATA, call
 from sclab.dataset.processor.step import ProcessorStepBase
 from sclab.preprocess import pca
+from sclab.preprocess._scanpy_port import native_backend, resolve_backend
 from sclab.utils import looks_like_raw_counts
 
 
@@ -22,7 +23,9 @@ class PCA(ProcessorStepBase):
     Expects preprocessed (normalized) data in ``adata.X``; raises
     ``ValueError`` if ``adata.X`` looks like raw counts.
 
-    Requires ``scanpy`` to be installed.
+    Uses scanpy if it is installed, else sclab's native port of
+    :func:`scanpy.pp.pca` (``backend="auto"``; the same scikit-learn ARPACK
+    fit); the history records which ran.
     """
 
     parent: Processor
@@ -72,8 +75,11 @@ class PCA(ProcessorStepBase):
         return super().make_controls()
 
     def validate(self, params: dict) -> str | None:
-        if reason := missing("scanpy"):
-            return reason
+        hvg = params.get("reference_batch") and params.get("mask_var") == (
+            "highly_variable"
+        )
+        if hvg and missing("skmisc"):  # HVGs recomputed with seurat_v3_paper
+            return f"Reference batch HVGs need {requirement('skmisc')}"
         X = self.parent.dataset.adata.X
         if self._checked_X is not X:  # checked once per matrix: it reads all values
             self._checked_X, self._X_is_raw = X, looks_like_raw_counts(X)
@@ -89,6 +95,7 @@ class PCA(ProcessorStepBase):
             **super().resolved_params(params),
             "batch_key": self.parent.batch_key,
             "counts_layer": self.parent.dataset.counts_layer,
+            "backend": resolve_backend("auto"),
         }
 
     def to_code(self, params: dict) -> str:
@@ -102,6 +109,7 @@ class PCA(ProcessorStepBase):
             zero_center=params["zero_center"],
             counts_layer=params["counts_layer"],
             random_state=params["random_state"],
+            **native_backend(params),
         )
 
     def function(

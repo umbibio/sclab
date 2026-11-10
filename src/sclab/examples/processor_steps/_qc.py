@@ -1,10 +1,10 @@
 from ipywidgets import Dropdown, IntText
 
-from sclab._compat import missing
 from sclab.dataset.processor import Processor
 from sclab.dataset.processor._codegen import ADATA, call
 from sclab.dataset.processor.step import ProcessorStepBase
 from sclab.preprocess import qc
+from sclab.preprocess._scanpy_port import native_backend, resolve_backend
 from sclab.utils import layer_keys
 
 
@@ -17,7 +17,8 @@ class QC(ProcessorStepBase):
     analysis to the top-ranked cells. After running, the plotter is updated
     to show ``barcode_rank`` vs ``total_counts``.
 
-    Requires ``scanpy`` to be installed.
+    Uses scanpy if it is installed, else sclab's native port of the scanpy
+    functions (``backend="auto"``); the history records which ran.
     """
 
     parent: Processor
@@ -54,8 +55,6 @@ class QC(ProcessorStepBase):
         )
 
     def validate(self, params: dict) -> str | None:
-        if reason := missing("scanpy"):
-            return reason
         dataset = self.parent.dataset
         if (params.get("layer") or dataset.counts_layer) not in layer_keys(
             dataset.adata
@@ -75,7 +74,7 @@ class QC(ProcessorStepBase):
         resolved = super().resolved_params(params)
         if resolved.get("layer") is None:
             resolved["layer"] = self.parent.dataset.counts_layer
-        return resolved
+        return {**resolved, "backend": resolve_backend("auto")}
 
     def to_code(self, params: dict) -> str:
         return call(
@@ -86,6 +85,7 @@ class QC(ProcessorStepBase):
             min_genes=params["min_genes"],
             min_cells=params["min_cells"],
             max_rank=params["max_rank"],
+            **native_backend(params),
         )
 
     def function(
