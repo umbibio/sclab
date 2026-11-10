@@ -12,6 +12,14 @@ from sclab.tools.doublet_detection import (
     scdblfinder,
     scrublet,
 )
+from sclab.tools.doublet_detection._doubletdetection import (
+    doubletdetection_is_available,
+)
+from sclab.tools.doublet_detection._scdblfinder import (
+    _pyscdblfinder_available,
+    _r_available,
+)
+from sclab.tools.doublet_detection._scrublet import scrublet_is_available
 from sclab.utils import layer_keys
 
 # flavor -> (sclab.tools.doublet_detection function name, its extra kwargs)
@@ -26,6 +34,14 @@ FLAVORS = {
         ),
     ),
     "scrublet": ("scrublet", {}),
+}
+
+# shown below the Run button, see ProcessorStepBase.tool
+TOOLS = {
+    "doubletdetection": "Python · doubletdetection.BoostClassifier",
+    "scrublet": "Python · scrublet.Scrublet",
+    ("scDblFinder", "r"): "R · scDblFinder::scDblFinder",
+    ("scDblFinder", "python"): "Python · pyscdblfinder (scDblFinder port)",
 }
 
 
@@ -50,6 +66,10 @@ class DoubletDetection(ProcessorStepBase):
     All flavors require raw counts. By default the dataset's counts layer
     is used; tick "Override layer" to pick a different layer.
 
+    scDblFinder runs in R (``backend="r"``) or in Python (pyscdblfinder,
+    ``backend="python"``). A Backend dropdown is shown only when both are
+    installed; it defaults to R, as ``backend="auto"`` does.
+
     Requires at least one of the flavors' packages to be installed
     (e.g. ``pip install scrublet``).
     """
@@ -57,20 +77,23 @@ class DoubletDetection(ProcessorStepBase):
     parent: Processor
     name: str = "doublet_detection"
     description: str = "Doublet Detection"
-    background = True  # but not scDblFinder: R (rpy2) runs on the main thread
+    background = True  # but not scDblFinder in R: rpy2 runs on the main thread
 
     def __init__(self, parent: Processor) -> None:
-        from sclab.tools.doublet_detection import (
-            any_doublet_detection_available,
-            get_available_doublet_detection_methods,
-        )
-
-        if not any_doublet_detection_available():
+        # checked once per dashboard: checking for R starts R, which is slow
+        backends = {"R": _r_available(), "Python": _pyscdblfinder_available()}
+        backends = [(label, label.lower()) for label, ok in backends.items() if ok]
+        self.scdblfinder_backends = [value for _, value in backends]
+        available = {
+            "doubletdetection": doubletdetection_is_available(),
+            "scDblFinder": bool(backends),
+            "scrublet": scrublet_is_available(),
+        }
+        methods_available = [m for m, ok in available.items() if ok]
+        if not methods_available:
             raise ImportError(
                 f"Needs a doublet detection package, e.g. {requirement('scrublet')}"
             )
-
-        methods_available = get_available_doublet_detection_methods()
 
         layers = tuple(layer_keys(parent.dataset.adata))
         counts_layer = parent.dataset.counts_layer
@@ -88,6 +111,7 @@ class DoubletDetection(ProcessorStepBase):
                 options=methods_available,
                 description="Flavor",
             ),
+            backend=Dropdown(options=backends, description="Backend"),
             override_layer=self._override_checkbox,
             layer=self._layer_dropdown,
         )
@@ -97,6 +121,25 @@ class DoubletDetection(ProcessorStepBase):
             fixed_params={},
             variable_controls=variable_controls,
         )
+        variable_controls["flavor"].observe(self._show_backend, names="value")
+        self._show_backend()
+
+    def _show_backend(self, *_):
+        """The Backend dropdown: for scDblFinder, if both backends are installed."""
+        shown = len(self.scdblfinder_backends) > 1
+        shown = shown and self.variable_controls["flavor"].value == "scDblFinder"
+        self.variable_controls["backend"].layout.display = None if shown else "none"
+
+    def _default_backend(self) -> str | None:
+        """What ``backend="auto"`` picks here: R if installed."""
+        return next(iter(self.scdblfinder_backends), None)
+
+    def tool(self, params: dict) -> str:
+        flavor = params.get("flavor")
+        if flavor == "scDblFinder":
+            backend = params.get("backend") or self._default_backend()
+            return TOOLS.get((flavor, backend), "")
+        return TOOLS.get(flavor, "")
 
     def _on_override_change(self, change) -> None:
         override = change["new"]
@@ -126,10 +169,17 @@ class DoubletDetection(ProcessorStepBase):
             resolved["layer"] = self.parent.dataset.counts_layer
         if resolved.get("random_state") is None:  # recorded so the code shows it
             resolved["random_state"] = default_seed(resolved.get("flavor"))
+        if resolved.get("flavor") == "scDblFinder":
+            resolved["backend"] = resolved.get("backend") or self._default_backend()
+        else:  # only scDblFinder has backends
+            resolved.pop("backend", None)
         return resolved
 
     def to_code(self, params: dict) -> str:
         function, extra = FLAVORS[params["flavor"]]
+        backend = params.get("backend")
+        if backend is not None and backend != self._default_backend():
+            extra = {**extra, "backend": backend}  # else what backend="auto" picks
         return call(
             f"sclab.tools.doublet_detection.{function}",
             ADATA,
@@ -145,6 +195,7 @@ class DoubletDetection(ProcessorStepBase):
         override_layer: bool = False,
         layer: str | None = None,
         random_state: int | None = None,
+        backend: str | None = None,
     ):
         adata = self.parent.dataset.adata
         if not override_layer:
@@ -153,6 +204,9 @@ class DoubletDetection(ProcessorStepBase):
         if flavor not in FLAVORS:
             raise ValueError(f"Unknown flavor: {flavor}")
         function, extra = FLAVORS[flavor]
+        if function == "scdblfinder":  # explicit: "auto" would check for R again
+            backend = backend or self._default_backend() or "python"
+            extra = {**extra, "backend": backend}
         if random_state is None:
             random_state = default_seed(flavor)
         functions = dict(
@@ -174,7 +228,7 @@ class DoubletDetection(ProcessorStepBase):
                 detect(adata=adata)
 
         self.broker.std_output.clear_output(wait=False)
-        if function == "scdblfinder":
+        if function == "scdblfinder" and backend == "r":
             work(adata)
         else:
             yield from self.compute(work)

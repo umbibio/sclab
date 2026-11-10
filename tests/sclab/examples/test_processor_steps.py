@@ -539,12 +539,87 @@ class TestDoubletDetection:
         assert "scrublet" in opts.options
 
     def test_requires_at_least_one_backend(self, dash, monkeypatch):
-        import sclab.tools.doublet_detection as dd
+        import sclab.examples.processor_steps._doublet_detection as mod
         from sclab.examples.processor_steps import DoubletDetection
 
-        monkeypatch.setattr(dd, "any_doublet_detection_available", lambda: False)
+        for name in [
+            "doubletdetection_is_available",
+            "scrublet_is_available",
+            "_r_available",
+            "_pyscdblfinder_available",
+        ]:
+            monkeypatch.setattr(mod, name, lambda: False)
         with pytest.raises(ImportError):
             DoubletDetection(dash.processor)
+
+    @staticmethod
+    def _scdblfinder_dash(monkeypatch, r: bool, python: bool) -> SCLabDashboard:
+        import sclab.examples.processor_steps._doublet_detection as mod
+
+        monkeypatch.setattr(mod, "_r_available", lambda: r)
+        monkeypatch.setattr(mod, "_pyscdblfinder_available", lambda: python)
+        return SCLabDashboard(make_adata(300, 300))
+
+    @pytest.mark.parametrize("r, python", [(True, False), (False, True)])
+    def test_backend_hidden_with_one_backend(self, monkeypatch, r, python):
+        d = self._scdblfinder_dash(monkeypatch, r, python)
+        step = d.processor.steps["Doublet Detection"]
+        c = step.variable_controls
+        c["flavor"].value = "scDblFinder"
+        assert c["backend"].layout.display == "none"
+        backend = "r" if r else "python"
+        assert c["backend"].value == backend
+        caption = step.tool_label.value
+        assert ("R · scDblFinder::scDblFinder" in caption) == r
+        assert ("Python · pyscdblfinder" in caption) == python
+
+    def test_backend_dropdown_with_both_backends(self, monkeypatch):
+        import threading
+
+        import sclab.examples.processor_steps._doublet_detection as mod
+
+        d = self._scdblfinder_dash(monkeypatch, True, True)
+        step = d.processor.steps["Doublet Detection"]
+        c = step.variable_controls
+        c["flavor"].value = "scrublet"
+        assert c["backend"].layout.display == "none"  # scDblFinder only
+        assert "scrublet.Scrublet" in step.tool_label.value
+        c["flavor"].value = "scDblFinder"
+        assert c["backend"].layout.display is None
+        assert c["backend"].value == "r"  # what backend="auto" picks
+        assert "R · scDblFinder::scDblFinder" in step.tool_label.value
+        c["backend"].value = "python"
+        assert "Python · pyscdblfinder" in step.tool_label.value
+
+        calls = []
+
+        def fake_scdblfinder(adata, key_added, backend, **_):
+            calls.append((backend, threading.current_thread()))
+            adata.obs[f"{key_added}_label"] = pd.Categorical(["singlet"] * adata.n_obs)
+
+        monkeypatch.setattr(mod, "scdblfinder", fake_scdblfinder)
+        d.broker.jobs.loop = FakeLoop()
+        d.broker.jobs.beat_timeout = 0  # no frontend: resume on the timer
+        step.run_button.click()
+        assert d.broker.jobs.busy  # Python: a background job
+        d.broker.jobs.loop.pump(d.broker.jobs)
+        assert step.run_button.button_style == "success", step.status.value
+        assert calls[-1][0] == "python"
+        assert calls[-1][1] is not threading.main_thread()
+        entry = d.processor.step_history[-1]
+        assert entry["params"]["backend"] == "python"
+        assert 'backend="python"' in step.to_code(entry["params"])
+
+        c["backend"].value = "r"
+        step.run_button.click()
+        assert not d.broker.jobs.busy  # R: synchronous, on the main thread
+        assert calls[-1] == ("r", threading.main_thread())
+        entry = d.processor.step_history[-1]
+        assert entry["status"] == "success" and entry["params"]["backend"] == "r"
+        assert "backend=" not in step.to_code(entry["params"])  # the default
+
+        c["flavor"].value = "scrublet"  # no backend recorded for other flavors
+        assert "backend" not in step.resolved_params(step._control_params())
 
     def test_default_controls_use_counts_layer(self):
         d = SCLabDashboard(make_adata(300, 300))
