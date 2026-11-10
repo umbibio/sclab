@@ -54,6 +54,13 @@ def doubletdetection(
         look like raw counts (non-negative integers). Set to False to
         bypass the check, e.g. for non-integer corrected counts. Default
         is True.
+    random_state : int, optional
+        Seed of the PCA, the synthetic doublets and the ``"louvain"`` /
+        ``"leiden"`` clustering. Default is 0. PhenoGraph (the default
+        ``clustering_algorithm``) clusters with a Louvain binary that takes
+        no seed, so its scores vary from run to run; use
+        ``clustering_algorithm="leiden"`` (as the dashboard does) for
+        reproducible results.
     """
     from doubletdetection.doubletdetection import BoostClassifier
 
