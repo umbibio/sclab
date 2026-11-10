@@ -41,7 +41,8 @@ def cca(
         'randomized' uses Halko et al. algorithm (`sklearn.utils.extmath.randomized_svd`)
         and is strongly recommended when only the leading few components are needed.
     random_state : int or None
-        Passed through to the randomized SVD for reproducibility.
+        Seed of the randomized SVD, and of the initial vector of the partial
+        (ARPACK) SVD, for reproducibility.
 
     Returns
     -------
@@ -103,7 +104,7 @@ def _svd_decomposition(
 
     elif svd_solver == "partial":
         logger.info("SVD decomposition with partial SVD...")
-        Uc, s, Vct = svds(C, k=k)
+        Uc, s, Vct = svds(C, k=k, random_state=random_state)
 
     elif svd_solver == "randomized":
         logger.info("SVD decomposition with randomized SVD...")

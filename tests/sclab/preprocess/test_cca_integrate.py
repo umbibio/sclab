@@ -171,6 +171,12 @@ def test_pair_randomized_is_reproducible_with_seed(adata: AnnData):
     np.testing.assert_array_equal(adata.obsm["r1"], adata.obsm["r2"])
 
 
+def test_integrate_is_reproducible_by_default(adata: AnnData):
+    cca_integrate(adata, "batch", adjusted_basis="r1", n_components=3)
+    cca_integrate(adata, "batch", adjusted_basis="r2", n_components=3)
+    np.testing.assert_array_equal(adata.obsm["r1"], adata.obsm["r2"])
+
+
 def test_pair_leaves_other_groups_nan(adata: AnnData):
     adata.obs["batch3"] = pd.Categorical(["A", "B", "C"] * (N_OBS // 3))
 

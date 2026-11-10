@@ -25,13 +25,14 @@ def cca_integrate(
     n_components: int = 30,
     svd_solver: str = "randomized",
     normalize: bool = True,
-    random_state: int | None = None,
+    random_state: int | None = 0,
 ):
     """Integrate two groups of cells with canonical correlation analysis.
 
     ``reference_batch`` is accepted for API compatibility with
     :func:`~sclab.preprocess.harmony_integrate` but is not supported: CCA is
-    symmetric, so passing one raises ``ValueError``.
+    symmetric, so passing one raises ``ValueError``. ``random_state`` seeds the
+    randomized and partial SVD solvers (default 0, as the dashboard's step).
 
     References
     ----------
@@ -77,7 +78,7 @@ def cca_integrate_pair(
     n_components: int = 30,
     svd_solver: str = "randomized",
     normalize: bool = True,
-    random_state: int | None = None,
+    random_state: int | None = 0,
 ):
     if basis is None:
         basis = "X"

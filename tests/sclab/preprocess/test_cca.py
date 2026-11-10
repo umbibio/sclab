@@ -130,6 +130,14 @@ def test_cca_randomized_is_reproducible_with_seed(data):
         np.testing.assert_array_equal(x, y)
 
 
+def test_cca_partial_is_reproducible_with_seed(data):
+    X, Y = data
+    a = cca(X, Y, n_components=3, svd_solver="partial", random_state=7)
+    b = cca(X, Y, n_components=3, svd_solver="partial", random_state=7)
+    for x, y in zip(a, b):
+        np.testing.assert_array_equal(x, y)
+
+
 def test_cca_matched_cells_get_similar_embeddings():
     # batch 2 is a (noisy) permutation of batch 1: matched cells must land close
     rng = np.random.default_rng(3)
