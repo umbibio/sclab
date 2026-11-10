@@ -2,7 +2,6 @@ from typing import Literal, Optional
 
 import numpy as np
 from anndata import AnnData
-from scanpy import Neighbors
 from scipy.sparse import coo_matrix, csr_matrix
 
 
@@ -14,6 +13,8 @@ def get_neighbors_adjacency_matrix(
     weighted: bool = False,
     directed: bool = True,
 ) -> csr_matrix:
+    from scanpy import Neighbors
+
     # get the current neighbors
     neigh = Neighbors(adata, neighbors_key=key)
     params = adata.uns[key]["params"]

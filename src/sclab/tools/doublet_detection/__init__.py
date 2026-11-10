@@ -4,13 +4,12 @@ from ._scrublet import scrublet, scrublet_is_available
 
 
 def any_doublet_detection_available() -> bool:
-    return any(
-        [
-            doubletdetection_is_available(),
-            scdblfinder_is_available(),
-            scrublet_is_available(),
-        ]
+    checks = (
+        doubletdetection_is_available,
+        scrublet_is_available,
+        scdblfinder_is_available,  # last: it starts R
     )
+    return any(check() for check in checks)
 
 
 def get_available_doublet_detection_methods() -> list[str]:
