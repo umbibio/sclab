@@ -1,5 +1,6 @@
 from ipywidgets import Checkbox, Dropdown
 
+from sclab._compat import missing
 from sclab.dataset.processor import Processor
 from sclab.dataset.processor._codegen import ADATA, call
 from sclab.dataset.processor.step import ProcessorStepBase
@@ -33,11 +34,6 @@ class Preprocess(ProcessorStepBase):
     description: str = "Preprocess"
 
     def __init__(self, parent: Processor) -> None:
-        try:
-            import scanpy as sc  # noqa: F401
-        except ImportError:
-            raise ImportError("Please install scanpy: `pip install scanpy`")
-
         cat_options = {
             "": None,
             **{c: c for c in text_or_category_columns(parent.dataset._metadata)},
@@ -82,6 +78,8 @@ class Preprocess(ProcessorStepBase):
         )
 
     def validate(self, params: dict) -> str | None:
+        if reason := missing("scanpy"):
+            return reason
         dataset = self.parent.dataset
         if (params.get("layer") or dataset.counts_layer) not in layer_keys(
             dataset.adata

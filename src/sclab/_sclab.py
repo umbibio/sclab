@@ -25,6 +25,7 @@ from ipywidgets.widgets import (
 )
 from traitlets import TraitError
 
+from . import _compat
 from ._io import (
     download,
     is_mtx_dir,
@@ -292,10 +293,13 @@ class SCLabDashboard(GridBox):
             tooltip="Batches or samples, for Integration, PCA and Neighbors",
         )
         self.background_checkbox = Checkbox(
-            value=True,
+            value=not _compat.IS_WASM,
             description="Background steps",
             tooltip="Off: steps run on the main thread, as step.run() does",
         )
+        if _compat.IS_WASM:  # no threads: steps always run on the main thread
+            self.background_checkbox.disabled = True
+            self.background_checkbox.tooltip = "Not available in the browser (Pyodide)"
         self.seed_input = Text(
             placeholder="step default",
             description="Random seed",

@@ -50,6 +50,8 @@ the zoom. Path drawing, custom figures and extra traces still use plotly. The
 
 A step whose optional package is missing still shows in the dashboard, with
 its Run button disabled and the `pip install` command it needs.
+`sclab.optional_dependencies()` lists each optional feature, whether its
+packages are installed, and how to install them.
 
 ## All optional dependencies at once
 

@@ -44,6 +44,8 @@ from html import escape
 from ipywidgets import HTML, Button, HBox, Layout, Play, VBox
 from traitlets import CInt
 
+from .. import _compat
+
 
 class _Beat(Play):
     """The job's beat. The kernel does not echo its ticks back to the frontend.
@@ -82,7 +84,12 @@ class StepCancelled(KeyboardInterrupt):
 
 
 def _kernel_loop():
-    """The running kernel's IOLoop, or None (plain Python, a terminal IPython)."""
+    """The running kernel's IOLoop, or None (plain Python, a terminal IPython).
+
+    None under WebAssembly (Pyodide), where threads cannot start: jobs run inline.
+    """
+    if _compat.IS_WASM:
+        return None
     try:
         from IPython import get_ipython
     except ImportError:

@@ -1,5 +1,6 @@
 from ipywidgets import Checkbox, IntText
 
+from sclab._compat import missing
 from sclab.dataset.processor import Processor
 from sclab.dataset.processor._codegen import ADATA, call
 from sclab.dataset.processor.step import ProcessorStepBase
@@ -25,11 +26,6 @@ class UMAP(ProcessorStepBase):
     background = True
 
     def __init__(self, parent: Processor) -> None:
-        try:
-            import scanpy as sc  # noqa: F401
-        except ImportError:
-            raise ImportError("Please install scanpy: `pip install scanpy`")
-
         variable_controls = dict(
             n_components=IntText(value=2, description="N comp."),
             zero_center=Checkbox(value=False, description="Zero center"),
@@ -42,7 +38,7 @@ class UMAP(ProcessorStepBase):
         )
 
     def validate(self, params: dict) -> str | None:
-        return missing_neighbors(self.parent.dataset.adata)
+        return missing("scanpy") or missing_neighbors(self.parent.dataset.adata)
 
     def to_code(self, params: dict) -> str:
         return call(

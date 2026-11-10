@@ -3,6 +3,7 @@ import inspect
 
 from ipywidgets import Checkbox, Dropdown
 
+from sclab._compat import requirement
 from sclab.dataset.processor import Processor
 from sclab.dataset.processor._codegen import ADATA, call
 from sclab.dataset.processor.step import ProcessorStepBase
@@ -65,7 +66,9 @@ class DoubletDetection(ProcessorStepBase):
         )
 
         if not any_doublet_detection_available():
-            raise ImportError
+            raise ImportError(
+                f"Needs a doublet detection package, e.g. {requirement('scrublet')}"
+            )
 
         methods_available = get_available_doublet_detection_methods()
 

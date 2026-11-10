@@ -1,6 +1,7 @@
 from ipywidgets import Dropdown, IntText
 
 from sclab._citations import record_citations
+from sclab import _compat
 from sclab.dataset.processor import Processor
 from sclab.dataset.processor._codegen import ADATA, call
 from sclab.dataset.processor.step import ProcessorStepBase
@@ -22,7 +23,8 @@ class Integration(ProcessorStepBase):
       :func:`~sclab.preprocess.cca_integrate`.
     - ``"harmony"`` — Harmony via :func:`~sclab.preprocess.harmony_integrate`.
     - ``"scanorama"`` — Scanorama via
-      :func:`scanpy.external.pp.scanorama_integrate`.
+      :func:`scanpy.external.pp.scanorama_integrate`; offered only when
+      ``scanorama`` and ``scanpy`` are installed, and not under Pyodide.
     """
 
     parent: Processor
@@ -30,6 +32,9 @@ class Integration(ProcessorStepBase):
     description: str = "Integration"
 
     def __init__(self, parent: Processor) -> None:
+        flavors = ["cca", "harmony"]
+        if not _compat.IS_WASM and _compat.missing("scanorama") is None:
+            flavors.append("scanorama")
         cat_options = {
             "": None,
             **{c: c for c in text_or_category_columns(parent.dataset._metadata)},
@@ -51,7 +56,7 @@ class Integration(ProcessorStepBase):
                 description="Reference Batch",
             ),
             flavor=Dropdown(
-                options=["cca", "harmony", "scanorama"],
+                options=flavors,
                 value="cca",
                 description="Flavor",
             ),

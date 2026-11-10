@@ -1,6 +1,7 @@
 import re
 import tempfile
 from html import escape
+from importlib.util import find_spec
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +21,7 @@ from ipywidgets.widgets.widget_box import VBox
 from ipywidgets.widgets.widget_description import DescriptionWidget
 
 from sclab import tools
+from sclab._compat import requirement
 from sclab.dataset import SCLabDataset
 from sclab.dataset.processor import Processor
 from sclab.dataset.processor._codegen import ADATA, call
@@ -48,10 +50,12 @@ XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 def _unavailable(method: str) -> str | None:
     """Why ``method`` cannot run here (a missing optional package), or None."""
+    if method in SCANPY_METHODS and find_spec("scanpy") is None:
+        return f"{method} needs {requirement('scanpy')}"
     if method == "pseudobulk_limma" and not pylimma_is_available():
-        return "pseudobulk_limma needs pylimma: pip install 'sclab[de]'"
+        return f"pseudobulk_limma needs {requirement('pylimma')}"
     if method == "pseudobulk_edger" and not edgepython_is_available():
-        return "pseudobulk_edger needs edgepython: pip install 'sclab[de]'"
+        return f"pseudobulk_edger needs {requirement('edgepython')}"
     return None
 
 
@@ -274,7 +278,8 @@ class DifferentialExpression(ProcessorStepBase):
     layer" to pick another layer. Results are stored in ``adata.uns`` and
     shown in a :class:`DifferentialExpressionResults` panel.
 
-    Requires ``scanpy`` to be installed.
+    The cell-level tests need ``scanpy``; without it, only the pseudobulk
+    methods can run.
     """
 
     parent: Processor
@@ -284,11 +289,6 @@ class DifferentialExpression(ProcessorStepBase):
     background = True
 
     def __init__(self, parent: Processor) -> None:
-        try:
-            import scanpy as sc  # noqa: F401
-        except ImportError:
-            raise ImportError("Please install scanpy: `pip install scanpy`")
-
         metadata = parent.dataset._metadata
         groupby_options = (None,) + tuple(text_or_category_columns(metadata))
         column_options = self._column_options(metadata)

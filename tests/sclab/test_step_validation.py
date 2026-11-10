@@ -151,7 +151,7 @@ def test_differential_expression_pseudobulk_needs_the_de_extra(raw, monkeypatch)
     c["method"].value = "pseudobulk_edger"
     assert step.run_button.disabled
     assert "pseudobulk_edger needs edgepython" in step.status.value
-    assert "sclab[de]" in step.status.value
+    assert "sclab[de-edger]" in step.status.value
     c["method"].value = "pseudobulk_limma"
     assert "pseudobulk_limma needs pylimma" in step.status.value
 

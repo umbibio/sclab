@@ -1,5 +1,6 @@
 from ipywidgets import Dropdown, IntRangeSlider, IntText
 
+from sclab._compat import missing
 from sclab.dataset.processor import Processor
 from sclab.dataset.processor._codegen import ADATA, call
 from sclab.dataset.processor.step import ProcessorStepBase
@@ -31,11 +32,6 @@ class Neighbors(ProcessorStepBase):
     background = True
 
     def __init__(self, parent: Processor) -> None:
-        try:
-            import scanpy as sc  # noqa: F401
-        except ImportError:
-            raise ImportError("Please install scanpy: `pip install scanpy`")
-
         variable_controls = dict(
             use_rep=Dropdown(
                 options=tuple(parent.dataset.adata.obsm.keys()),
@@ -75,6 +71,11 @@ class Neighbors(ProcessorStepBase):
         )
 
     def validate(self, params: dict) -> str | None:
+        if reason := missing("scanpy"):
+            return reason
+        if params.get("group_by_batch") and self.parent.batch_key:
+            if reason := missing("bbknn"):
+                return f"Group By Batch: {reason}"
         adata = self.parent.dataset.adata
         if params.get("use_rep") not in adata.obsm:
             return "Choose a 'Use rep.' representation (run PCA first)"

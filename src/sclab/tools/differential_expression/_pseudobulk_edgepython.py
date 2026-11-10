@@ -4,6 +4,7 @@ from anndata import AnnData
 from scipy.sparse import issparse
 
 from ..._citations import cites
+from ..._compat import requirement
 from ..utils import aggregate_and_filter
 from ._pseudobulk_helpers import pseudobulk_contrasts, validate_counts_layer
 from ._pseudobulk_pylimma import edgepython_is_available
@@ -34,7 +35,7 @@ def pseudobulk_edgepython(
     ``filterByExpr``, TMM normalization, ``estimateDisp``, ``glmQLFit`` and a
     ``glmQLFTest`` for each requested contrast.
 
-    Requires the Python package ``edgepython`` (``pip install sclab[de]``).
+    Requires the Python package ``edgepython`` (``pip install sclab[de-edger]``).
 
     Parameters
     ----------
@@ -135,10 +136,7 @@ def pseudobulk_edgepython(
     https://doi.org/10.64898/2026.02.16.706223
     """
     if not edgepython_is_available():
-        raise ImportError(
-            "pseudobulk_edgepython requires edgepython. Install with "
-            "`pip install sclab[de]`."
-        )
+        raise ImportError(f"pseudobulk_edgepython needs {requirement('edgepython')}")
 
     if aggregate:
         validate_counts_layer(adata, layer, check_counts)

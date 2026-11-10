@@ -6,6 +6,7 @@ from anndata import AnnData
 from scipy.sparse import issparse
 
 from ..._citations import record_citations
+from ..._compat import requirement
 from ..utils import aggregate_and_filter
 from ._pseudobulk_helpers import pseudobulk_contrasts, validate_counts_layer
 
@@ -170,13 +171,11 @@ def pseudobulk_pylimma(
     https://doi.org/10.64898/2026.02.16.706223
     """
     if not pylimma_is_available():
-        raise ImportError(
-            "pseudobulk_pylimma requires pylimma. Install with `pip install sclab[de]`."
-        )
+        raise ImportError(f"pseudobulk_pylimma needs {requirement('pylimma')}")
     if edger_preprocessing and not edgepython_is_available():
         raise ImportError(
-            "edger_preprocessing=True requires edgepython. Install with "
-            "`pip install sclab[de]` or pass edger_preprocessing=False."
+            f"edger_preprocessing=True needs {requirement('edgepython')}, "
+            "or pass edger_preprocessing=False."
         )
 
     if aggregate:

@@ -1,6 +1,7 @@
 from ipywidgets import FloatSlider
 
 from sclab._citations import record_citations
+from sclab._compat import missing
 from sclab.dataset.processor import Processor
 from sclab.dataset.processor._codegen import ADATA, call
 from sclab.dataset.processor.step import ProcessorStepBase
@@ -26,11 +27,6 @@ class Cluster(ProcessorStepBase):
     leiden_kwargs = dict(flavor="igraph", n_iterations=2, directed=False)
 
     def __init__(self, parent: Processor) -> None:
-        try:
-            import scanpy as sc  # noqa: F401
-        except ImportError:
-            raise ImportError("Please install scanpy: `pip install scanpy`")
-
         variable_controls = dict(
             resolution=FloatSlider(
                 value=1.0, min=0.1, max=10.0, step=0.1, description="Resolution"
@@ -44,7 +40,7 @@ class Cluster(ProcessorStepBase):
         )
 
     def validate(self, params: dict) -> str | None:
-        return missing_neighbors(self.parent.dataset.adata)
+        return missing("scanpy") or missing_neighbors(self.parent.dataset.adata)
 
     def to_code(self, params: dict) -> str:
         return call(

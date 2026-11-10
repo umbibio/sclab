@@ -2,6 +2,7 @@ import pandas as pd
 import plotly.express as px
 from ipywidgets import Button, Checkbox, Dropdown, IntText
 
+from sclab._compat import missing
 from sclab.dataset.processor import Processor
 from sclab.dataset.processor._codegen import ADATA, call
 from sclab.dataset.processor.step import ProcessorStepBase
@@ -32,11 +33,6 @@ class PCA(ProcessorStepBase):
     _X_is_raw = False
 
     def __init__(self, parent: Processor) -> None:
-        try:
-            import scanpy as sc  # noqa: F401
-        except ImportError:
-            raise ImportError("Please install scanpy: `pip install scanpy`")
-
         bool_var_df = parent.dataset.adata.var.select_dtypes(include=bool)
         mask_var_options = {
             "": None,
@@ -76,6 +72,8 @@ class PCA(ProcessorStepBase):
         return super().make_controls()
 
     def validate(self, params: dict) -> str | None:
+        if reason := missing("scanpy"):
+            return reason
         X = self.parent.dataset.adata.X
         if self._checked_X is not X:  # checked once per matrix: it reads all values
             self._checked_X, self._X_is_raw = X, looks_like_raw_counts(X)

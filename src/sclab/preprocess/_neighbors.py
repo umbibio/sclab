@@ -1,6 +1,7 @@
 from anndata import AnnData
 
 from .._citations import record_citations
+from .._compat import require
 
 
 def neighbors(
@@ -66,6 +67,7 @@ def neighbors(
     n_dims = max_dim - min_dim
 
     if batch_key:
+        require("bbknn")
         sc.external.pp.bbknn(
             adata,
             batch_key=batch_key,

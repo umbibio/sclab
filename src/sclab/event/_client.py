@@ -70,5 +70,6 @@ class EventClient:
         return publisher
 
     def __del__(self):
-        for event, callback in self.subscriptions.items():
+        # no subscriptions: __init__ raised first (e.g. a step's missing package)
+        for event, callback in getattr(self, "subscriptions", {}).items():
             self.broker.unsubscribe(event, callback)

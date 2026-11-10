@@ -61,6 +61,27 @@ def _accepted_params(function: callable, params: dict) -> dict:
     return {k: v for k, v in params.items() if k in names}
 
 
+class _UnavailableStep:
+    """The panel of a step that could not be built: the package it needs.
+
+    Added by :meth:`Processor.add_steps` when the step's constructor raises
+    ``ImportError`` (a missing optional dependency); running it re-raises.
+    """
+
+    def __init__(self, step: type, error: ImportError):
+        self.name, self.description = step.name, step.description
+        self.error = error
+        reason = str(error) or f"Needs {error.name or 'a missing package'}"
+        self.controls = VBox(
+            [HTML(f"<span style='color:#b26a00'>{html.escape(reason)}</span>")]
+        )
+
+    def run(self, **_):
+        raise self.error
+
+    function = run
+
+
 # forward declaration
 class ProcessorStepBase(EventClient):
     events: list[str] = None
@@ -324,7 +345,10 @@ class Processor(EventClient):
                     assert issubclass(step, ProcessorStepBase), (
                         f"{step} must be a subclass of {ProcessorStepBase}"
                     )
-                    steps_list[i] = step(self)
+                    try:
+                        steps_list[i] = step(self)
+                    except ImportError as error:  # a missing optional dependency
+                        steps_list[i] = _UnavailableStep(step, error)
 
         steps: dict[str, list[_ProcessorStep]]
         steps_list: list[_ProcessorStep]
