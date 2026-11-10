@@ -31,3 +31,27 @@ jobs:
 
       - name: Run tests
         run: pytest -v --tb=short
+
+  pyodide-smoke:
+    name: Pyodide smoke test (optional)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install the latest version of uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "lts/*"
+
+      - name: Install Pyodide
+        run: npm install --prefix "$RUNNER_TEMP/pyodide" pyodide@314.0.7
+
+      - name: Run the smoke test
+        run: node tests/pyodide/smoke.mjs
+        env:
+          PYODIDE_JS: ${{ runner.temp }}/pyodide/node_modules/pyodide/pyodide.mjs
