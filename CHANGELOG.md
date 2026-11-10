@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- sclab installs and runs in Pyodide (WebAssembly): `import sclab` loads no scanpy, numba, R or other optional package, and the dashboard builds without them. Steps whose package is missing stay visible with Run disabled and the reason plus install command (e.g. "Needs scanpy: pip install 'sclab[scanpy]'"; a micropip command under Pyodide); a step that cannot be built shows a panel saying what to install. Under Pyodide steps run inline (no background jobs; the Settings checkbox is disabled)
+- `sclab.optional_dependencies()`: table of optional features, whether their packages are installed and how to install them
+- Pyodide smoke test (`tests/pyodide/`, node) and an optional CI job for it
 - `scdblfinder(backend="auto" | "python" | "r")`: `"python"` runs pyscdblfinder (new `scdblfinder-py` extra: `pyscdblfinder`, `igraph`), with a port of scDblFinder's fast clustering for `clusters_col=True`; works without R, including in Pyodide. `"auto"` keeps using R when R and scDblFinder are installed. Options not ported (samples, known doublets, ...) raise `NotImplementedError` on the Python backend
 - Warning when the installed R scDblFinder and R xgboost versions don't work together (scDblFinder < 1.24 with xgboost ≥ 3, or < 1.27.9 with xgboost ≥ 3.4): the classifier then fails silently and scores are the starting heuristic. Results are not changed
 - Citation tracking: methods record the references they rely on (the method's paper plus tools such as scanpy, anndata, igraph, UMAP, scikit-learn) in `adata.uns["sclab"]["citations"]` and for the session; `sclab.active_citations(adata=None, format="text" | "bibtex" | "ris" | "dict")`, `sclab.citation(key)` and `sclab.known_citations()` return them. Dashboard History tab has a Citations panel with Copy and "Download .bib". Library functions gained numpydoc "References" sections
@@ -48,6 +51,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `check_counts` parameter on `pseudobulk_pylimma()`, `pseudobulk_limma()` and `pseudobulk_edger()` (default `True`) to reject non-count input
 
 ### Changed
+- **Breaking:** requires Python ≥ 3.12 (was 3.10–3.13); 3.14 supported. 3.15 not yet: h5py has no 3.15 wheels
+- **Breaking:** `bbknn` is no longer a core dependency (extra `bbknn`, needed for Neighbors "Group By Batch"); `igraph` is now core. New extras `doublets` (scrublet, doubletdetection) and `de-edger` (edgepython); `de` now installs only pylimma. `xlsxwriter` has no minimum version
+- Doublet Detection is always listed in the dashboard (R is no longer started at import to check for scDblFinder); Integration offers scanorama only when scanorama and scanpy are installed
 - **License:** sclab is now GPL-3.0-or-later (was BSD-3-Clause), so it can include GPL code such as the vendored Harmony (from harmonypy, GPL-3) and the scDblFinder fast-clustering port. `THIRD_PARTY_NOTICES.md` lists vendored code with origin and license; builds need `flit_core>=3.12`
 - Dashboard obs/var tables and the differential expression table are built and sent only while their tab is open, and dropped from widget state when hidden (on 16k cells after DE: page reload 57 MB → 6 MB, DE step 79 MB → ~0 MB sent). Opening a tab now takes a moment while its table is sent
 - Dashboard Integration "GroupBy" defaults to the dashboard's `batch_key`
