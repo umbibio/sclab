@@ -26,10 +26,10 @@ REFERENCES: dict[str, dict] = {
         kind="software",
         authors=[("Arriojas", "Argenis")],
         title="SCLab: Interactive Single-Cell Analysis Toolkit",
-        journal="GitHub repository",
+        journal="Zenodo",
         year=2025,
+        doi="10.5281/zenodo.23739925",
         url="https://github.com/umbibio/sclab",
-        # shortcut: placeholder (no paper or archived DOI yet), replace when published
     ),
     "anndata": dict(
         use="AnnData data structure",

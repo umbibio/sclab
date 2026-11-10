@@ -108,6 +108,7 @@ If you use SCLab in your research, please cite:
   author = {Arriojas, Argenis},
   title = {SCLab: Interactive Single-Cell Analysis Toolkit},
   year = {2025},
-  publisher = {GitHub},
+  publisher = {Zenodo},
+  doi = {10.5281/zenodo.23739925},
   url = {https://github.com/umbibio/sclab}
 }
