@@ -6,6 +6,7 @@ Any failed assertion fails the smoke test.
 """
 
 import sys
+import time
 from importlib.util import find_spec
 
 import anndata as ad
@@ -43,9 +44,10 @@ adata.obsm["X_pca"] = rng.normal(size=(n_obs, 20))
 
 d = SCLabDashboard(adata, counts_layer="counts", batch_key="batch")
 steps = d.processor.steps
-for name in ["QC", "Preprocess", "PCA", "Neighbors", "UMAP", "Cluster"]:
+for name in ["Neighbors", "UMAP", "Cluster"]:
     assert steps[name].run_button.disabled, name
     assert steps[name]._reason.startswith("Needs scanpy"), steps[name]._reason
+assert steps["QC"]._reason is steps["Preprocess"]._reason is None  # sclab's port
 assert type(steps["Doublet Detection"]).__name__ == "_UnavailableStep"
 assert d.background_checkbox.disabled and not d.background_checkbox.value
 flavors = steps["Integration"].variable_controls["flavor"].options
@@ -55,9 +57,29 @@ ok("dashboard built", f"({len(steps)} steps)")
 
 def run(name, **params):
     n_exc = len(d.broker.exceptions_log)
+    t0 = time.perf_counter()
     steps[name].run(**params)
     assert d.broker.exceptions_log[n_exc:] == [], d.broker.exceptions_log[n_exc:]
     assert steps[name].run_button.button_style == "success", steps[name].status.value
+    return f"({time.perf_counter() - t0:.2f} s)"
+
+
+ok("QC", run("QC"))
+c = steps["Preprocess"].variable_controls
+c["hvg_methods"].value = ("seurat", "seurat_v3")
+c["hvg_combine"].value = "union"
+elapsed = run("Preprocess")
+var = d.dataset.adata.var
+hvg = var["highly_variable_seurat"] | var["highly_variable_seurat_v3"]
+assert (var["highly_variable"] == hvg).all() and hvg.any()
+ok("Preprocess seurat | seurat_v3", elapsed)
+elapsed = run("PCA", n_comps=10, mask_var="highly_variable")
+assert d.dataset.adata.obsm["X_pca"].shape == (d.dataset.adata.n_obs, 10)
+ok("PCA", elapsed)
+backends = [e["params"]["backend"] for e in d.processor.step_history]
+assert backends == ["native"] * 3, backends
+assert d.generate_code().count('backend="native"') == 3
+ok("history and code: backend native")
 
 
 integration = dict(group_by="batch", reference_batch=None, max_iters=10)
