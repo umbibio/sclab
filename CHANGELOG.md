@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- Dashboard steps show the tool behind them in a small grey line below Run (e.g. "Python · scanpy.pp.pca", "R · scDblFinder::scDblFinder"), following the method/flavor/backend controls
+- Doublet Detection step: R / Python backend dropdown for scDblFinder, shown only when both backends are installed (default R, as `backend="auto"`); the Python backend runs in the background. Generated code names `backend="python"` when it was used
 - sclab installs and runs in Pyodide (WebAssembly): `import sclab` loads no scanpy, numba, R or other optional package, and the dashboard builds without them. Steps whose package is missing stay visible with Run disabled and the reason plus install command (e.g. "Needs scanpy: pip install 'sclab[scanpy]'"; a micropip command under Pyodide); a step that cannot be built shows a panel saying what to install. Under Pyodide steps run inline (no background jobs; the Settings checkbox is disabled)
 - `sclab.optional_dependencies()`: table of optional features, whether their packages are installed and how to install them
 - Pyodide smoke test (`tests/pyodide/`, node) and an optional CI job for it
