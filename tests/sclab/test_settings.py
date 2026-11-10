@@ -110,6 +110,7 @@ def test_seed_sets_random_state_unless_the_user_did():
     dash = SCLabDashboard(make_adata())
     steps = dash.processor.steps
     seeded = ["PCA", "Neighbors", "UMAP", "Cluster", "Integration"]
+    seeded += ["Doublet Detection", "Differential Expression"]
     dash.seed_input.value = "42"
     for name in seeded:
         assert steps[name].fixed_params["random_state"] == 42, name

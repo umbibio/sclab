@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 import pytest
 
 from sclab.tools.differential_expression import (
@@ -280,6 +281,12 @@ class TestOrchestrationWithFakeR:
 
 @needs_r
 class TestWithR:
+    def test_reproducible_by_default(self, r_counts_adata):
+        kw = dict(condition_group="A", replicas_per_group=3, min_cells_per_group=10)
+        a = pseudobulk_limma(r_counts_adata, "cond", **kw)["A_vs_rest"]
+        b = pseudobulk_limma(r_counts_adata, "cond", **kw)["A_vs_rest"]
+        pd.testing.assert_frame_equal(a, b)
+
     def test_detects_upregulated_genes(self, r_counts_adata):
         res = pseudobulk_limma(
             r_counts_adata,

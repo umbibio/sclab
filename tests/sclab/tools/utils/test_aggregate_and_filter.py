@@ -401,6 +401,11 @@ class TestRandomState:
         np.testing.assert_array_equal(a.X, b.X)
         assert not np.array_equal(a.X, c.X)
 
+    def test_replicas_are_reproducible_by_default(self, adata):
+        a = aggregate_and_filter(adata, "batch", min_cells_per_group=1)
+        b = aggregate_and_filter(adata, "batch", min_cells_per_group=1)
+        np.testing.assert_array_equal(a.X, b.X)
+
     def test_seeded_bootstrap_is_reproducible(self, adata):
         kw = dict(min_cells_per_group=1, bootstrap_sampling=True, random_state=1)
         np.testing.assert_array_equal(

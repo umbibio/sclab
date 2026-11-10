@@ -1107,6 +1107,23 @@ class TestDifferentialExpressionStep:
 
 
 @needs_edgepython
+def test_de_step_follows_the_seed_setting():
+    d = SCLabDashboard(make_adata(240, 120))
+    for name in ["QC", "Preprocess"]:
+        strict_run_step(d, name)
+    d.seed_input.value = "5"
+    tables = []
+    for name in ("first", "second"):
+        strict_run_step(d, DE, **de_params(method="pseudobulk_edger", name=name))
+        assert d.processor.step_history[-1]["params"]["random_state"] == 5
+        uns = d.dataset.adata.uns[f"differential_expression_{name}"]
+        assert uns["params"]["random_state"] == 5
+        tables.append(uns["table"])
+    pd.testing.assert_frame_equal(*tables)
+    assert "random_state=5" in d.generate_code()
+
+
+@needs_edgepython
 def test_pseudobulk_background_run_stores_params_and_table():
     d = SCLabDashboard(make_adata(240, 120))
     for name in ["QC", "Preprocess"]:

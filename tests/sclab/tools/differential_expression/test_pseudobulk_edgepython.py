@@ -85,6 +85,13 @@ def test_random_state_is_reproducible(adata):
     pd.testing.assert_frame_equal(a["B_vs_rest"], b["B_vs_rest"])
 
 
+def test_reproducible_by_default(adata):
+    a = pseudobulk_edgepython(adata, "grp", condition_group="B")
+    b = pseudobulk_edgepython(adata, "grp", condition_group="B")
+
+    pd.testing.assert_frame_equal(a["B_vs_rest"], b["B_vs_rest"])
+
+
 @pytest.mark.skipif(not edger_is_available(), reason="R edgeR not available")
 @pytest.mark.parametrize(
     "kwargs", [{}, {"cell_identity_key": "ct", "reference_group": "A"}]

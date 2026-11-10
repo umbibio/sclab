@@ -21,7 +21,7 @@ def aggregate_and_filter(
     make_stats: bool = True,
     make_dummies: bool = True,
     sample_key: str | None = None,
-    random_state: int | None = None,
+    random_state: int | None = 0,
 ) -> AnnData:
     """
     Aggregate and filter cells in an AnnData object into cell populations.
@@ -56,7 +56,7 @@ def aggregate_and_filter(
         sample label are left out. Defaults to None (random pseudo-replicas).
     random_state : int, optional
         Seed for the random pseudo-replica assignment. None uses the global
-        ``random``/``numpy.random`` state. Defaults to None.
+        ``random``/``numpy.random`` state. Defaults to 0.
 
     Returns
     -------

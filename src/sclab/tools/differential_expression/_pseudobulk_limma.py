@@ -31,6 +31,7 @@ def pseudobulk_limma(
     aggregate: bool = True,
     verbosity: int = 0,
     check_counts: bool = True,
+    random_state: int | None = 0,
 ) -> dict[str, pd.DataFrame]:
     """Pseudobulk differential expression analysis using limma-voom.
 
@@ -89,6 +90,9 @@ def pseudobulk_limma(
         If True, raise a ``ValueError`` when the selected layer does not look
         like raw counts (non-negative integers). Set to False for
         non-integer corrected counts. Default is True.
+    random_state : int or None, optional
+        Seed for the random pseudo-replica assignment. None uses the global
+        random state. Default is 0.
 
     Returns
     -------
@@ -161,6 +165,7 @@ def pseudobulk_limma(
             min_cells_per_group,
             bootstrap_sampling,
             use_cells,
+            random_state=random_state,
         )
     else:
         aggr_adata = adata.copy()

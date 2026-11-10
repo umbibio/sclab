@@ -26,7 +26,7 @@ def pseudobulk_edgepython(
     verbosity: int = 0,
     check_counts: bool = True,
     sample_key: str | None = None,
-    random_state: int | None = None,
+    random_state: int | None = 0,
 ) -> dict[str, pd.DataFrame]:
     """Pseudobulk differential expression with the edgeR quasi-likelihood pipeline.
 
@@ -82,7 +82,7 @@ def pseudobulk_edgepython(
         :func:`pseudobulk_pylimma`. Default is None (random pseudo-replicas).
     random_state : int or None, optional
         Seed for the random pseudo-replica assignment. None uses the global
-        random state. Default is None.
+        random state. Default is 0.
 
     Returns
     -------

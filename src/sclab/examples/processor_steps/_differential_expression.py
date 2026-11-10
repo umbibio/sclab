@@ -466,6 +466,7 @@ class DifferentialExpression(ProcessorStepBase):
                 kwargs["replicas_per_group"] = params["replicas_per_group"]
             if "edger_preprocessing" in params:
                 kwargs["edger_preprocessing"] = params["edger_preprocessing"]
+        kwargs["random_state"] = params.get("random_state", 0)  # absent: older history
         kwargs["key_added"] = params["key_added"]
         return kwargs
 
@@ -474,8 +475,8 @@ class DifferentialExpression(ProcessorStepBase):
             "sclab.tools.de", ADATA, params["groupby"], **self._de_kwargs(params)
         )
 
-    def function(self, **params):
-        resolved = self.resolved_params(params)
+    def function(self, random_state: int = 0, **params):
+        resolved = self.resolved_params({**params, "random_state": random_state})
         kwargs = self._de_kwargs(resolved)
         yield from self.compute(tools.de, resolved["groupby"], **kwargs)
         self.results.sync_results_list(focus_result=kwargs["key_added"])

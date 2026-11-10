@@ -31,6 +31,7 @@ def pseudobulk_edger(
     aggregate: bool = True,
     verbosity: int = 0,
     check_counts: bool = True,
+    random_state: int | None = 0,
 ) -> dict[str, pd.DataFrame]:
     """
     Fits a model using edgeR and computes top tags for a given condition vs
@@ -80,6 +81,9 @@ def pseudobulk_edger(
         If True, raise a ``ValueError`` when the selected layer does not look
         like raw counts (non-negative integers). Set to False for non-integer
         corrected counts. Defaults to True.
+    random_state : int or None, optional
+        Seed for the random pseudo-replica assignment. None uses the global
+        random state. Defaults to 0.
 
     Returns
     -------
@@ -156,6 +160,7 @@ def pseudobulk_edger(
             min_cells_per_group,
             bootstrap_sampling,
             use_cells,
+            random_state=random_state,
         )
     else:
         aggr_adata = adata_.copy()
