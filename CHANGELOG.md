@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- `scdblfinder(backend="auto" | "python" | "r")`: `"python"` runs pyscdblfinder (new `scdblfinder-py` extra: `pyscdblfinder`, `igraph`), with a port of scDblFinder's fast clustering for `clusters_col=True`; works without R, including in Pyodide. `"auto"` keeps using R when R and scDblFinder are installed. Options not ported (samples, known doublets, ...) raise `NotImplementedError` on the Python backend
+- Warning when the installed R scDblFinder and R xgboost versions don't work together (scDblFinder < 1.24 with xgboost ≥ 3, or < 1.27.9 with xgboost ≥ 3.4): the classifier then fails silently and scores are the starting heuristic. Results are not changed
 - Citation tracking: methods record the references they rely on (the method's paper plus tools such as scanpy, anndata, igraph, UMAP, scikit-learn) in `adata.uns["sclab"]["citations"]` and for the session; `sclab.active_citations(adata=None, format="text" | "bibtex" | "ris" | "dict")`, `sclab.citation(key)` and `sclab.known_citations()` return them. Dashboard History tab has a Citations panel with Copy and "Download .bib". Library functions gained numpydoc "References" sections
 - Dataset loader (Workspace "+ Load" and `SCLabDashboard()` without data) with four sources: Files (browse the notebook's folder for `.h5ad`, 10x `.h5` and mtx folders, with size and shape, never above the notebook folder), URL (downloaded into `workspace_dir/downloads/` and re-downloaded by the generated script), Upload (saved to `workspace_dir/uploads/`; meant for small files, warns above ~200 MB) and Defined in notebook. In a Workspace, picked files are added without reading them and opened only if no dataset is active
 - Dashboard Settings tab sections Data (counts layer, batch key), Steps (background steps on/off, random seed: empty = each step's default), Plots (theme, colorscale, categorical palette, plus the existing backend, 3D points, min. size, 3D full resolution) and Tables (keep tables loaded when hidden). Settings are saved in `adata.uns["sclab"]["settings"]` and restored when a dashboard is built; explicit `SCLabDashboard(...)` arguments take precedence. Changing a setting moves step controls that still hold the previous setting's value and leaves the others alone
@@ -46,6 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `check_counts` parameter on `pseudobulk_pylimma()`, `pseudobulk_limma()` and `pseudobulk_edger()` (default `True`) to reject non-count input
 
 ### Changed
+- **License:** sclab is now GPL-3.0-or-later (was BSD-3-Clause), so it can include GPL code such as the vendored Harmony (from harmonypy, GPL-3) and the scDblFinder fast-clustering port. `THIRD_PARTY_NOTICES.md` lists vendored code with origin and license; builds need `flit_core>=3.12`
 - Dashboard obs/var tables and the differential expression table are built and sent only while their tab is open, and dropped from widget state when hidden (on 16k cells after DE: page reload 57 MB → 6 MB, DE step 79 MB → ~0 MB sent). Opening a tab now takes a moment while its table is sent
 - Dashboard Integration "GroupBy" defaults to the dashboard's `batch_key`
 - `SCLabDashboard(counts_layer=None, plot_backend=None)` defaults (resolved from stored settings, else `"counts"` / `"plotly"`); `batch_key=""` (and `Processor(batch_key="")`) now means no batch key instead of picking `"batch"`
@@ -89,6 +92,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ALRA uses a scoped rpy2 converter instead of the deprecated global `numpy2ri.activate()`
 
 ### Fixed
+- `scdblfinder()`: `dbr_sd` is passed to R as `dbr.sd`, `known_doublets_col` accepts a column name and keeps the column, `clusters_col=True` runs scDblFinder's own clustering, and known-doublet runs no longer return empty (NaN) class labels
 - Pseudobulk DE with a cell identity key computed the "rest" cell percentages over all other identities instead of within the identity
 - `aggregate_and_filter()` pandas 4 deprecation (tuple group keys)
 - `import sclab` crashed when rpy2 is installed but cannot load R (e.g. rpy2-rinterface ≥3.6.7 with R < 4.5); the R-backed methods now report R as unavailable
