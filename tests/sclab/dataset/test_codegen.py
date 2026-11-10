@@ -61,13 +61,10 @@ def dense(X):
     return X.toarray() if hasattr(X, "toarray") else np.asarray(X)
 
 
-def assert_same_adata(a: AnnData, b: AnnData, ignore_obs: tuple = ()):
+def assert_same_adata(a: AnnData, b: AnnData):
     assert a.obs_names.equals(b.obs_names)
     assert a.var_names.equals(b.var_names)
-    assert set(ignore_obs) <= set(a.obs) & set(b.obs)
-    obs_a = a.obs.drop(columns=list(ignore_obs))
-    obs_b = b.obs.drop(columns=list(ignore_obs))
-    pd.testing.assert_frame_equal(obs_a, obs_b, check_exact=False, rtol=1e-6)
+    pd.testing.assert_frame_equal(a.obs, b.obs, check_exact=False, rtol=1e-6)
     pd.testing.assert_frame_equal(a.var, b.var, check_exact=False, rtol=1e-6)
     np.testing.assert_allclose(dense(a.X), dense(b.X), rtol=1e-6, atol=1e-8)
     for attr in ("layers", "obsm", "obsp"):
@@ -94,14 +91,14 @@ def assert_readable(code: str):
             assert n <= 10 or coords, ast.unparse(node)
 
 
-def roundtrip(steps: list[tuple[str, dict]], ignore_obs: tuple = ()):
+def roundtrip(steps: list[tuple[str, dict]]):
     adata = make_adata()
     dash = SCLabDashboard(adata.copy())
     run_steps(dash, steps)
     code = dash.generate_code()
     assert_readable(code)
     result = exec_code(code, adata.copy())
-    assert_same_adata(dash.dataset.adata, result, ignore_obs)
+    assert_same_adata(dash.dataset.adata, result)
     return code, dash.dataset.adata, result
 
 
@@ -260,11 +257,7 @@ def test_step_roundtrip(steps):
 
 @pytest.mark.skipif(not scrublet_is_available(), reason="scrublet not installed")
 def test_doublet_detection_roundtrip():
-    # scrublet's approximate (annoy) kNN is not seeded: scores differ run to run
-    code, *_ = roundtrip(
-        [("Doublet Detection", {"flavor": "scrublet"})],
-        ignore_obs=("scrublet_score", "scrublet_label"),
-    )
+    code, *_ = roundtrip([("Doublet Detection", {"flavor": "scrublet"})])
     assert "sclab.tools.doublet_detection.scrublet(" in code
     assert "layer=counts_layer" in code
 

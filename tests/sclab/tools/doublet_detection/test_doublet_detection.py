@@ -160,6 +160,21 @@ class TestScrublet:
 
         pd.testing.assert_frame_equal(result.obs, again.obs)
 
+    def test_deterministic_with_threaded_annoy(self):
+        # here annoy's default multi-threaded build changed the scores run to run
+        import annoy
+
+        from ...test_utils import simple_loop_adata
+
+        adata = simple_loop_adata(n_obs=300, n_vars=300)
+        scores = []
+        for _ in range(4):
+            scrublet(adata, scrub_doublets_kwargs=QUIET)
+            scores.append(adata.obs["scrublet_score"].to_numpy())
+        for other in scores[1:]:
+            np.testing.assert_array_equal(scores[0], other)
+        assert annoy.AnnoyIndex.__module__ == "annoy"  # restored
+
     def test_key_added_and_layer(self, doublet_data):
         adata = doublet_data[0].copy()
         adata.layers["counts"] = adata.X.copy()

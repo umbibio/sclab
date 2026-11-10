@@ -1,3 +1,5 @@
+import threading
+from contextlib import contextmanager
 from importlib.util import find_spec
 from typing import Any
 
@@ -11,6 +13,36 @@ from sclab.utils import check_raw_counts
 
 def scrublet_is_available() -> bool:
     return find_spec("scrublet") is not None
+
+
+_annoy_lock = threading.Lock()
+
+
+@contextmanager
+def _single_threaded_annoy():
+    """Make scrublet build its annoy index on one thread.
+
+    annoy (>= 1.17) builds its trees on all CPUs by default, and scrublet
+    cannot change that: even with the seed scrublet sets, the approximate
+    neighbors, hence the doublet scores, then vary from run to run. One thread
+    is reproducible. ``annoy.AnnoyIndex`` is swapped only during the call,
+    under a lock (scrublet imports it when it builds the index).
+    """
+    if find_spec("annoy") is None:  # scrublet then uses exact neighbors
+        yield
+        return
+    import annoy
+
+    class AnnoyIndex(annoy.AnnoyIndex):
+        def build(self, n_trees, n_jobs=-1):
+            return super().build(n_trees, n_jobs=1)
+
+    with _annoy_lock:
+        original, annoy.AnnoyIndex = annoy.AnnoyIndex, AnnoyIndex
+        try:
+            yield
+        finally:
+            annoy.AnnoyIndex = original
 
 
 @cites("scrublet")
@@ -79,7 +111,9 @@ def scrublet(
     stdev_doublet_rate : float, optional
         Uncertainty in the expected doublet rate. Default is 0.02.
     random_state : int, optional
-        Random seed for reproducibility. Default is 0.
+        Random seed for reproducibility. Default is 0. The approximate
+        (annoy) neighbor index is built on a single thread so that the
+        scores are reproducible.
     scrub_doublets_kwargs : dict, optional
         Additional keyword arguments forwarded to
         :meth:`scrublet.Scrublet.scrub_doublets`.
@@ -124,7 +158,8 @@ def scrublet(
         random_state=random_state,
     )
 
-    _scores, labels = scrub.scrub_doublets(**scrub_doublets_kwargs)
+    with _single_threaded_annoy():
+        _scores, labels = scrub.scrub_doublets(**scrub_doublets_kwargs)
     if labels is not None:
         _labels = list(map(lambda v: "doublet" if v else "singlet", labels))
         _labels = pd.Categorical(_labels, ["singlet", "doublet"])
