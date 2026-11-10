@@ -176,6 +176,7 @@ def test_optional_dependencies_table(capsys, monkeypatch):
     install = dict(zip(df["feature"], df["install"]))
     assert install["jscatter"] == "await micropip.install(['jupyter-scatter'])"
     assert install["R"].startswith("not available under Pyodide")
+    assert "micropip.install('edgepython', deps=False)" in install["edgepython"]
     assert capsys.readouterr().out == ""
 
 

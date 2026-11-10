@@ -6,11 +6,20 @@ from scipy.sparse import issparse
 from ..._citations import cites
 from ..._compat import requirement
 from ..utils import aggregate_and_filter
+from ._edgepython_numba_free import import_edgepython
 from ._pseudobulk_helpers import pseudobulk_contrasts, validate_counts_layer
 from ._pseudobulk_pylimma import edgepython_is_available
 
 
-@cites("edger", "edger_ql", "tmm", "edgepython")
+@cites(
+    "edger",
+    "edger_2010",
+    "edger_glm",
+    "edger_ql_lun2016",
+    "edger_ql",
+    "tmm",
+    "edgepython",
+)
 def pseudobulk_edgepython(
     adata: AnnData,
     group_key: str,
@@ -113,6 +122,10 @@ def pseudobulk_edgepython(
     estimates the dispersion inside ``glmQLFit``, which shifts F-statistics
     slightly.
 
+    Without numba (e.g. in Pyodide) edgepython's compiled kernels are replaced
+    by sclab's vectorised NumPy ports of them (same results to rounding error,
+    about 20 times slower than numba).
+
     References
     ----------
     Chen et al. (2025). edgeR v4: powerful differential analysis of
@@ -120,6 +133,21 @@ def pseudobulk_edgepython(
     small counts and larger datasets. *Nucleic Acids Research*, 53,
     gkaf018.
     https://doi.org/10.1093/nar/gkaf018
+
+    Robinson, McCarthy & Smyth (2010). edgeR: a Bioconductor package for
+    differential expression analysis of digital gene expression data.
+    *Bioinformatics*, 26, 139-140.
+    https://doi.org/10.1093/bioinformatics/btp616
+
+    McCarthy, Chen & Smyth (2012). Differential expression analysis of
+    multifactor RNA-Seq experiments with respect to biological variation.
+    *Nucleic Acids Research*, 40, 4288-4297.
+    https://doi.org/10.1093/nar/gks042
+
+    Lun, Chen & Smyth (2016). It's DE-licious: a recipe for differential
+    expression analyses of RNA-seq experiments using quasi-likelihood methods
+    in edgeR. *Methods in Molecular Biology*, 1418, 391-416.
+    https://doi.org/10.1007/978-1-4939-3578-9_19
 
     Chen et al. (2016). From reads to genes to pathways: differential
     expression analysis of RNA-Seq experiments using Rsubread and the
@@ -169,7 +197,7 @@ def pseudobulk_edgepython(
 
 
 def _fit_ql_model(aggr_adata: AnnData, design: pd.DataFrame, verbosity: int):
-    import edgepython
+    edgepython = import_edgepython()
 
     X = aggr_adata.X.toarray() if issparse(aggr_adata.X) else aggr_adata.X
     counts = np.asarray(X, dtype=float).T  # genes x samples
@@ -199,7 +227,7 @@ def _fit_ql_model(aggr_adata: AnnData, design: pd.DataFrame, verbosity: int):
 
 
 def _ql_ftest(fit, design: pd.DataFrame, cnd: str, ref: str, genes: np.ndarray):
-    import edgepython
+    edgepython = import_edgepython()
 
     contrast = np.zeros(design.shape[1])
     contrast[design.columns.get_loc(cnd)] = 1.0

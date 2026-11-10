@@ -55,7 +55,7 @@ FEATURES: dict[str, Feature] = {
     ),
     "pylimma": Feature("pseudobulk_limma DE", ("pylimma",), "de", ("pylimma",)),
     "edgepython": Feature(
-        "pseudobulk_edger DE; edgeR filtering in pseudobulk_limma",
+        "pseudobulk_edger DE",
         ("edgepython",),
         "de-edger",
         ("edgepython",),
@@ -80,6 +80,11 @@ def install_command(feature: str) -> str:
     f = FEATURES[feature]
     if IS_WASM and f.extra == "r":
         return "not available under Pyodide (no R)"
+    if IS_WASM and feature == "edgepython":  # without numba (no wasm build)
+        return (
+            "await micropip.install(['statsmodels', 'matplotlib']); "
+            "await micropip.install('edgepython', deps=False)"
+        )
     if IS_WASM:
         return f"await micropip.install({list(f.pip)!r})"
     if f.extra is not None:

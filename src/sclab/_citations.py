@@ -365,8 +365,58 @@ REFERENCES: dict[str, dict] = {
         pages="gkaf018",
         doi="10.1093/nar/gkaf018",
     ),
+    "edger_2010": dict(
+        use="edgeR",
+        kind="article",
+        authors=[
+            ("Robinson", "Mark D."),
+            ("McCarthy", "Davis J."),
+            ("Smyth", "Gordon K."),
+        ],
+        title="edgeR: a Bioconductor package for differential expression analysis "
+        "of digital gene expression data",
+        journal="Bioinformatics",
+        year=2010,
+        volume="26",
+        issue="1",
+        pages="139-140",
+        doi="10.1093/bioinformatics/btp616",
+    ),
+    "edger_glm": dict(
+        use="edgeR negative binomial GLMs and Cox-Reid dispersion estimation",
+        kind="article",
+        authors=[
+            ("McCarthy", "Davis J."),
+            ("Chen", "Yunshun"),
+            ("Smyth", "Gordon K."),
+        ],
+        title="Differential expression analysis of multifactor RNA-Seq experiments "
+        "with respect to biological variation",
+        journal="Nucleic Acids Research",
+        year=2012,
+        volume="40",
+        issue="10",
+        pages="4288-4297",
+        doi="10.1093/nar/gks042",
+    ),
+    "edger_ql_lun2016": dict(
+        use="edgeR quasi-likelihood methods",
+        kind="article",
+        authors=[
+            ("Lun", "Aaron T. L."),
+            ("Chen", "Yunshun"),
+            ("Smyth", "Gordon K."),
+        ],
+        title="It's DE-licious: A Recipe for Differential Expression Analyses of "
+        "RNA-seq Experiments Using Quasi-Likelihood Methods in edgeR",
+        journal="Methods in Molecular Biology",
+        year=2016,
+        volume="1418",
+        pages="391-416",
+        doi="10.1007/978-1-4939-3578-9_19",
+    ),
     "edger_ql": dict(
-        use="edgeR quasi-likelihood pipeline",
+        use="edgeR quasi-likelihood pipeline; filterByExpr",
         kind="article",
         authors=[
             ("Chen", "Yunshun"),
