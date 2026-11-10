@@ -8,8 +8,6 @@ DEFAULT_PYTHON_VERSION = "3.12"
 
 
 PYTHON_VERSIONS = [
-    "3.10",
-    "3.11",
     "3.12",
     "3.13",
     "3.14",
@@ -51,7 +49,7 @@ def _run_tests(session: nox.Session, **dep_versions: dict[str, str]) -> None:
     dependencies = [
         f"{pkg_name}{version}" for pkg_name, version in dep_versions.items()
     ]
-    dependencies.append(".[test,scanpy]")
+    dependencies.append(".[test,scanpy,bbknn]")
 
     dry_run_output = session.run(
         "uv",

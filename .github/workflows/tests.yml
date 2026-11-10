@@ -12,7 +12,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        python-version: ["3.11", "3.12", "3.13"]
+        python-version: ["3.12", "3.13", "3.14"]
 
     steps:
       - name: Checkout
@@ -27,7 +27,7 @@ jobs:
           cache-suffix: "setup-uv-${{ matrix.os }}"
 
       - name: Install dependencies
-        run: uv pip install ".[test,scanpy]"
+        run: uv pip install ".[test,scanpy,bbknn]"
 
       - name: Run tests
         run: pytest -v --tb=short

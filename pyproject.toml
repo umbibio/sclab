@@ -8,18 +8,17 @@ license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
 authors = [
     { name = "Argenis Arriojas", email = "ArriojasMaldonado001@umb.edu" },
 ]
-requires-python = ">=3.10,<=3.13"
+requires-python = ">=3.12"
 classifiers = [
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
 ]
 dependencies = [
     "anndata",
     "anywidget",
-    "bbknn>=1.6.0",
+    "igraph",
     "ipywidgets",
     "itables",
     "matplotlib",
@@ -31,7 +30,7 @@ dependencies = [
     "scipy",
     "svgpathtools",
     "tqdm",
-    "xlsxwriter>=3.3.1",
+    "xlsxwriter",
 ]
 
 [project.urls]
@@ -42,7 +41,10 @@ dependencies = [
 "Changelog" = "https://github.com/umbibio/sclab/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
-de = ["edgepython>=0.5.1", "pylimma>=0.2.0"]
+bbknn = ["bbknn>=1.6.0"]
+de = ["pylimma>=0.2.0"]
+de-edger = ["edgepython>=0.5.1"]
+doublets = ["doubletdetection>=4.3.0.post1", "scrublet>=0.2.3"]
 jupyter = ["jupyterlab>=4.3.6"]
 jscatter = ["jupyter-scatter"]
 lazy = ["xarray", "dask"]
@@ -76,7 +78,7 @@ dev = [
     "jupyterlab>=4.3.6",
     "scrublet>=0.2.3",
     "doubletdetection>=4.3.0.post1",
-    "sclab[de,jupyter,r,scanpy]",
+    "sclab[bbknn,de,de-edger,doublets,jupyter,r,scanpy]",
     "ripser>=0.6.12",
     "openpyxl>=3.1.5",
     { include-group = "docs" },
