@@ -1,3 +1,4 @@
+import warnings
 from importlib.util import find_spec
 from typing import Literal
 
@@ -13,7 +14,16 @@ R_DEPENDENCIES = ["scater", "scDblFinder", "BiocParallel", "SingleCellExperiment
 
 
 def scdblfinder_is_available() -> bool:
+    """True if either backend (R or pure Python) can run."""
+    return _r_available() or _pyscdblfinder_available()
+
+
+def _r_available() -> bool:
     return _python_deps_available() and _r_deps_available()
+
+
+def _pyscdblfinder_available() -> bool:
+    return all(find_spec(dep) is not None for dep in ("pyscdblfinder", "igraph"))
 
 
 @cites("scdblfinder")
@@ -26,7 +36,7 @@ def scdblfinder(
     samples_col: str | None = None,
     clust_cor: np.ndarray | int | None = None,
     artificial_doublets: int | None = None,
-    known_doublets_col: int | None = None,
+    known_doublets_col: str | None = None,
     known_use: Literal["discard", "positive"] = "discard",
     dbr: float | None = None,
     dbr_sd: float | None = None,
@@ -52,14 +62,16 @@ def scdblfinder(
     threshold: bool = True,
     verbose: bool = True,
     random_state: int = 31415,
+    backend: Literal["auto", "python", "r"] = "auto",
 ):
-    """Detect doublet cells using scDblFinder (requires R).
+    """Detect doublet cells using scDblFinder.
 
     Adds ``{key_added}_label`` and ``{key_added}_score`` (and
     ``{key_added}_cluster`` when ``clusters_col`` is given) to
     ``adata.obs``. Remaining parameters are forwarded to
-    ``scDblFinder::scDblFinder``. The input is copied; ``adata`` is only
-    modified by adding the ``adata.obs`` columns.
+    ``scDblFinder::scDblFinder`` (R) or ``pyscdblfinder.sc_dbl_finder``
+    (Python). The input is copied; ``adata`` is only modified by adding
+    the ``adata.obs`` columns.
 
     Parameters
     ----------
@@ -76,7 +88,35 @@ def scdblfinder(
         look like raw counts (non-negative integers). Set to False to
         bypass the check, e.g. for non-integer corrected counts. Default
         is True.
+    clusters_col : str or bool, optional
+        Column of ``adata.obs`` with cluster labels, or True for
+        scDblFinder's fast clustering (``clusters=TRUE``). Default is None
+        (random artificial doublets).
+    samples_col : str, optional
+        Column of ``adata.obs`` with sample labels (R backend only).
+    known_doublets_col : str, optional
+        Boolean column of ``adata.obs`` marking known doublets (R backend
+        only).
+    backend : {"auto", "python", "r"}, optional
+        ``"r"`` runs the Bioconductor package through rpy2. ``"python"``
+        runs pyscdblfinder, a Python port (``pip install
+        'sclab[scdblfinder-py]'``); it handles a single sample and raises
+        ``NotImplementedError`` for ``samples_col``, ``known_doublets_col``
+        and the other options it does not port. ``"auto"`` (default) uses
+        R when R and scDblFinder are installed, and Python otherwise.
+
+    References
+    ----------
+    .. [1] Germain P-L, Lun A, Garcia Meixide C, Macnair W, Robinson MD.
+       Doublet identification in single-cell sequencing data using
+       scDblFinder. F1000Research 2021, 10:979.
+       https://doi.org/10.12688/f1000research.73600.2
+    .. [2] pyscdblfinder 0.3.2, a Python port of scDblFinder,
+       https://github.com/omicverse/py-scDblFinder, GPL-3.
     """
+    if backend not in ("auto", "python", "r"):
+        raise ValueError(f"backend must be 'auto', 'python' or 'r', not {backend!r}")
+
     if check_counts:
         X = adata.X if layer == "X" else adata.layers[layer]
         check_raw_counts(
@@ -88,17 +128,55 @@ def scdblfinder(
             ),
         )
 
+    for col in (clusters_col, samples_col, known_doublets_col):
+        if isinstance(col, str):  # clusters_col=True asks for fast clustering
+            assert col in adata.obs.columns, f"Column {col} not found in adata.obs"
+
+    if backend == "auto":
+        backend = "r" if _r_available() else "python"
+
+    if backend == "python":
+        return _scdblfinder_python(
+            adata,
+            layer=layer,
+            key_added=key_added,
+            clusters_col=clusters_col,
+            unsupported={
+                "samples_col (multi-sample mode)": samples_col is not None,
+                "known_doublets_col": known_doublets_col is not None,
+                "clust_cor": clust_cor is not None,
+                "prop_markers": prop_markers != 0,
+                f"score={score!r}": score != "xgb",
+                "training_features": training_features is not None,
+                "remove_unidentifiable=False": not remove_unidentifiable,
+            },
+            artificial_doublets=artificial_doublets,
+            dbr=dbr,
+            dbr_sd=dbr_sd,
+            n_features=nfeatures,
+            dims=dims,
+            k=k,
+            include_pcs=include_pcs,
+            prop_random=prop_random,
+            aggregate_features=aggregate_features,
+            processing=processing,
+            metric=metric,
+            nrounds=nrounds,
+            max_depth=max_depth,
+            iter=iter,
+            unident_th=unident_th,
+            threshold=threshold,
+            verbose=verbose,
+            random_state=random_state,
+        )
+
     _try_imports()
+    _warn_on_broken_xgboost()
 
     import anndata2ri
     from rpy2.robjects import ListVector, StrVector
     from rpy2.robjects import r as R
     from rpy2.robjects.conversion import localconverter
-
-    if clusters_col is not None:
-        assert clusters_col in adata.obs.columns, (
-            f"Column {clusters_col} not found in adata.obs"
-        )
 
     adata_ = adata.copy()
     if layer == "X":
@@ -112,7 +190,8 @@ def scdblfinder(
     adata_.layers["counts"] = X.astype(float)
 
     # keep obs columns used for doublet detection
-    cols = [col for col in adata_.obs.columns if col in [clusters_col, samples_col]]
+    keep = [clusters_col, samples_col, known_doublets_col]
+    cols = [col for col in adata_.obs.columns if col in keep]
     adata_.obs = adata_.obs[cols]
 
     # empty unnecessary metadata
@@ -129,7 +208,7 @@ def scdblfinder(
         "knownDoublets": known_doublets_col,
         "knownUse": known_use,
         "dbr": dbr,
-        "dbrSd": dbr_sd,
+        "dbr.sd": dbr_sd,
         "nfeatures": nfeatures,
         "dims": dims,
         "k": k,
@@ -182,9 +261,117 @@ def scdblfinder(
             series = series.rename_categories(categories.astype(str))
             adata.obs[f"{key_added}_cluster"] = series
 
-        vector = R("sce$scDblFinder.class")
+        # a factor (not character) when knownDoublets is given
+        vector = R("as.character(sce$scDblFinder.class)")
         adata.obs[f"{key_added}_label"] = pd.Categorical(vector, ["singlet", "doublet"])
         adata.obs[f"{key_added}_score"] = R("sce$scDblFinder.score")
+
+
+def _scdblfinder_python(
+    adata: AnnData,
+    layer: str,
+    key_added: str,
+    clusters_col: str | bool | None,
+    unsupported: dict[str, bool],
+    random_state: int,
+    verbose: bool,
+    **kwargs,
+):
+    """Run pyscdblfinder, the Python port of scDblFinder (single sample).
+
+    References
+    ----------
+    .. [1] Germain P-L, Lun A, Garcia Meixide C, Macnair W, Robinson MD.
+       Doublet identification in single-cell sequencing data using
+       scDblFinder. F1000Research 2021, 10:979.
+       https://doi.org/10.12688/f1000research.73600.2
+    .. [2] pyscdblfinder 0.3.2, https://github.com/omicverse/py-scDblFinder,
+       GPL-3.
+    """
+    if bad := [name for name, used in unsupported.items() if used]:
+        raise NotImplementedError(
+            f"The Python scDblFinder backend does not support {', '.join(bad)}; "
+            "use backend='r' (requires R with scDblFinder)."
+        )
+    if not _pyscdblfinder_available():
+        raise ImportError(
+            "scdblfinder needs either R with scDblFinder (backend='r') or the "
+            "Python port: pip install 'sclab[scdblfinder-py]'"
+        )
+
+    from pyscdblfinder import sc_dbl_finder
+    from scipy import sparse
+
+    from ._fastcluster import fastcluster
+
+    X = adata.X if layer == "X" else adata.layers[layer]
+    if clusters_col is True:
+        clusters = fastcluster(
+            X,
+            ndims=kwargs["dims"],
+            nfeatures=kwargs["n_features"],
+            random_state=random_state,
+        )
+    elif clusters_col:
+        clusters = adata.obs[clusters_col].to_numpy()
+    else:
+        clusters = None
+    if clusters is not None and len(pd.unique(clusters)) < 2:
+        raise ValueError("scDblFinder needs at least two clusters")
+
+    if kwargs["dbr"] is None:  # R's default since 1.19.6; pyscdblfinder uses 1%
+        kwargs["dbr_per1k"] = 0.008
+
+    result = sc_dbl_finder(
+        sparse.csr_matrix(X, dtype=np.float64).T.tocsr(),  # genes x cells
+        clusters=clusters,
+        random_state=random_state,
+        verbose=verbose,
+        progress=verbose,
+        **kwargs,
+    )
+    real = result.real_cells()
+
+    if clusters_col:
+        series = pd.Categorical(clusters)
+        series = series.rename_categories(series.categories.astype(str))
+        adata.obs[f"{key_added}_cluster"] = series
+    adata.obs[f"{key_added}_label"] = pd.Categorical(
+        real["class"].to_numpy(), ["singlet", "doublet"]
+    )
+    adata.obs[f"{key_added}_score"] = real["score"].to_numpy(dtype=float)
+
+
+def _warn_on_broken_xgboost() -> None:
+    """Warn when scDblFinder cannot train its classifier with the R xgboost.
+
+    scDblFinder < 1.24 calls the xgboost 1.x API (``xgb.cv(data=<matrix>)``),
+    which xgboost >= 3 rejects; scDblFinder < 1.27.9 also fails with xgboost
+    >= 3.4 (NEWS 1.27.9: "fixed issue with xgboost >=3.4"). scDblFinder
+    catches the training error and keeps its starting score, silently before
+    1.26. Only warns; the computation is not changed.
+    """
+    from rpy2.robjects import r
+
+    def version(package: str) -> tuple[int, ...]:
+        return tuple(int(v) for v in r(f'unlist(packageVersion("{package}"))'))
+
+    sdf, xgb = version("scDblFinder"), version("xgboost")
+    if not ((xgb >= (3,) and sdf < (1, 24)) or (xgb >= (3, 4) and sdf < (1, 27, 9))):
+        return
+
+    fix = "update scDblFinder to >= 1.27.9"
+    if sdf < (1, 24):
+        fix = f"install R xgboost 1.7.x, or {fix}"
+    warnings.warn(
+        f"scDblFinder {'.'.join(map(str, sdf))} cannot train its classifier "
+        f"with R xgboost {'.'.join(map(str, xgb))}. It catches the training "
+        "error and keeps its starting heuristic score, "
+        "(cxds_score + ratio / max(ratio)) / 2, so the scores and calls are "
+        f"that heuristic, not the trained model. To fix: {fix}.",
+        UserWarning,
+        stacklevel=3,
+    )
 
 
 def _try_imports():

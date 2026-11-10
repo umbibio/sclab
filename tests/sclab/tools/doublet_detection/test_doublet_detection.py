@@ -1,3 +1,6 @@
+import warnings
+from importlib.util import find_spec
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -101,11 +104,17 @@ class TestAvailability:
         assert scdbl_mod.scdblfinder_is_available() is False
 
     def test_scdblfinder_needs_both_python_and_r(self, monkeypatch):
+        monkeypatch.setattr(scdbl_mod, "_pyscdblfinder_available", lambda: False)
         monkeypatch.setattr(scdbl_mod, "_python_deps_available", lambda: False)
         monkeypatch.setattr(scdbl_mod, "_r_deps_available", lambda: True)
         assert scdbl_mod.scdblfinder_is_available() is False
 
         monkeypatch.setattr(scdbl_mod, "_python_deps_available", lambda: True)
+        assert scdbl_mod.scdblfinder_is_available() is True
+
+    def test_scdblfinder_available_with_python_port_only(self, monkeypatch):
+        monkeypatch.setattr(scdbl_mod, "_r_available", lambda: False)
+        monkeypatch.setattr(scdbl_mod, "_pyscdblfinder_available", lambda: True)
         assert scdbl_mod.scdblfinder_is_available() is True
 
 
@@ -303,7 +312,7 @@ class TestScDblFinder:
         monkeypatch.setattr(builtins, "__import__", fake_import)
 
         with pytest.raises(ModuleNotFoundError, match="rpy2 and anndata2ri"):
-            scdblfinder(adata)
+            scdblfinder(adata, backend="r")
 
         assert "pip install rpy2 anndata2ri" in capsys.readouterr().out
 
@@ -326,6 +335,226 @@ class TestScDblFinder:
         assert score[is_doublet].mean() > score[~is_doublet].mean()
         # original counts are untouched (works on a copy)
         assert layer_keys(adata) == []
+
+
+class _Stop(Exception):
+    pass
+
+
+class TestScDblFinderBackend:
+    @pytest.fixture
+    def calls(self, monkeypatch):
+        """Record which backend runs, without running it."""
+        seen = []
+
+        def python(*args, **kwargs):
+            seen.append("python")
+            raise _Stop
+
+        def r():
+            seen.append("r")
+            raise _Stop
+
+        monkeypatch.setattr(scdbl_mod, "_scdblfinder_python", python)
+        monkeypatch.setattr(scdbl_mod, "_try_imports", r)
+        return seen
+
+    @pytest.mark.parametrize("r_available, expected", [(True, "r"), (False, "python")])
+    def test_auto_prefers_r(self, adata, calls, monkeypatch, r_available, expected):
+        monkeypatch.setattr(scdbl_mod, "_r_available", lambda: r_available)
+        with pytest.raises(_Stop):
+            scdblfinder(adata)
+        assert calls == [expected]
+
+    @pytest.mark.parametrize("backend", ["r", "python"])
+    def test_explicit_backend(self, adata, calls, monkeypatch, backend):
+        monkeypatch.setattr(scdbl_mod, "_r_available", lambda: backend != "r")
+        with pytest.raises(_Stop):
+            scdblfinder(adata, backend=backend)
+        assert calls == [backend]
+
+    def test_unknown_backend(self, adata):
+        with pytest.raises(ValueError, match="backend must be"):
+            scdblfinder(adata, backend="julia")
+
+    @pytest.mark.parametrize(
+        "kwargs, match",
+        [
+            (dict(known_doublets_col="kd"), "known_doublets_col"),
+            (dict(samples_col="sample"), "samples_col"),
+            (dict(clust_cor=5), "clust_cor"),
+            (dict(score="weighted"), "score='weighted'"),
+        ],
+    )
+    def test_python_rejects_unported_options(self, adata, kwargs, match):
+        adata.obs["kd"] = False
+        adata.obs["sample"] = "a"
+        with pytest.raises(NotImplementedError, match=match):
+            scdblfinder(adata, backend="python", **kwargs)
+
+    def test_python_missing_package(self, adata, monkeypatch):
+        monkeypatch.setattr(scdbl_mod, "_pyscdblfinder_available", lambda: False)
+        with pytest.raises(ImportError, match=r"sclab\[scdblfinder-py\]"):
+            scdblfinder(adata, backend="python")
+
+
+@pytest.mark.skipif(
+    not scdbl_mod._pyscdblfinder_available(), reason="pyscdblfinder not installed"
+)
+class TestScDblFinderPython:
+    @pytest.fixture(scope="class")
+    def result(self, doublet_data):
+        adata = doublet_data[0].copy()
+        scdblfinder(adata, backend="python", clusters_col=True, verbose=False)
+        return adata
+
+    def test_same_columns_as_r(self, result):
+        obs = result.obs
+        assert list(obs.columns) == [
+            "scDblFinder_cluster",
+            "scDblFinder_label",
+            "scDblFinder_score",
+        ]
+        assert list(obs["scDblFinder_label"].cat.categories) == ["singlet", "doublet"]
+        assert all(
+            isinstance(c, str) for c in obs["scDblFinder_cluster"].cat.categories
+        )
+        assert obs["scDblFinder_score"].between(0, 1).all()
+
+    def test_true_doublets_score_higher(self, result, doublet_data):
+        score = result.obs["scDblFinder_score"].to_numpy()
+        is_doublet = doublet_data[1]
+        assert score[is_doublet].mean() > 3 * score[~is_doublet].mean()
+
+    def test_clusters_column(self, doublet_data):
+        adata = doublet_data[0].copy()
+        adata.obs["leiden"] = pd.Categorical(
+            np.repeat(["0", "1", "2", "3"], [200, 200, 150, 25])
+        )
+        scdblfinder(adata, backend="python", clusters_col="leiden", verbose=False)
+        assert (
+            adata.obs["scDblFinder_cluster"]
+            .astype(str)
+            .equals(adata.obs["leiden"].astype(str))
+        )
+
+
+class TestFastcluster:
+    @pytest.fixture(autouse=True)
+    def _needs_igraph(self):
+        pytest.importorskip("igraph")
+
+    def test_recovers_populations(self, doublet_data):
+        from sklearn.metrics import adjusted_rand_score
+
+        from sclab.tools.doublet_detection._fastcluster import fastcluster
+
+        X, is_doublet = doublet_data[0].X, doublet_data[1]
+        labels = fastcluster(X)
+        truth = np.repeat([0, 1, 2], [200, 200, 150])
+        assert labels.min() == 1  # 1-based, as R
+        assert adjusted_rand_score(truth, labels[~is_doublet]) > 0.9
+        np.testing.assert_array_equal(labels, fastcluster(X))  # seeded
+
+    def test_metacells_above_1000_cells(self):
+        from sklearn.metrics import adjusted_rand_score
+
+        from sclab.tools.doublet_detection._fastcluster import fastcluster
+
+        rng = np.random.default_rng(1)
+        mus = rng.gamma(1, 1, (3, 200)) * (rng.random((3, 200)) < 0.4)
+        truth = np.repeat([0, 1, 2], 400)
+        X = rng.poisson(mus[truth] * 3).astype(float)
+        labels = fastcluster(X, random_state=3)
+        assert adjusted_rand_score(truth, labels) > 0.9
+
+
+@pytest.mark.skipif(not scdbl_mod._r_available(), reason="requires R scDblFinder")
+class TestScDblFinderR:
+    @pytest.fixture(scope="class")
+    def result(self, doublet_data):
+        adata = doublet_data[0].copy()
+        adata.obs["kd"] = False
+        adata.obs.iloc[-5:, 0] = True
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            scdblfinder(
+                adata,
+                backend="r",
+                clusters_col=True,  # R's fast clustering
+                known_doublets_col="kd",
+                dbr_sd=0.02,  # mapped to dbr.sd
+                verbose=False,
+            )
+        return adata, caught
+
+    def test_fixed_arguments_run(self, result):
+        adata, _ = result
+        assert {"scDblFinder_cluster", "scDblFinder_label", "scDblFinder_score"} <= set(
+            adata.obs.columns
+        )
+        assert adata.obs["scDblFinder_cluster"].nunique() >= 2
+
+    def test_known_doublets_column_survives(self, result):
+        adata, _ = result
+        assert adata.obs["kd"].sum() == 5
+        # with knownDoublets R returns the class as a factor; all cells labelled
+        assert adata.obs["scDblFinder_label"].notna().all()
+
+    def test_warning_matches_installed_versions(self, result):
+        from rpy2.robjects import r
+
+        def version(package):
+            return tuple(int(v) for v in r(f'unlist(packageVersion("{package}"))'))
+
+        sdf, xgb = version("scDblFinder"), version("xgboost")
+        broken = (xgb >= (3,) and sdf < (1, 24)) or (xgb >= (3, 4) and sdf < (1, 27, 9))
+        fired = any("cannot train its classifier" in str(w.message) for w in result[1])
+        assert fired == broken
+
+
+@pytest.mark.skipif(
+    find_spec("rpy2") is None, reason="rpy2 needed to patch rpy2.robjects.r"
+)
+class TestXgboostMismatchWarning:
+    @pytest.fixture
+    def versions(self, monkeypatch):
+        import rpy2.robjects
+
+        installed = {}
+        monkeypatch.setattr(
+            rpy2.robjects, "r", lambda code: installed[code.split('"')[1]]
+        )
+        return installed
+
+    @pytest.mark.parametrize(
+        "sdf, xgb, fix",
+        [
+            ([1, 20, 2], [3, 2, 1, 1], "xgboost 1.7.x"),
+            ([1, 16, 0], [3, 0, 0], "xgboost 1.7.x"),
+            ([1, 24, 7], [3, 4, 0], "scDblFinder to >= 1.27.9"),
+        ],
+    )
+    def test_warns_on_broken_combinations(self, versions, sdf, xgb, fix):
+        versions.update(scDblFinder=sdf, xgboost=xgb)
+        with pytest.warns(UserWarning, match="cannot train its classifier") as w:
+            scdbl_mod._warn_on_broken_xgboost()
+        assert fix in str(w[0].message)
+        assert "heuristic" in str(w[0].message)
+
+    @pytest.mark.parametrize(
+        "sdf, xgb",
+        [
+            ([1, 20, 2], [1, 7, 11, 1]),
+            ([1, 24, 7], [3, 2, 0]),
+            ([1, 27, 12], [3, 4, 1]),
+        ],
+    )
+    def test_silent_on_working_combinations(self, versions, sdf, xgb):
+        versions.update(scDblFinder=sdf, xgboost=xgb)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            scdbl_mod._warn_on_broken_xgboost()
 
 
 class TestCheckCounts:
