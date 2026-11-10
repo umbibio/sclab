@@ -178,8 +178,8 @@ class DoubletDetection(ProcessorStepBase):
     def to_code(self, params: dict) -> str:
         function, extra = FLAVORS[params["flavor"]]
         backend = params.get("backend")
-        if backend is not None and backend != self._default_backend():
-            extra = {**extra, "backend": backend}  # else what backend="auto" picks
+        if backend == "python":  # explicit: backend="auto" would pick R where installed
+            extra = {**extra, "backend": backend}
         return call(
             f"sclab.tools.doublet_detection.{function}",
             ADATA,
