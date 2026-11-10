@@ -81,6 +81,11 @@ class Neighbors(ProcessorStepBase):
             return "Choose a 'Use rep.' representation (run PCA first)"
         return None
 
+    def tool(self, params: dict) -> str:
+        if params.get("group_by_batch") and self.parent.batch_key:
+            return "Python · bbknn (scanpy.external.pp.bbknn)"
+        return "Python · scanpy.pp.neighbors"
+
     def resolved_params(self, params: dict) -> dict:
         return {**super().resolved_params(params), "batch_key": self.parent.batch_key}
 

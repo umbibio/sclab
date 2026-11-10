@@ -137,6 +137,9 @@ class ProcessorStepBase(EventClient):
         Below the Run button: why the step cannot run (see :meth:`validate`)
         and the last error, if any (cleared by a successful run or a change
         of the step's controls).
+    tool_label : ipywidgets.HTML
+        Below the Run button: a muted line naming the tool the step runs
+        (see :meth:`tool`); hidden when :meth:`tool` returns "".
     output : Output
         Widget area for displaying step output messages.
     """
@@ -178,6 +181,7 @@ class ProcessorStepBase(EventClient):
 
         self.output = Output()
         self.status = HTMLWidget()
+        self.tool_label = HTMLWidget(layout={"display": "none"})
         self._running = False
         self._reason: str | None = None
         self._error: tuple[str, dict] | None = None  # (html, control params)
@@ -207,6 +211,9 @@ class ProcessorStepBase(EventClient):
             self.broker.subscribe(event, self.refresh)
 
     def make_controls(self):
+        # here, so that subclasses building their own controls_list get it too
+        at = self.controls_list.index(self.run_button) + 1
+        self.controls_list.insert(at, self.tool_label)
         for control in self.controls_list:
             control.layout.width = "98%"
             self.parent.all_controls_list.append(control)
@@ -233,6 +240,17 @@ class ProcessorStepBase(EventClient):
         """
         return None
 
+    def tool(self, params: dict) -> str:
+        """The tool the step runs with ``params``, shown below the Run button.
+
+        Language and package -> function, e.g. ``"Python · scanpy.pp.pca"``
+        or ``"R · scDblFinder::scDblFinder"``. Override to describe the
+        method, flavor or backend chosen in ``params`` (the merged params
+        :meth:`function` would get); it is re-rendered with :meth:`validate`,
+        so it must be cheap. The default, "", shows nothing.
+        """
+        return ""
+
     def _check(self, params: dict):
         if (reason := self.validate(params)) is not None:
             raise ValueError(reason)
@@ -242,6 +260,11 @@ class ProcessorStepBase(EventClient):
             return
         params = self._control_params()
         self._reason = self.validate(params)
+        tool = self.tool(params)
+        self.tool_label.value = (
+            f"<span style='color:#888;font-size:0.8em'>{escape(tool)}</span>"
+        )
+        self.tool_label.layout.display = None if tool else "none"
         if self._error is not None and self._error[1] != params:
             self._error = None  # the inputs changed
         self.broker.jobs.set_disabled(self.run_button, self._reason is not None)

@@ -127,6 +127,13 @@ class Integration(ProcessorStepBase):
                 return f"Reference batch {reference!r} is not in {group_by!r}"
         return None
 
+    def tool(self, params: dict) -> str:
+        return {
+            "cca": "Python · sclab.preprocess.cca_integrate",
+            "harmony": "Python · sclab.preprocess.harmony_integrate (harmonypy)",
+            "scanorama": "Python · scanorama (scanpy.external.pp)",
+        }.get(params.get("flavor"), "")
+
     @staticmethod
     def _kwargs(
         use_rep, group_by, flavor, reference_batch, max_iters, random_state

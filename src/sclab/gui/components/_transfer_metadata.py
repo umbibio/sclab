@@ -166,6 +166,9 @@ class TransferMetadata(ProcessorStepBase):
         control.layout.visibility = "visible"
         control.layout.height = "28px"
 
+    def tool(self, params: dict) -> str:
+        return "Python · sclab.preprocess.transfer_metadata"
+
     def to_code(self, params: dict) -> str:
         return call(
             "sclab.preprocess.transfer_metadata",

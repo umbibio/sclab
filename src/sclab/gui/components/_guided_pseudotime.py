@@ -341,6 +341,9 @@ class GuidedPseudotime(ProcessorStepBase):
         ]
         return resolved
 
+    def tool(self, params: dict) -> str:
+        return "Python · sclab.tools.cellflow.pseudotime"
+
     def to_code(self, params: dict) -> str:
         code = call(
             "sclab.tools.cellflow.pseudotime",

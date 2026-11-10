@@ -42,6 +42,9 @@ class Cluster(ProcessorStepBase):
     def validate(self, params: dict) -> str | None:
         return missing("scanpy") or missing_neighbors(self.parent.dataset.adata)
 
+    def tool(self, params: dict) -> str:
+        return "Python · scanpy.tl.leiden (igraph)"
+
     def to_code(self, params: dict) -> str:
         return call(
             "sc.tl.leiden",

@@ -40,6 +40,9 @@ class UMAP(ProcessorStepBase):
     def validate(self, params: dict) -> str | None:
         return missing("scanpy") or missing_neighbors(self.parent.dataset.adata)
 
+    def tool(self, params: dict) -> str:
+        return "Python · scanpy.tl.umap"
+
     def to_code(self, params: dict) -> str:
         return call(
             "sclab.tools.embedding.umap",

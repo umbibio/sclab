@@ -63,6 +63,9 @@ class QC(ProcessorStepBase):
             return "Choose a 'Layer' with raw counts"
         return None
 
+    def tool(self, params: dict) -> str:
+        return "Python · scanpy.pp: calculate_qc_metrics, filter_cells, filter_genes"
+
     def dset_counts_layer_change_callback(self, old: str, new: str):
         layer = self.variable_controls["layer"]
         if layer.value == old and new in layer.options:  # else chosen by the user

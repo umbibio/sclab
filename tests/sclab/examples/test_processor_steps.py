@@ -851,6 +851,21 @@ def de_params(**params):
 
 
 class TestDifferentialExpressionStep:
+    def test_tool_caption_follows_method(self):
+        d = SCLabDashboard(make_adata(120, 60))
+        step = d.processor.steps[DE]
+        method = step.variable_controls["method"]
+        label = step.tool_label
+        children = list(step.controls.children)
+        assert children.index(label) == children.index(step.run_button) + 1
+        assert label.layout.display is None
+        assert "Python · scanpy.tl.rank_genes_groups (wilcoxon)" in label.value
+        assert "color:#888" in label.value  # muted
+        method.value = "pseudobulk_limma"
+        assert "Python · pylimma (limma-voom)" in label.value
+        method.value = "pseudobulk_edger"
+        assert "Python · edgepython" in label.value
+
     def test_all_groups_vs_rest(self, dash):
         adata = dash.dataset.adata
         step, ok = run_step(dash, DE, **de_params())

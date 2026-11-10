@@ -419,6 +419,15 @@ class DifferentialExpression(ProcessorStepBase):
             return f"{what} does not look like raw counts, which {method} needs"
         return None
 
+    def tool(self, params: dict) -> str:
+        method = params.get("method")
+        if method in SCANPY_METHODS:
+            return f"Python · scanpy.tl.rank_genes_groups ({method})"
+        return {
+            "pseudobulk_limma": "Python · pylimma (limma-voom)",
+            "pseudobulk_edger": "Python · edgepython (edgeR quasi-likelihood F-test)",
+        }.get(method, "")
+
     def _key_added(self, name: str | None) -> str:
         """``differential_expression[_{name}]``, numbered if already in uns."""
         key_added = "differential_expression"

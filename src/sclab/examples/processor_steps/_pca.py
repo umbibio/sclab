@@ -81,6 +81,9 @@ class PCA(ProcessorStepBase):
             return "adata.X looks like raw counts. Run the Preprocess step first"
         return None
 
+    def tool(self, params: dict) -> str:
+        return "Python · scanpy.pp.pca"
+
     def resolved_params(self, params: dict) -> dict:
         return {
             **super().resolved_params(params),

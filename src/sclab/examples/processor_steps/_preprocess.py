@@ -90,6 +90,21 @@ class Preprocess(ProcessorStepBase):
             return f"No column {group_by!r} in the data"
         return None
 
+    def tool(self, params: dict) -> str:
+        method = NORMALIZATION_METHODS.get(params.get("normalization_method"))
+        regress = params.get("regress_total_counts") or params.get("regress_n_genes")
+        steps = {
+            "highly_variable_genes": True,
+            "normalize_total": method == "library",
+            "log1p": params.get("log1p"),
+            "regress_out": regress,
+            "scale": params.get("scale"),
+        }
+        text = "Python · scanpy.pp: " + ", ".join(k for k, v in steps.items() if v)
+        if method == "weighted":
+            text += " · sclab.preprocess.normalize_weighted"
+        return text
+
     def dset_counts_layer_change_callback(self, old: str, new: str):
         layer = self.variable_controls["layer"]
         if layer.value == old and new in layer.options:  # else chosen by the user
