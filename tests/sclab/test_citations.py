@@ -118,6 +118,7 @@ class TestRecording:
             "anndata",
             "scanpy",
             "scikit-learn",
+            "arpack",
         ]
 
     def test_failing_library_method_records_nothing(self):
