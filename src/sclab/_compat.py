@@ -47,6 +47,12 @@ FEATURES: dict[str, Feature] = {
         "r",
         ("rpy2", "anndata2ri"),
     ),
+    "scDblFinder-py": Feature(
+        "Doublet Detection: scDblFinder without R (backend='python')",
+        ("pyscdblfinder", "igraph"),
+        "scdblfinder-py",
+        ("pyscdblfinder", "igraph"),
+    ),
     "pylimma": Feature("pseudobulk_limma DE", ("pylimma",), "de", ("pylimma",)),
     "edgepython": Feature(
         "pseudobulk_edger DE; edgeR filtering in pseudobulk_limma",
