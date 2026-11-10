@@ -19,9 +19,6 @@ from sclab.tools.utils import aggregate_and_filter
 pytestmark = pytest.mark.skipif(
     not pylimma_is_available(), reason="pylimma not installed"
 )
-needs_edgepython = pytest.mark.skipif(
-    not edgepython_is_available(), reason="edgepython not installed"
-)
 
 N_DE = 10
 DE_GENES = {f"g{i}" for i in range(N_DE)}
@@ -52,7 +49,6 @@ def _check_recovers_de(tt: pd.DataFrame):
     assert (tt.loc[list(DE_GENES), "adj.P.Val"] < 0.01).all()
 
 
-@needs_edgepython
 def test_one_vs_rest(adata: AnnData):
     res = pseudobulk_pylimma(adata, "grp")
 
@@ -71,7 +67,6 @@ def test_one_vs_rest(adata: AnnData):
     assert "g199" not in tt.index  # filtered out by filterByExpr
 
 
-@needs_edgepython
 def test_condition_vs_reference(adata: AnnData):
     res = pseudobulk_pylimma(adata, "grp", condition_group="B", reference_group="A")
 
@@ -81,7 +76,6 @@ def test_condition_vs_reference(adata: AnnData):
     np.testing.assert_allclose(tt["mean_cnd"], tt["tot_expr_cnd"] / tt["num_expr_cnd"])
 
 
-@needs_edgepython
 def test_cell_identity_stratifies_contrasts(adata: AnnData):
     res = pseudobulk_pylimma(adata, "grp", reference_group="A", cell_identity_key="ct")
 
@@ -105,18 +99,25 @@ def test_without_edgepython(adata: AnnData, monkeypatch: pytest.MonkeyPatch):
     assert "g199" not in tt.index  # zero-count genes still dropped
 
 
-def test_edger_preprocessing_requires_edgepython(
+def test_edger_preprocessing_without_edgepython(
     adata: AnnData, monkeypatch: pytest.MonkeyPatch
 ):
+    kw = dict(condition_group="B", reference_group="A", random_state=0)
+    expected = pseudobulk_pylimma(adata, "grp", **kw)["B_vs_A"]
     monkeypatch.setattr(
         "sclab.tools.differential_expression._pseudobulk_pylimma.edgepython_is_available",
         lambda: False,
     )
-    with pytest.raises(ImportError, match="edger_preprocessing=False"):
-        pseudobulk_pylimma(adata, "grp")
+    monkeypatch.setitem(sys.modules, "edgepython", None)  # import fails
+
+    tt = pseudobulk_pylimma(adata, "grp", **kw)["B_vs_A"]
+
+    _check_recovers_de(tt)
+    assert "g199" not in tt.index  # filtered out by filterByExpr
+    if edgepython_is_available():  # sclab's filterByExpr + TMM match edgepython's
+        pd.testing.assert_frame_equal(tt, expected, check_exact=False, rtol=1e-12)
 
 
-@needs_edgepython
 def test_no_residual_df_is_skipped(adata: AnnData, capsys):
     # one replica per group and one coefficient per group -> no residual df
     res = pseudobulk_pylimma(
@@ -127,7 +128,6 @@ def test_no_residual_df_is_skipped(adata: AnnData, capsys):
     assert "Skipping" in capsys.readouterr().out
 
 
-@needs_edgepython
 @pytest.mark.skipif(not limma_is_available(), reason="R limma not available")
 @pytest.mark.parametrize(
     "kwargs", [{}, {"cell_identity_key": "ct", "reference_group": "A"}]

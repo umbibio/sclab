@@ -444,9 +444,6 @@ class DifferentialExpression(ProcessorStepBase):
         resolved = super().resolved_params(params)
         resolved["layer"] = self._layer(resolved)
         resolved["key_added"] = self._key_added(resolved.get("name"))
-        # pylimma without edgepython: limma's own filtering, raw library sizes
-        if resolved["method"] == "pseudobulk_limma" and not edgepython_is_available():
-            resolved["edger_preprocessing"] = False
         return resolved
 
     @staticmethod

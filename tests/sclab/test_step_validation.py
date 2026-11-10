@@ -155,12 +155,11 @@ def test_differential_expression_pseudobulk_needs_the_de_extra(raw, monkeypatch)
     c["method"].value = "pseudobulk_limma"
     assert "pseudobulk_limma needs pylimma" in step.status.value
 
-    # pylimma without edgepython: limma runs with its own preprocessing
+    # pylimma without edgepython: edgeR preprocessing by sclab's own port
     monkeypatch.setattr(de_step, "pylimma_is_available", lambda: True)
     assert step.validate(step._control_params()) is None
     resolved = step.resolved_params(step._control_params())
-    assert resolved["edger_preprocessing"] is False
-    assert "edger_preprocessing=False" in step.to_code(resolved)
+    assert "edger_preprocessing" not in step.to_code(resolved)
 
 
 def test_integration_from_the_report(raw):

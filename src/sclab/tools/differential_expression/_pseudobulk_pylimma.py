@@ -8,6 +8,7 @@ from scipy.sparse import issparse
 from ..._citations import record_citations
 from ..._compat import requirement
 from ..utils import aggregate_and_filter
+from ._edgepython_numba_free import import_edgepython
 from ._pseudobulk_helpers import pseudobulk_contrasts, validate_counts_layer
 
 _TOP_TABLE_COLUMNS = {
@@ -53,8 +54,7 @@ def pseudobulk_pylimma(
     linear model with ``pylimma`` and computes top-table statistics for each
     requested contrast.
 
-    Requires the Python package ``pylimma``. With ``edger_preprocessing=True``
-    (default) it also requires ``edgepython``.
+    Requires the Python package ``pylimma``.
 
     Parameters
     ----------
@@ -93,10 +93,11 @@ def pseudobulk_pylimma(
         Default is True.
     edger_preprocessing : bool, optional
         If True, filter genes with edgeR's ``filterByExpr`` and normalize
-        library sizes with TMM (via ``edgepython``), as in
-        :func:`pseudobulk_limma`. If False, only genes with zero total
-        counts are removed and raw library sizes are used, so ``edgepython``
-        is not needed. Default is True.
+        library sizes with TMM, as in :func:`pseudobulk_limma`: with
+        ``edgepython`` if it is installed, otherwise with sclab's port of
+        these two functions (same results). If False, only genes with zero
+        total counts are removed and raw library sizes are used. Default is
+        True.
     verbosity : int, optional
         Verbosity level (0 = silent). Default is 0.
     check_counts : bool, optional
@@ -161,6 +162,12 @@ def pseudobulk_pylimma(
     gkaf018.
     https://doi.org/10.1093/nar/gkaf018
 
+    Chen, Lun & Smyth (2016). From reads to genes to pathways:
+    differential expression analysis of RNA-Seq experiments using Rsubread
+    and the edgeR quasi-likelihood pipeline. *F1000Research*, 5, 1438
+    (filterByExpr).
+    https://doi.org/10.12688/f1000research.8987.2
+
     Robinson & Oshlack (2010). A scaling normalization method for
     differential expression analysis of RNA-seq data. *Genome Biology*,
     11, R25.
@@ -172,11 +179,6 @@ def pseudobulk_pylimma(
     """
     if not pylimma_is_available():
         raise ImportError(f"pseudobulk_pylimma needs {requirement('pylimma')}")
-    if edger_preprocessing and not edgepython_is_available():
-        raise ImportError(
-            f"edger_preprocessing=True needs {requirement('edgepython')}, "
-            "or pass edger_preprocessing=False."
-        )
 
     if aggregate:
         validate_counts_layer(adata, layer, check_counts)
@@ -208,7 +210,9 @@ def pseudobulk_pylimma(
         sample_key=sample_key if aggregate else None,
         verbosity=verbosity,
     )
-    edger_keys = ("edger", "tmm", "edgepython") if edger_preprocessing else ()
+    edger_keys = ("edger", "edger_ql", "tmm") if edger_preprocessing else ()
+    if edger_preprocessing and edgepython_is_available():
+        edger_keys += ("edgepython",)
     record_citations(adata, "limma", "voom", "pylimma", *edger_keys)
     return results
 
@@ -229,9 +233,13 @@ def _fit_voom_model(
         print("Dimensions before subsetting:", counts.shape)
 
     if edger_preprocessing:
-        import edgepython
+        # edgePython when installed (follows edgeR), else sclab's port of it
+        if edgepython_is_available():
+            edger = import_edgepython()
+        else:
+            from . import _edger_preprocessing as edger
 
-        keep = np.asarray(edgepython.filter_by_expr(counts, design=design.values))
+        keep = np.asarray(edger.filter_by_expr(counts, design=design.values))
     else:
         keep = counts.sum(axis=1) > 0
     counts, genes = counts[keep], genes[keep]
@@ -241,7 +249,7 @@ def _fit_voom_model(
 
     lib_size = counts.sum(axis=0)
     if edger_preprocessing:
-        lib_size = lib_size * edgepython.calc_norm_factors(counts)
+        lib_size = lib_size * edger.calc_norm_factors(counts)
 
     # fixed lowess span, as R limma's voom default; matches pseudobulk_limma
     v = pylimma.voom(counts, design.values, lib_size=lib_size, adaptive_span=False)

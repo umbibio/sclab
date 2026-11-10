@@ -83,8 +83,7 @@ def differential_expression(
           ``"t-test"`` (Welch's t-test, not ``"t-test_overestim_var"``) and
           ``"logreg"``). Require ``scanpy``.
         - ``"pseudobulk_limma"``: limma-voom on pseudobulk samples,
-          :func:`pseudobulk_pylimma`. Requires ``pylimma`` (and
-          ``edgepython`` for its default preprocessing).
+          :func:`pseudobulk_pylimma`. Requires ``pylimma``.
         - ``"pseudobulk_edger"``: edgeR quasi-likelihood F-test on pseudobulk
           samples, :func:`pseudobulk_edgepython`. Requires ``edgepython``.
     condition_group : str or list of str or None, optional
