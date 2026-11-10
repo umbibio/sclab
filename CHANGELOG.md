@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- `pseudobulk_edgepython()` runs without numba (e.g. in Pyodide): sclab swaps NumPy versions of the edgepython kernels it uses into edgepython 0.5.1 (results within ~1e-8 of numba; ~10–15× slower than compiled numba, ~40 s for 20k genes × 24 samples). With numba installed nothing changes; an unsupported edgepython version without numba raises `ImportError`
+- `pseudobulk_pylimma(edger_preprocessing=True)` works without edgepython: sclab's own filterByExpr and TMM (identical results) are used when edgepython is not installed; the dashboard no longer turns edgeR preprocessing off then
 - Dashboard steps show the tool behind them in a small grey line below Run (e.g. "Python · scanpy.pp.pca", "R · scDblFinder::scDblFinder"), following the method/flavor/backend controls
 - Doublet Detection step: R / Python backend dropdown for scDblFinder, shown only when both backends are installed (default R, as `backend="auto"`); the Python backend runs in the background. Generated code names `backend="python"` when it was used
 - sclab installs and runs in Pyodide (WebAssembly): `import sclab` loads no scanpy, numba, R or other optional package, and the dashboard builds without them. Steps whose package is missing stay visible with Run disabled and the reason plus install command (e.g. "Needs scanpy: pip install 'sclab[scanpy]'"; a micropip command under Pyodide); a step that cannot be built shows a panel saying what to install. Under Pyodide steps run inline (no background jobs; the Settings checkbox is disabled)
