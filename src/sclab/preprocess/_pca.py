@@ -1,6 +1,8 @@
 from anndata import AnnData
 
 from .._citations import record_citations
+from ._hvg import highly_variable_genes, hvg_citations
+from ._scanpy_port import get_pp, resolve_backend
 
 
 def pca(
@@ -13,6 +15,7 @@ def pca(
     zero_center: bool = False,
     counts_layer: str = "counts",
     random_state: int = 0,
+    backend: str = "auto",
 ):
     """Compute principal components and project all cells onto the PCA space.
 
@@ -45,14 +48,20 @@ def pca(
     counts_layer : str, optional
         Layer with raw counts. Only used when ``reference_batch`` is set and
         ``mask_var="highly_variable"``: highly variable genes are then
-        recomputed on the reference cells as the union of the ``seurat``
-        flavor (on ``log1p`` of the counts, taken from the layer
-        ``"{counts_layer}_log1p"`` if present, else computed on the fly) and
-        the ``seurat_v3_paper`` flavor (on the counts). Raises ``ValueError``
-        if the layer is missing. ``layer`` remains the input to PCA. Default
-        is ``"counts"``.
+        recomputed on the reference cells with
+        :func:`sclab.preprocess.highly_variable_genes` (its defaults: the
+        union of the ``seurat`` flavor, on ``log1p`` of the counts, taken from
+        the layer ``"{counts_layer}_log1p"`` if present, else computed on the
+        fly, and the ``seurat_v3_paper`` flavor, on the counts). Raises
+        ``ValueError`` if the layer is missing. ``layer`` remains the input to
+        PCA. Default is ``"counts"``.
     random_state : int, optional
-        Seed for :func:`scanpy.pp.pca`. Default is 0.
+        Seed of the ARPACK starting vector. Default is 0.
+    backend : {"auto", "native", "scanpy"}, optional
+        ``"scanpy"`` runs :func:`scanpy.pp.pca`, ``"native"`` sclab's port of
+        it (the same :class:`sklearn.decomposition.PCA` fit, ARPACK solver;
+        sparse input is centered implicitly, not densified), ``"auto"``
+        (default) scanpy if it is installed. The results are the same.
 
     Returns
     -------
@@ -74,6 +83,9 @@ def pca(
     *Journal of Machine Learning Research*, 12, 2825–2830.
     https://jmlr.org/papers/v12/pedregosa11a.html
 
+    Lehoucq, Sorensen & Yang (1998). ARPACK Users' Guide. SIAM.
+    https://doi.org/10.1137/1.9780898719628
+
     Satija et al. (2015). Spatial reconstruction of single-cell gene
     expression data. *Nature Biotechnology*, 33, 495–502.
     https://doi.org/10.1038/nbt.3192
@@ -82,7 +94,8 @@ def pca(
     *Cell*, 177, 1888–1902.e21.
     https://doi.org/10.1016/j.cell.2019.05.031
     """
-    import scanpy as sc
+    backend = resolve_backend(backend)
+    pp = get_pp(backend)
 
     pca_kwargs = dict(
         n_comps=n_comps,
@@ -103,23 +116,9 @@ def pca(
                     f"counts_layer {counts_layer!r} not found in adata.layers; it is "
                     "required to recompute highly variable genes on the reference batch."
                 )
-            log1p_layer = f"{counts_layer}_log1p"
-            if log1p_layer not in adata_ref.layers:  # adata_ref is a copy
-                adata_ref.layers[log1p_layer] = sc.pp.log1p(
-                    adata_ref.layers[counts_layer].copy()
-                )
-            sc.pp.highly_variable_genes(adata_ref, layer=log1p_layer, flavor="seurat")
-            hvg_seurat = adata_ref.var["highly_variable"]
-            sc.pp.highly_variable_genes(
-                adata_ref,
-                layer=counts_layer,
-                flavor="seurat_v3_paper",
-                n_top_genes=hvg_seurat.sum(),
-            )
-            hvg_seurat_v3 = adata_ref.var["highly_variable"]
-            adata_ref.var["highly_variable"] = hvg_seurat | hvg_seurat_v3
+            highly_variable_genes(adata_ref, counts_layer=counts_layer, backend=backend)
 
-        sc.pp.pca(adata_ref, **pca_kwargs)
+        pp.pca(adata_ref, **pca_kwargs)
         uns_pca = adata_ref.uns["pca"]
         uns_pca["reference_batch"] = reference_batch
         PCs = adata_ref.varm["PCs"]
@@ -127,12 +126,12 @@ def pca(
         adata.uns["pca"] = uns_pca
         adata.varm["PCs"] = PCs
     else:
-        sc.pp.pca(adata, **pca_kwargs)
+        pp.pca(adata, **pca_kwargs)
         adata.obsm["X_pca"] = X.dot(adata.varm["PCs"])
 
     if zero_center:
         adata.obsm["X_pca"] -= adata.obsm["X_pca"].mean(axis=0, keepdims=True)
 
     hvg = reference_batch and mask_var == "highly_variable"
-    hvg_keys = ("satija2015", "stuart2019") if hvg else ()
-    record_citations(adata, "scanpy", "scikit-learn", *hvg_keys)
+    hvg_keys = hvg_citations(("seurat", "seurat_v3_paper")) if hvg else ()
+    record_citations(adata, "scanpy", "scikit-learn", "arpack", *hvg_keys)

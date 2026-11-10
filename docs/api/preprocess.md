@@ -18,6 +18,10 @@ Low-level preprocessing functions available via `sclab.preprocess`.
 
 ---
 
+::: sclab.preprocess.highly_variable_genes
+
+---
+
 ## Dimensionality Reduction
 
 ::: sclab.preprocess.pca

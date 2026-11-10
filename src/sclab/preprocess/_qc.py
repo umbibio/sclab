@@ -2,6 +2,7 @@ import numpy as np
 from anndata import AnnData
 
 from .._citations import cites
+from ._scanpy_port import get_pp
 
 
 @cites("scanpy")
@@ -12,6 +13,7 @@ def qc(
     min_genes: int = 5,
     min_cells: int = 5,
     max_rank: int = 0,
+    backend: str = "auto",
 ):
     """Compute quality-control metrics and apply initial cell/gene filters.
 
@@ -36,12 +38,16 @@ def qc(
     max_rank : int, optional
         If > 0, keep only cells with ``barcode_rank < max_rank`` (i.e. the
         top *max_rank* cells by total counts). Default is 0 (disabled).
+    backend : {"auto", "native", "scanpy"}, optional
+        ``"scanpy"`` computes the metrics and filters with scanpy,
+        ``"native"`` with sclab's port of those scanpy functions (numpy/scipy;
+        same results), ``"auto"`` (default) with scanpy if it is installed.
 
     Returns
     -------
     None
         Modifies ``adata`` in-place. Adds QC columns to ``adata.obs`` and
-        ``adata.var`` via :func:`scanpy.pp.calculate_qc_metrics`.
+        ``adata.var`` as :func:`scanpy.pp.calculate_qc_metrics` does.
 
     References
     ----------
@@ -49,7 +55,7 @@ def qc(
     data analysis. *Genome Biology*, 19, 15.
     https://doi.org/10.1186/s13059-017-1382-0
     """
-    import scanpy as sc
+    pp = get_pp(backend)
 
     if counts_layer not in adata.layers:
         adata.layers[counts_layer] = adata.X.copy()
@@ -61,11 +67,11 @@ def qc(
     obs_idx = adata.obs_names[rowsums >= min_counts]
     adata._inplace_subset_obs(obs_idx)
 
-    sc.pp.calculate_qc_metrics(adata, percent_top=None, log1p=False, inplace=True)
+    pp.calculate_qc_metrics(adata, percent_top=None, log1p=False, inplace=True)
 
-    sc.pp.filter_cells(adata, min_genes=min_genes)
-    sc.pp.filter_genes(adata, min_cells=min_cells)
-    sc.pp.calculate_qc_metrics(adata, percent_top=None, log1p=False, inplace=True)
+    pp.filter_cells(adata, min_genes=min_genes)
+    pp.filter_genes(adata, min_cells=min_cells)
+    pp.calculate_qc_metrics(adata, percent_top=None, log1p=False, inplace=True)
     adata.obs["barcode_rank"] = adata.obs["total_counts"].rank(ascending=False)
 
     # Restore original X

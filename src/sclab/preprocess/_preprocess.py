@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from typing import Literal
 
 import numpy as np
@@ -5,6 +6,8 @@ from anndata import AnnData
 from tqdm.auto import tqdm
 
 from .._citations import record_citations
+from ._hvg import highly_variable_genes, hvg_citations
+from ._scanpy_port import get_pp
 
 
 def preprocess(
@@ -14,12 +17,15 @@ def preprocess(
     min_cells: int = 5,
     min_genes: int = 5,
     compute_hvg: bool = True,
+    hvg_methods: str | Sequence[str] = ("seurat", "seurat_v3_paper"),
+    hvg_combine: Literal["union", "intersection"] = "union",
     regress_total_counts: bool = False,
     regress_n_genes: bool = False,
     normalization_method: Literal["library", "weighted", "none"] = "library",
     target_scale: float = 1e4,
     log1p: bool = True,
     scale: bool = True,
+    backend: str = "auto",
 ):
     """Normalize, transform, and scale single-cell RNA-seq count data.
 
@@ -46,9 +52,19 @@ def preprocess(
         Minimum number of genes detected per cell to be retained. Default
         is 5.
     compute_hvg : bool, optional
-        If True, compute highly variable genes (union of Seurat and Seurat
-        v3 selections) and store the result in ``adata.var["highly_variable"]``.
-        Default is True.
+        If True, compute highly variable genes with
+        :func:`sclab.preprocess.highly_variable_genes` (``hvg_methods``,
+        ``hvg_combine``; the dispersion flavors on ``log1p`` of the counts)
+        and store the result in ``adata.var["highly_variable"]``, with one
+        ``highly_variable_<method>`` column per method. With ``group_by``,
+        genes are selected per group (``highly_variable_<group>``) and the
+        groups' selections are merged by union. Default is True.
+    hvg_methods : str or sequence of str, optional
+        HVG flavors: ``"seurat"``, ``"cell_ranger"``, ``"seurat_v3"``,
+        ``"seurat_v3_paper"``. Default ``("seurat", "seurat_v3_paper")``
+        (``seurat_v3_paper`` selects as many genes as ``seurat``).
+    hvg_combine : {"union", "intersection"}, optional
+        How the methods' selections are combined. Default ``"union"``.
     regress_total_counts : bool, optional
         If True, regress out total counts (or log1p total counts if
         ``log1p=True``) per cell. Default is False.
@@ -69,6 +85,12 @@ def preprocess(
     scale : bool, optional
         If True, scale each gene to unit variance (zero-center disabled).
         Applied per group when ``group_by`` is set. Default is True.
+    backend : {"auto", "native", "scanpy"}, optional
+        ``"scanpy"`` runs the scanpy functions (``calculate_qc_metrics``,
+        ``filter_cells``, ``filter_genes``, ``highly_variable_genes``,
+        ``normalize_total``, ``log1p``, ``regress_out``, ``scale``),
+        ``"native"`` sclab's port of them (numpy/scipy; same results within
+        float rounding), ``"auto"`` (default) scanpy if it is installed.
 
     Returns
     -------
@@ -89,8 +111,12 @@ def preprocess(
     Stuart et al. (2019). Comprehensive Integration of Single-Cell Data.
     *Cell*, 177, 1888–1902.e21.
     https://doi.org/10.1016/j.cell.2019.05.031
+
+    Zheng et al. (2017). Massively parallel digital transcriptional profiling
+    of single cells. *Nature Communications*, 8, 14049.
+    https://doi.org/10.1038/ncomms14049
     """
-    import scanpy as sc
+    pp = get_pp(backend)
 
     from ._normalize_weighted import normalize_weighted
 
@@ -99,23 +125,23 @@ def preprocess(
             adata.layers[counts_layer] = adata.X.copy()
 
         if f"{counts_layer}_log1p" not in adata.layers:
-            adata.layers[f"{counts_layer}_log1p"] = sc.pp.log1p(
+            adata.layers[f"{counts_layer}_log1p"] = pp.log1p(
                 adata.layers[counts_layer].copy()
             )
         pbar.update(10)
 
         adata.X = adata.layers[counts_layer].copy()
-        sc.pp.calculate_qc_metrics(
+        pp.calculate_qc_metrics(
             adata,
             percent_top=None,
             log1p=False,
             inplace=True,
         )
-        sc.pp.filter_cells(adata, min_genes=min_genes)
-        sc.pp.filter_genes(adata, min_cells=min_cells)
+        pp.filter_cells(adata, min_genes=min_genes)
+        pp.filter_genes(adata, min_cells=min_cells)
         pbar.update(10)
 
-        sc.pp.calculate_qc_metrics(
+        pp.calculate_qc_metrics(
             adata,
             percent_top=None,
             log1p=False,
@@ -124,44 +150,25 @@ def preprocess(
         pbar.update(10)
 
         if compute_hvg:
+            hvg_kwargs = dict(
+                methods=hvg_methods,
+                combine=hvg_combine,
+                counts_layer=counts_layer,
+                backend=backend,
+            )
             if group_by is not None:
                 adata.var["highly_variable"] = False
+                merged = None
                 for name, idx in adata.obs.groupby(
                     group_by, observed=True
                 ).groups.items():
-                    hvg_seurat = sc.pp.highly_variable_genes(
-                        adata[idx],
-                        layer=f"{counts_layer}_log1p",
-                        flavor="seurat",
-                        inplace=False,
-                    )["highly_variable"]
-
-                    hvg_seurat_v3 = sc.pp.highly_variable_genes(
-                        adata[idx],
-                        layer=counts_layer,
-                        flavor="seurat_v3_paper",
-                        n_top_genes=hvg_seurat.sum(),
-                        inplace=False,
-                    )["highly_variable"]
-
-                    adata.var[f"highly_variable_{name}"] = hvg_seurat | hvg_seurat_v3
-                    adata.var["highly_variable"] |= adata.var[f"highly_variable_{name}"]
-
+                    df = highly_variable_genes(adata[idx], inplace=False, **hvg_kwargs)
+                    adata.var[f"highly_variable_{name}"] = df["highly_variable"]
+                    merged = df if merged is None else merged | df
+                for column in merged:  # per method, and combined: union of groups
+                    adata.var[column] = merged[column]
             else:
-                sc.pp.highly_variable_genes(
-                    adata, layer=f"{counts_layer}_log1p", flavor="seurat"
-                )
-                hvg_seurat = adata.var["highly_variable"]
-
-                sc.pp.highly_variable_genes(
-                    adata,
-                    layer=counts_layer,
-                    flavor="seurat_v3_paper",
-                    n_top_genes=hvg_seurat.sum(),
-                )
-                hvg_seurat_v3 = adata.var["highly_variable"]
-
-                adata.var["highly_variable"] = hvg_seurat | hvg_seurat_v3
+                highly_variable_genes(adata, **hvg_kwargs)
 
         pbar.update(10)
         pbar.update(10)
@@ -169,7 +176,7 @@ def preprocess(
         new_layer = counts_layer
         if normalization_method == "library":
             new_layer += "_normt"
-            sc.pp.normalize_total(adata, target_sum=target_scale)
+            pp.normalize_total(adata, target_sum=target_scale)
         elif normalization_method == "weighted":
             new_layer += "_normw"
             normalize_weighted(
@@ -184,7 +191,7 @@ def preprocess(
         if log1p:
             new_layer += "_log1p"
             adata.uns.pop("log1p", None)
-            sc.pp.log1p(adata)
+            pp.log1p(adata)
         pbar.update(10)
 
         vars_to_regress = []
@@ -199,7 +206,7 @@ def preprocess(
 
         if vars_to_regress:
             new_layer += "_regr"
-            sc.pp.regress_out(adata, keys=vars_to_regress, n_jobs=1)
+            pp.regress_out(adata, keys=vars_to_regress, n_jobs=1)
         pbar.update(10)
 
         if scale:
@@ -210,10 +217,10 @@ def preprocess(
                     group_col, observed=True
                 ).groups.items():
                     mask = adata.obs.index.isin(idx)
-                    scaled = sc.pp.scale(adata[mask].X, zero_center=False)
+                    scaled = pp.scale(adata[mask].X, zero_center=False)
                     adata.X[mask, :] = scaled
             else:
-                sc.pp.scale(adata, zero_center=False)
+                pp.scale(adata, zero_center=False)
 
         adata.layers[new_layer] = adata.X.copy()
 
@@ -221,5 +228,5 @@ def preprocess(
 
         adata.X = adata.X.astype(np.float32)
 
-    hvg_keys = ("satija2015", "stuart2019") if compute_hvg else ()
+    hvg_keys = hvg_citations(hvg_methods) if compute_hvg else ()
     record_citations(adata, "scanpy", *hvg_keys)

@@ -8,6 +8,7 @@ below. All of their licenses are compatible with GPL-3.0.
 | --- | --- | --- | --- |
 | `src/sclab/scanpy/` (`_compat.py`, `_settings.py`, `logging.py`, `readwrite.py`, `plotting/`) | [scanpy](https://github.com/scverse/scanpy), copied and trimmed | 1.10.4 | BSD-3-Clause |
 | `src/sclab/preprocess/_harmony_integrate.py` | scanpy, `scanpy.external.pp.harmony_integrate`, adapted | 1.10.x | BSD-3-Clause |
+| `src/sclab/preprocess/_scanpy_port.py` | scanpy, `src/scanpy/preprocessing/` (`_qc.py`, `_simple.py`, `_normalization.py`, `_scale.py`, `_highly_variable_genes.py`, `_pca/__init__.py`), ported to numpy/scipy/scikit-learn (no numba) | 1.12.5 | BSD-3-Clause |
 | `src/sclab/preprocess/_harmony.py` | [harmonypy](https://github.com/slowkow/harmonypy), `harmonypy/harmony.py`, modified (reference batches) | based on 0.0.10 | GPL-3.0-or-later |
 | `src/sclab/tools/differential_expression/_edgepython_kernels.py` | [edgePython](https://github.com/pachterlab/edgePython), `edgepython/glm_kernels.py`, `ql_weights.py`, `dispersion_lowlevel.py`, `weighted_lowess.py` (numba ports of edgeR's and limma's C code), vectorised with NumPy | 0.5.1 | GPL-3.0-or-later |
 | `src/sclab/tools/differential_expression/_edger_preprocessing.py` | edgePython, `edgepython/filtering.py` (`filter_by_expr`) and `normalization.py` (TMM `calc_norm_factors`), reduced | 0.5.1 | GPL-3.0-or-later |
@@ -15,8 +16,9 @@ below. All of their licenses are compatible with GPL-3.0.
 
 ## scanpy
 
-The files under `src/sclab/scanpy/` and `src/sclab/preprocess/_harmony_integrate.py`
-are distributed under the following license:
+The files under `src/sclab/scanpy/`, `src/sclab/preprocess/_harmony_integrate.py`
+and `src/sclab/preprocess/_scanpy_port.py` are distributed under the following
+license:
 
 ```
 BSD 3-Clause License

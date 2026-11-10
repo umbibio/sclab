@@ -1,6 +1,7 @@
 from ._cca_integrate import cca_integrate, cca_integrate_pair
 from ._filter_obs import filter_obs
 from ._harmony_integrate import harmony_integrate
+from ._hvg import highly_variable_genes
 from ._merge import downsample_counts, merge_datasets, merge_preview
 from ._neighbors import neighbors
 from ._normalize_weighted import normalize_weighted
@@ -17,6 +18,7 @@ __all__ = [
     "downsample_counts",
     "filter_obs",
     "harmony_integrate",
+    "highly_variable_genes",
     "merge_datasets",
     "merge_preview",
     "neighbors",
