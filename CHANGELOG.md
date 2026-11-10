@@ -53,6 +53,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `check_counts` parameter on `pseudobulk_pylimma()`, `pseudobulk_limma()` and `pseudobulk_edger()` (default `True`) to reject non-count input
 
 ### Changed
+- Randomized steps are seeded by default: `cca_integrate()` / `cca_integrate_pair()` (`random_state=0`, also passed to the partial ARPACK SVD), `aggregate_and_filter()`, `pseudobulk_pylimma()`, `pseudobulk_edgepython()` and the R `pseudobulk_edger()` / `pseudobulk_limma()` (new `random_state`, default 0). The Differential Expression step follows the Settings "Random seed". doubletdetection's default PhenoGraph clustering cannot be seeded (documented)
+- sclab's citation uses its Zenodo DOI (10.5281/zenodo.23739925)
 - **Breaking:** requires Python ≥ 3.12 (was 3.10–3.13); 3.14 supported. 3.15 not yet: h5py has no 3.15 wheels
 - **Breaking:** `bbknn` is no longer a core dependency (extra `bbknn`, needed for Neighbors "Group By Batch"); `igraph` is now core. New extras `doublets` (scrublet, doubletdetection) and `de-edger` (edgepython); `de` now installs only pylimma. `xlsxwriter` has no minimum version
 - Doublet Detection is always listed in the dashboard (R is no longer started at import to check for scDblFinder); Integration offers scanorama only when scanorama and scanpy are installed
@@ -100,6 +102,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ALRA uses a scoped rpy2 converter instead of the deprecated global `numpy2ri.activate()`
 
 ### Fixed
+- scrublet scores are reproducible: annoy built its index on all CPUs, which is not deterministic; sclab now builds it on one thread
 - `scdblfinder()`: `dbr_sd` is passed to R as `dbr.sd`, `known_doublets_col` accepts a column name and keeps the column, `clusters_col=True` runs scDblFinder's own clustering, and known-doublet runs no longer return empty (NaN) class labels
 - Pseudobulk DE with a cell identity key computed the "rest" cell percentages over all other identities instead of within the identity
 - `aggregate_and_filter()` pandas 4 deprecation (tuple group keys)
