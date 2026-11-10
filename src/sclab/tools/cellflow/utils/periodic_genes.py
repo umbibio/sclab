@@ -5,12 +5,14 @@ import pandas as pd
 from anndata import AnnData
 from scipy.signal import get_window, periodogram
 
+from sclab._citations import cites
 from sclab.tools.utils import aggregate_and_filter
 from sclab.utils import check_raw_counts
 
 MIN_CELLS_PER_BIN = 30
 
 
+@cites("scanpy")
 def periodic_genes(
     adata: AnnData,
     time_key: str,

@@ -1,7 +1,10 @@
 import numpy as np
 from anndata import AnnData
 
+from .._citations import cites
 
+
+@cites("scanpy")
 def qc(
     adata: AnnData,
     counts_layer: str = "counts",
@@ -39,6 +42,12 @@ def qc(
     None
         Modifies ``adata`` in-place. Adds QC columns to ``adata.obs`` and
         ``adata.var`` via :func:`scanpy.pp.calculate_qc_metrics`.
+
+    References
+    ----------
+    Wolf et al. (2018). SCANPY: large-scale single-cell gene expression
+    data analysis. *Genome Biology*, 19, 15.
+    https://doi.org/10.1186/s13059-017-1382-0
     """
     import scanpy as sc
 

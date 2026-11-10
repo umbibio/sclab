@@ -5,9 +5,11 @@ from anndata import AnnData
 from numpy import ndarray
 from scipy.sparse import coo_matrix, csr_matrix, spmatrix
 
+from .._citations import cites
 from ._utils import get_neighbors_adjacency_matrix
 
 
+@cites()
 def pool_neighbors(
     adata: AnnData,
     *,

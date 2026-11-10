@@ -4,6 +4,7 @@ from importlib.util import find_spec
 import pandas as pd
 from anndata import AnnData
 
+from ..._citations import cites
 from ..utils import aggregate_and_filter
 from ._pseudobulk_helpers import validate_counts_layer
 
@@ -15,6 +16,7 @@ def limma_is_available() -> bool:
     return _python_deps_available() and _r_deps_available()
 
 
+@cites("limma", "voom", "edger", "tmm")
 def pseudobulk_limma(
     adata: AnnData,
     group_key: str,
@@ -110,6 +112,28 @@ def pseudobulk_limma(
     limma's empirical-Bayes shrinkage across genes. This is valid but less
     powerful than a multi-replicate design; results should be interpreted
     with additional caution.
+
+    References
+    ----------
+    Ritchie et al. (2015). limma powers differential expression analyses
+    for RNA-sequencing and microarray studies. *Nucleic Acids Research*,
+    43, e47.
+    https://doi.org/10.1093/nar/gkv007
+
+    Law et al. (2014). voom: precision weights unlock linear model
+    analysis tools for RNA-seq read counts. *Genome Biology*, 15, R29.
+    https://doi.org/10.1186/gb-2014-15-2-r29
+
+    Chen et al. (2025). edgeR v4: powerful differential analysis of
+    sequencing data with expanded functionality and improved support for
+    small counts and larger datasets. *Nucleic Acids Research*, 53,
+    gkaf018.
+    https://doi.org/10.1093/nar/gkaf018
+
+    Robinson & Oshlack (2010). A scaling normalization method for
+    differential expression analysis of RNA-seq data. *Genome Biology*,
+    11, R25.
+    https://doi.org/10.1186/gb-2010-11-3-r25
     """
     warnings.warn(
         "pseudobulk_limma (R) is deprecated; use pseudobulk_pylimma or "

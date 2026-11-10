@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 from anndata import AnnData
 
+from sclab._citations import cites
 from sclab.utils import check_raw_counts, layer_keys
 
 PYTHON_DEPENDENCIES = ["rpy2", "anndata2ri"]
@@ -15,6 +16,7 @@ def scdblfinder_is_available() -> bool:
     return _python_deps_available() and _r_deps_available()
 
 
+@cites("scdblfinder")
 def scdblfinder(
     adata: AnnData,
     layer: str = "X",

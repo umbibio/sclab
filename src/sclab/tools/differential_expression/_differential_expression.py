@@ -7,6 +7,7 @@ from anndata import AnnData
 
 from sclab.utils import looks_like_raw_counts
 
+from ..._citations import record_citations
 from ._pseudobulk_edgepython import pseudobulk_edgepython
 from ._pseudobulk_pylimma import pseudobulk_pylimma
 
@@ -173,6 +174,17 @@ def differential_expression(
     p-values; prefer a pseudobulk method with ``sample_key`` for comparisons
     between conditions.
 
+    References
+    ----------
+    Wolf et al. (2018). SCANPY: large-scale single-cell gene expression
+    data analysis. *Genome Biology*, 19, 15.
+    https://doi.org/10.1186/s13059-017-1382-0
+
+    Ntranos et al. (2019). A discriminative learning approach to
+    differential expression analysis for single-cell RNA-seq. *Nature
+    Methods*, 16, 163–166.
+    https://doi.org/10.1038/s41592-018-0303-9
+
     Examples
     --------
     >>> import sclab
@@ -269,6 +281,9 @@ def differential_expression(
         },
         "table": table,
     }
+    if method in SCANPY_METHODS:  # pseudobulk backends record their own
+        logreg = ("ntranos2019", "scikit-learn") if method == "logreg" else ()
+        record_citations(adata, "scanpy", *logreg)
     return table
 
 

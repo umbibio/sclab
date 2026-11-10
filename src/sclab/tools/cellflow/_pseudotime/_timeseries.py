@@ -11,6 +11,7 @@ from scipy.signal import find_peaks
 from scipy.sparse import csr_matrix, issparse
 from tqdm.auto import tqdm
 
+from ...._citations import cites
 from ..utils.interpolate import NDBSpline
 
 logger = logging.getLogger(__name__)
@@ -449,6 +450,7 @@ def find_category_transitions(
     return np.asarray(transitions)
 
 
+@cites()
 def piecewise_rescale(
     adata: AnnData,
     time_key: str,

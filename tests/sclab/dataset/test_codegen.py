@@ -77,7 +77,8 @@ def assert_same_adata(a: AnnData, b: AnnData, ignore_obs: tuple = ()):
             np.testing.assert_allclose(
                 dense(ma[key]), dense(mb[key]), rtol=1e-6, atol=1e-8, err_msg=key
             )
-    assert set(a.uns) - {"sclab"} == set(b.uns)
+    # the script records citations too, the dashboard also its history
+    assert set(a.uns) - {"sclab"} == set(b.uns) - {"sclab"}
 
 
 def assert_readable(code: str):

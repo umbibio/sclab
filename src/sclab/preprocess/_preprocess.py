@@ -4,6 +4,8 @@ import numpy as np
 from anndata import AnnData
 from tqdm.auto import tqdm
 
+from .._citations import record_citations
+
 
 def preprocess(
     adata: AnnData,
@@ -73,6 +75,20 @@ def preprocess(
     None
         Modifies ``adata`` in-place. Stores the processed matrix in a new
         layer and updates ``adata.X``.
+
+    References
+    ----------
+    Wolf et al. (2018). SCANPY: large-scale single-cell gene expression
+    data analysis. *Genome Biology*, 19, 15.
+    https://doi.org/10.1186/s13059-017-1382-0
+
+    Satija et al. (2015). Spatial reconstruction of single-cell gene
+    expression data. *Nature Biotechnology*, 33, 495–502.
+    https://doi.org/10.1038/nbt.3192
+
+    Stuart et al. (2019). Comprehensive Integration of Single-Cell Data.
+    *Cell*, 177, 1888–1902.e21.
+    https://doi.org/10.1016/j.cell.2019.05.031
     """
     import scanpy as sc
 
@@ -204,3 +220,6 @@ def preprocess(
         pbar.update(10)
 
         adata.X = adata.X.astype(np.float32)
+
+    hvg_keys = ("satija2015", "stuart2019") if compute_hvg else ()
+    record_citations(adata, "scanpy", *hvg_keys)

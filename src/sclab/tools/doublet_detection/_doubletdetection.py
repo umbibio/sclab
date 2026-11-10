@@ -5,6 +5,7 @@ from anndata import AnnData
 from numpy import ndarray
 from numpy.ma.core import MaskedArray
 
+from sclab._citations import cites
 from sclab.utils import check_raw_counts
 
 
@@ -12,6 +13,7 @@ def doubletdetection_is_available() -> bool:
     return find_spec("doubletdetection") is not None
 
 
+@cites("doubletdetection")
 def doubletdetection(
     adata: AnnData,
     layer: str = "X",

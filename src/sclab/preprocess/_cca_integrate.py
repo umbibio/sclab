@@ -4,6 +4,7 @@ import os
 import numpy as np
 from anndata import AnnData
 
+from .._citations import cites
 from ._cca import cca
 from ._mcca import mcca_sample_space
 
@@ -31,6 +32,12 @@ def cca_integrate(
     ``reference_batch`` is accepted for API compatibility with
     :func:`~sclab.preprocess.harmony_integrate` but is not supported: CCA is
     symmetric, so passing one raises ``ValueError``.
+
+    References
+    ----------
+    Stuart et al. (2019). Comprehensive Integration of Single-Cell Data.
+    *Cell*, 177, 1888–1902.e21.
+    https://doi.org/10.1016/j.cell.2019.05.031
     """
     if reference_batch:
         raise ValueError(
@@ -57,6 +64,7 @@ def cca_integrate(
         raise NotImplementedError
 
 
+@cites("stuart2019")
 def cca_integrate_pair(
     adata: AnnData,
     key: str,

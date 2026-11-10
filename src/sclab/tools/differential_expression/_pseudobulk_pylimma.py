@@ -5,6 +5,7 @@ import pandas as pd
 from anndata import AnnData
 from scipy.sparse import issparse
 
+from ..._citations import record_citations
 from ..utils import aggregate_and_filter
 from ._pseudobulk_helpers import pseudobulk_contrasts, validate_counts_layer
 
@@ -137,6 +138,36 @@ def pseudobulk_pylimma(
     The design is ``~ 0 + group + replica``. The ``replica`` term is dropped
     when it is not estimable: a single replica per group, or replicas
     (samples) nested in groups.
+
+    References
+    ----------
+    Ritchie et al. (2015). limma powers differential expression analyses
+    for RNA-sequencing and microarray studies. *Nucleic Acids Research*,
+    43, e47.
+    https://doi.org/10.1093/nar/gkv007
+
+    Law et al. (2014). voom: precision weights unlock linear model
+    analysis tools for RNA-seq read counts. *Genome Biology*, 15, R29.
+    https://doi.org/10.1186/gb-2014-15-2-r29
+
+    Mulvey (2026). pylimma: a faithful, AnnData-native Python port of R
+    limma for differential expression analysis. *bioRxiv*.
+    https://doi.org/10.64898/2026.07.06.736732
+
+    Chen et al. (2025). edgeR v4: powerful differential analysis of
+    sequencing data with expanded functionality and improved support for
+    small counts and larger datasets. *Nucleic Acids Research*, 53,
+    gkaf018.
+    https://doi.org/10.1093/nar/gkaf018
+
+    Robinson & Oshlack (2010). A scaling normalization method for
+    differential expression analysis of RNA-seq data. *Genome Biology*,
+    11, R25.
+    https://doi.org/10.1186/gb-2010-11-3-r25
+
+    Pachter (2026). Differential analysis of genomics count data with
+    edge*. *bioRxiv*.
+    https://doi.org/10.64898/2026.02.16.706223
     """
     if not pylimma_is_available():
         raise ImportError(
@@ -165,7 +196,7 @@ def pseudobulk_pylimma(
     else:
         aggr_adata = adata.copy()
 
-    return pseudobulk_contrasts(
+    results = pseudobulk_contrasts(
         aggr_adata,
         group_key,
         condition_group,
@@ -178,6 +209,9 @@ def pseudobulk_pylimma(
         sample_key=sample_key if aggregate else None,
         verbosity=verbosity,
     )
+    edger_keys = ("edger", "tmm", "edgepython") if edger_preprocessing else ()
+    record_citations(adata, "limma", "voom", "pylimma", *edger_keys)
+    return results
 
 
 def _fit_voom_model(

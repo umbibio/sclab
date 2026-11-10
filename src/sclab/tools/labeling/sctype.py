@@ -8,6 +8,7 @@ from numpy.typing import NDArray
 from scipy import stats
 from scipy.sparse import csc_matrix, csr_matrix, issparse
 
+from ..._citations import cites
 from ...preprocess import pool_neighbors
 from ...utils import looks_like_raw_counts
 
@@ -156,6 +157,7 @@ def _get_classification_scores_matrix(
     return Xc
 
 
+@cites("sctype")
 def classify_cells(
     adata: AnnData,
     markers: pd.DataFrame,
@@ -170,13 +172,7 @@ def classify_cells(
     specificity: Literal["sctype", "observed_range"] = "sctype",
 ):
     """
-    Classify cells based on a set of marker genes.
-
-    Ianevski, A., Giri, A.K. & Aittokallio, T.
-    Fully-automated and ultra-fast cell-type identification using specific
-    marker combinations from single-cell transcriptomic data.
-    Nat Commun 13, 1246 (2022).
-    https://doi.org/10.1038/s41467-022-28803-w
+    Classify cells based on a set of marker genes (ScType).
 
     Parameters
     ----------
@@ -236,9 +232,14 @@ def classify_cells(
         `adata.obs[key_added + "_score"]` (max per-cell confidence score) and
         `adata.obsm[key_added + "_scores"]` (full class-by-cell score
         matrix).
-    """
-    # cite("10.1038/s41467-022-28803-w", __package__)
 
+    References
+    ----------
+    Ianevski et al. (2022). Fully-automated and ultra-fast cell-type
+    identification using specific marker combinations from single-cell
+    transcriptomic data. *Nature Communications*, 13, 1246.
+    https://doi.org/10.1038/s41467-022-28803-w
+    """
     if marker_class_key is not None:
         marker_class = markers[marker_class_key]
         if not marker_class.dtype.name.startswith("category"):

@@ -1,5 +1,7 @@
 from anndata import AnnData
 
+from .._citations import record_citations
+
 
 def pca(
     adata: AnnData,
@@ -61,6 +63,24 @@ def pca(
         - ``adata.varm["PCs"]`` — loadings matrix.
         - ``adata.uns["pca"]`` — variance and variance-ratio arrays; also
           stores ``"reference_batch"`` when fitted on a reference batch.
+
+    References
+    ----------
+    Wolf et al. (2018). SCANPY: large-scale single-cell gene expression
+    data analysis. *Genome Biology*, 19, 15.
+    https://doi.org/10.1186/s13059-017-1382-0
+
+    Pedregosa et al. (2011). Scikit-learn: Machine Learning in Python.
+    *Journal of Machine Learning Research*, 12, 2825–2830.
+    https://jmlr.org/papers/v12/pedregosa11a.html
+
+    Satija et al. (2015). Spatial reconstruction of single-cell gene
+    expression data. *Nature Biotechnology*, 33, 495–502.
+    https://doi.org/10.1038/nbt.3192
+
+    Stuart et al. (2019). Comprehensive Integration of Single-Cell Data.
+    *Cell*, 177, 1888–1902.e21.
+    https://doi.org/10.1016/j.cell.2019.05.031
     """
     import scanpy as sc
 
@@ -112,3 +132,7 @@ def pca(
 
     if zero_center:
         adata.obsm["X_pca"] -= adata.obsm["X_pca"].mean(axis=0, keepdims=True)
+
+    hvg = reference_batch and mask_var == "highly_variable"
+    hvg_keys = ("satija2015", "stuart2019") if hvg else ()
+    record_citations(adata, "scanpy", "scikit-learn", *hvg_keys)

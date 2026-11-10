@@ -1,6 +1,9 @@
 from anndata import AnnData
 
+from ..._citations import cites
 
+
+@cites("scanpy", "umap", "umap-learn")
 def umap(
     adata: AnnData,
     *,
@@ -30,6 +33,20 @@ def umap(
     -------
     str
         The ``adata.obsm`` key of the embedding.
+
+    References
+    ----------
+    Wolf et al. (2018). SCANPY: large-scale single-cell gene expression
+    data analysis. *Genome Biology*, 19, 15.
+    https://doi.org/10.1186/s13059-017-1382-0
+
+    McInnes et al. (2018). UMAP: Uniform Manifold Approximation and
+    Projection for Dimension Reduction. *arXiv*, 1802.03426.
+    https://doi.org/10.48550/arXiv.1802.03426
+
+    McInnes et al. (2018). UMAP: Uniform Manifold Approximation and
+    Projection. *Journal of Open Source Software*, 3, 861.
+    https://doi.org/10.21105/joss.00861
     """
     import scanpy as sc
 

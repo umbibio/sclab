@@ -1,5 +1,7 @@
 from anndata import AnnData
 
+from .._citations import record_citations
+
 
 def neighbors(
     adata: AnnData,
@@ -34,6 +36,24 @@ def neighbors(
         needed), else use :func:`scanpy.pp.neighbors`. Default is None.
     random_state : int, optional
         Seed for :func:`scanpy.pp.neighbors`. Default is 0.
+
+    References
+    ----------
+    Wolf et al. (2018). SCANPY: large-scale single-cell gene expression
+    data analysis. *Genome Biology*, 19, 15.
+    https://doi.org/10.1186/s13059-017-1382-0
+
+    McInnes et al. (2018). UMAP: Uniform Manifold Approximation and
+    Projection for Dimension Reduction. *arXiv*, 1802.03426.
+    https://doi.org/10.48550/arXiv.1802.03426
+
+    Pedregosa et al. (2011). Scikit-learn: Machine Learning in Python.
+    *Journal of Machine Learning Research*, 12, 2825–2830.
+    https://jmlr.org/papers/v12/pedregosa11a.html
+
+    Polański et al. (2020). BBKNN: fast batch alignment of single cell
+    transcriptomes. *Bioinformatics*, 36, 964–965.
+    https://doi.org/10.1093/bioinformatics/btz625
     """
     import scanpy as sc
 
@@ -64,3 +84,6 @@ def neighbors(
             metric=metric,
             random_state=random_state,
         )
+
+    keys = ("bbknn",) if batch_key else ("umap", "scikit-learn")
+    record_citations(adata, "scanpy", *keys)

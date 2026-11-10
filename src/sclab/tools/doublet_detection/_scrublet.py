@@ -5,6 +5,7 @@ import pandas as pd
 from anndata import AnnData
 from numpy import ndarray
 
+from sclab._citations import cites
 from sclab.utils import check_raw_counts
 
 
@@ -12,6 +13,7 @@ def scrublet_is_available() -> bool:
     return find_spec("scrublet") is not None
 
 
+@cites("scrublet")
 def scrublet(
     adata: AnnData,
     layer: str = "X",

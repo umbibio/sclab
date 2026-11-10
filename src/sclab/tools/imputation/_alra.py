@@ -5,7 +5,10 @@ from numpy import float32
 from numpy.typing import NDArray
 from scipy.sparse import csc_matrix, csr_matrix, issparse
 
+from ..._citations import cites
 
+
+@cites("alra")
 def _alra_on_ndarray(
     data: NDArray | csr_matrix,
 ) -> tuple[NDArray[float32], NDArray[float32]]:
@@ -23,6 +26,12 @@ def _alra_on_ndarray(
         Approximated data.
     data_alra : NDArray
         Imputed data.
+
+    References
+    ----------
+    Linderman et al. (2022). Zero-preserving imputation of single-cell
+    RNA-seq data. *Nature Communications*, 13, 192.
+    https://doi.org/10.1038/s41467-021-27729-z
     """
     import rpy2.robjects as robjects
     from rpy2.robjects import numpy2ri

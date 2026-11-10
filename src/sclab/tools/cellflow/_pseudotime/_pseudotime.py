@@ -4,11 +4,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 from anndata import AnnData
 
+from ...._citations import cites
 from ..pseudotime_tools import PseudotimeResult, _compute_pseudotime
 from ..utils.density_nd import density_nd
 from ..utils.interpolate import fit_smoothing_spline
 
 
+@cites()
 def pseudotime(
     adata: AnnData,
     use_rep: str,

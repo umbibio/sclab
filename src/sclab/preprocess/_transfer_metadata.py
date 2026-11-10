@@ -11,7 +11,10 @@ from scipy.sparse import csr_matrix
 from scipy.special import gamma
 from tqdm.auto import tqdm
 
+from .._citations import cites
 
+
+@cites()
 def transfer_metadata(
     adata: AnnData,
     group_key: str,
@@ -88,6 +91,7 @@ def transfer_metadata(
     adata.obs[f"transferred_{new_values_err.name}"] = new_values_err
 
 
+@cites()
 def propagate_metadata(
     adata: AnnData,
     column: str,

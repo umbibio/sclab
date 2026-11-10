@@ -3,9 +3,11 @@ from anndata import AnnData
 from pandas.api.types import is_bool_dtype
 from scipy.sparse import issparse
 
+from ..._citations import cites
 from .utils.interpolate import NDBSpline
 
 
+@cites()
 def expression_dynamics(
     adata: AnnData,
     time_key: str,

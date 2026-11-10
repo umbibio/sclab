@@ -3,11 +3,13 @@ import pandas as pd
 from anndata import AnnData
 from scipy.sparse import issparse
 
+from ..._citations import cites
 from ..utils import aggregate_and_filter
 from ._pseudobulk_helpers import pseudobulk_contrasts, validate_counts_layer
 from ._pseudobulk_pylimma import edgepython_is_available
 
 
+@cites("edger", "edger_ql", "tmm", "edgepython")
 def pseudobulk_edgepython(
     adata: AnnData,
     group_key: str,
@@ -109,6 +111,28 @@ def pseudobulk_edgepython(
     counts it reproduces R edgeR 4.4 to numerical precision. edgeR 5 instead
     estimates the dispersion inside ``glmQLFit``, which shifts F-statistics
     slightly.
+
+    References
+    ----------
+    Chen et al. (2025). edgeR v4: powerful differential analysis of
+    sequencing data with expanded functionality and improved support for
+    small counts and larger datasets. *Nucleic Acids Research*, 53,
+    gkaf018.
+    https://doi.org/10.1093/nar/gkaf018
+
+    Chen et al. (2016). From reads to genes to pathways: differential
+    expression analysis of RNA-Seq experiments using Rsubread and the
+    edgeR quasi-likelihood pipeline. *F1000Research*, 5, 1438.
+    https://doi.org/10.12688/f1000research.8987.2
+
+    Robinson & Oshlack (2010). A scaling normalization method for
+    differential expression analysis of RNA-seq data. *Genome Biology*,
+    11, R25.
+    https://doi.org/10.1186/gb-2010-11-3-r25
+
+    Pachter (2026). Differential analysis of genomics count data with
+    edge*. *bioRxiv*.
+    https://doi.org/10.64898/2026.02.16.706223
     """
     if not edgepython_is_available():
         raise ImportError(

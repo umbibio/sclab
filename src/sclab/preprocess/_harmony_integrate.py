@@ -20,9 +20,11 @@ from collections.abc import Sequence
 import numpy as np
 from anndata import AnnData
 
+from .._citations import cites
 from ._harmony import run_harmony
 
 
+@cites("harmony")
 def harmony_integrate(
     adata: AnnData,
     key: str | Sequence[str],

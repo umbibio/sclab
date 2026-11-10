@@ -10,6 +10,7 @@ from scipy.integrate import cumulative_trapezoid
 from scipy.interpolate import BSpline, interp1d
 from scipy.signal import find_peaks
 
+from ..._citations import cites
 from .utils.density_nd import fit_density_1d
 from .utils.times import guess_trange
 
@@ -163,6 +164,7 @@ def density(
         )
 
 
+@cites()
 def density_dynamics(
     adata: AnnData,
     time_key: str = "pseudotime",
@@ -377,6 +379,7 @@ def density_dynamics(
         plt.show()
 
 
+@cites()
 def real_time(
     adata: AnnData,
     pseudotime_key: str = "pseudotime",

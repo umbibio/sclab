@@ -4,7 +4,10 @@ import numpy as np
 from anndata import AnnData
 from scipy.sparse import csr_matrix, issparse
 
+from .._citations import cites
 
+
+@cites()
 def normalize_weighted(
     adata: AnnData,
     target_scale: float | None = None,
