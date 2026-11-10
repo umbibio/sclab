@@ -88,7 +88,9 @@ class PCA(ProcessorStepBase):
         return None
 
     def tool(self, params: dict) -> str:
-        return "Python · scanpy.pp.pca"
+        if resolve_backend("auto") == "scanpy":
+            return "Python · scanpy.pp.pca"
+        return "Python · sclab (port of scanpy.pp.pca, scikit-learn ARPACK)"
 
     def resolved_params(self, params: dict) -> dict:
         return {

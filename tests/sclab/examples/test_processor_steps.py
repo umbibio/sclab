@@ -925,6 +925,20 @@ def de_params(**params):
     return {**defaults, **params}
 
 
+class TestNativeBackendCaptions:
+    @pytest.mark.parametrize("backend", ["scanpy", "native"])
+    def test_qc_preprocess_pca_say_which_backend_runs(self, monkeypatch, backend):
+        from sclab.examples.processor_steps import _pca, _preprocess, _qc
+
+        for mod in (_qc, _preprocess, _pca):
+            monkeypatch.setattr(mod, "resolve_backend", lambda _: backend)
+        d = SCLabDashboard(make_adata(120, 60))
+        for name in ("QC", "Preprocess", "PCA"):
+            step = d.processor.steps[name]
+            caption = step.tool({})
+            assert ("sclab (port of scanpy.pp" in caption) == (backend == "native")
+
+
 class TestDifferentialExpressionStep:
     def test_tool_caption_follows_method(self):
         d = SCLabDashboard(make_adata(120, 60))

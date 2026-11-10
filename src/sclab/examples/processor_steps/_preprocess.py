@@ -116,7 +116,12 @@ class Preprocess(ProcessorStepBase):
             "regress_out": regress,
             "scale": params.get("scale"),
         }
-        text = "Python · scanpy.pp: " + ", ".join(k for k, v in steps.items() if v)
+        pp = (
+            "scanpy.pp"
+            if resolve_backend("auto") == "scanpy"
+            else "sclab (port of scanpy.pp)"
+        )
+        text = f"Python · {pp}: " + ", ".join(k for k, v in steps.items() if v)
         if method == "weighted":
             text += " · sclab.preprocess.normalize_weighted"
         return text

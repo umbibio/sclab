@@ -63,7 +63,12 @@ class QC(ProcessorStepBase):
         return None
 
     def tool(self, params: dict) -> str:
-        return "Python · scanpy.pp: calculate_qc_metrics, filter_cells, filter_genes"
+        pp = (
+            "scanpy.pp"
+            if resolve_backend("auto") == "scanpy"
+            else "sclab (port of scanpy.pp)"
+        )
+        return f"Python · {pp}: calculate_qc_metrics, filter_cells, filter_genes"
 
     def dset_counts_layer_change_callback(self, old: str, new: str):
         layer = self.variable_controls["layer"]
