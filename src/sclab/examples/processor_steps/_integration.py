@@ -1,5 +1,6 @@
 from ipywidgets import Dropdown, IntText
 
+from sclab._citations import record_citations
 from sclab.dataset.processor import Processor
 from sclab.dataset.processor._codegen import ADATA, call
 from sclab.dataset.processor.step import ProcessorStepBase
@@ -184,6 +185,7 @@ class Integration(ProcessorStepBase):
                     from scanpy.external.pp import scanorama_integrate
 
                     scanorama_integrate(adata, **kwargs)
+                    record_citations(adata, "scanpy", "scanorama")
                 case _:
                     raise ValueError(f"Unknown flavor: {flavor}")
 

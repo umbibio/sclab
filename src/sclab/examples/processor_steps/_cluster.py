@@ -1,5 +1,6 @@
 from ipywidgets import FloatSlider
 
+from sclab._citations import record_citations
 from sclab.dataset.processor import Processor
 from sclab.dataset.processor._codegen import ADATA, call
 from sclab.dataset.processor.step import ProcessorStepBase
@@ -64,5 +65,6 @@ class Cluster(ProcessorStepBase):
             **self.leiden_kwargs,
             random_state=random_state,
         )
+        record_citations(dataset.adata, "scanpy", "leiden", "igraph")
 
         self.broker.publish("dset_metadata_change", dataset.metadata, "leiden")

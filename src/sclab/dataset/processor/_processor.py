@@ -45,6 +45,7 @@ from ...utils import (
 from .._dataset import SCLabDataset
 from ..plotter import Plotter
 from . import _codegen, _history
+from ._citations_panel import CitationsPanel
 from ._results_panel import ResultsPanel
 from ._selection_code import selection_mask, store_selection, stored_selections
 
@@ -159,6 +160,7 @@ class Processor(EventClient):
                 self.history_table,
                 HBox([self.code_toggle, self.code_actions]),
                 self.code_view,
+                CitationsPanel(self.dataset),
             ]
         )
         self._update_code = self.broker.coalesce(self._render_code)

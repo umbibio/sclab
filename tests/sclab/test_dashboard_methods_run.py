@@ -1,7 +1,8 @@
 import pytest
 from anndata import AnnData
 
-from sclab import SCLabDashboard
+from sclab import SCLabDashboard, active_citations
+from sclab.dataset.processor._citations_panel import CitationsPanel
 from sclab.methods import GuidedPseudotime
 
 from .test_utils import (
@@ -54,6 +55,27 @@ class TestWorkflow:
 
     def test_umap(self, dashboard: SCLabDashboard):
         run_step(dashboard, "UMAP")
+
+    def test_citations(self, dashboard: SCLabDashboard):
+        adata = dashboard.dataset.adata
+        keys = [e["key"] for e in active_citations(adata, format="dict")]
+        # QC/Preprocess/PCA/Neighbors/UMAP via the library, Cluster in the step
+        for key in ("sclab", "anndata", "scanpy", "stuart2019", "umap", "leiden"):
+            assert key in keys
+        (panel,) = [
+            c
+            for c in dashboard.processor.history_panel.children
+            if isinstance(c, CitationsPanel)
+        ]
+        assert "From Louvain to Leiden" in panel.view.value
+        assert panel.actions.text == active_citations(adata)
+        assert panel.actions.filename == "sclab_citations.bib"
+        assert panel.actions.mime == "application/x-bibtex"
+        bib = panel.actions.download_text
+        assert bib == active_citations(adata, format="bibtex")
+        assert "@article{leiden," in bib
+        panel.toggle.value = True
+        assert panel.view.layout.display == ""
 
     def test_widgets_serializable(self, preexisting_widgets: set[str]):
         assert_widgets_serializable(exclude_ids=preexisting_widgets)

@@ -129,11 +129,16 @@ class CodeActions(anywidget.AnyWidget):
     """Copy code and Download .py buttons for the script in ``text``.
 
     Copy uses the browser Clipboard API (needs a secure context: https or
-    localhost); download saves ``text`` as ``filename`` via a Blob URL.
+    localhost); download saves ``download_text`` (``text`` if empty) as
+    ``filename`` of type ``mime`` via a Blob URL. The labels can be changed.
     """
 
     text = Unicode("").tag(sync=True)
     filename = Unicode("sclab_analysis.py").tag(sync=True)
+    download_text = Unicode("").tag(sync=True)
+    mime = Unicode("text/x-python").tag(sync=True)
+    copy_label = Unicode("Copy code").tag(sync=True)
+    download_label = Unicode("Download .py").tag(sync=True)
 
     _esm = """
     export default {
@@ -147,17 +152,19 @@ class CodeActions(anywidget.AnyWidget):
           el.appendChild(b);
           return b;
         };
-        const copy = button("Copy code", async () => {
+        const label = model.get("copy_label");
+        const copy = button(label, async () => {
           try {
             await navigator.clipboard.writeText(model.get("text"));
             copy.textContent = "Copied";
           } catch {
             copy.textContent = "Copy failed: select the code below";
           }
-          setTimeout(() => (copy.textContent = "Copy code"), 2000);
+          setTimeout(() => (copy.textContent = label), 2000);
         });
-        button("Download .py", () => {
-          const blob = new Blob([model.get("text")], { type: "text/x-python" });
+        button(model.get("download_label"), () => {
+          const text = model.get("download_text") || model.get("text");
+          const blob = new Blob([text], { type: model.get("mime") });
           const a = document.createElement("a");
           a.href = URL.createObjectURL(blob);
           a.download = model.get("filename");
