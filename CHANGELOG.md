@@ -67,7 +67,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `check_counts` parameter on `pseudobulk_pylimma()`, `pseudobulk_limma()` and `pseudobulk_edger()` (default `True`) to reject non-count input
 
 ### Changed
-- CCA integration applies the cross-covariance implicitly instead of forming the cells × cells matrix (two groups of 10k cells: ~20–60 MB instead of ~1.5–2.7 GB on sparse input, 10–15× faster). Results match to ~1e-13 in float64; the default randomized solver keeps the same signs. The "partial" solver can flip the sign of some components. The "full" solver is unchanged.
+- CCA's "partial" and "full" solvers use the same sign convention as "randomized" (sklearn's `svd_flip`), so all three agree; about half of their components flip sign compared with earlier output (values unchanged). The default "randomized" output is unchanged.
+- Under Pyodide, `sclab.optional_dependencies()` and install hints say scanpy, bbknn, doubletdetection, scanorama and R are not available there (with the reason and, where one exists, sclab's native port) instead of suggesting a `micropip.install` that would fail
+- Replaying a history (`apply_step_history`) checks every step first and, if any can't run here (unknown or unavailable step, summarized params, or a missing package, including a step recorded with backend "scanpy" when scanpy is missing), raises one `ValueError` listing them all without applying anything. A recorded scanpy run is never switched to sclab's native port silently.
+- `periodic_genes()` runs without scanpy (sclab's `normalize_total` port)
+- CCA integration applies the cross-covariance implicitly instead of forming the cells × cells matrix (two groups of 10k cells: ~20–60 MB instead of ~1.5–2.7 GB on sparse input, 10–15× faster). Results match to ~1e-13 in float64. The "full" solver still forms the matrix.
 - `expression_dynamics` selects genes on sparse X before densifying (same results, a fraction of the memory)
 - Cluster step's generated code calls `sclab.tools.cluster.leiden(...)` instead of `sc.tl.leiden(...)` (same clusters)
 - `preprocess(group_by=..., compute_hvg=True)` raises `ValueError` when a group is named like one of the HVG methods (its `highly_variable_<group>` column was silently overwritten)
@@ -123,6 +127,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ALRA uses a scoped rpy2 converter instead of the deprecated global `numpy2ri.activate()`
 
 ### Fixed
+- Per-group scaling in Preprocess truncated integer X (normalization "none", no log1p, an integer counts layer); integer input is now converted to float first. Float input is unchanged.
+- Functions that need a missing optional package (`doubletdetection()`, `scdblfinder()`, ALRA, the R pseudobulk methods, the jscatter plot backend) say which package and how to install it (pip or micropip) instead of raising a bare `ModuleNotFoundError`
 - Weighted normalization per batch truncated integer counts to whole numbers; integer input is now converted to float first (float64 for 64-bit integers, float32 otherwise). Float input is unchanged.
 - Neighbors with scanpy and umap-learn ≥ 0.6: scanpy failed for some metric / dataset-size combinations (umap-learn 0.6 rejects scanpy's non-contiguous float32 kNN distances); sclab now hands scanpy a float64 copy of the representation, only when umap-learn ≥ 0.6 is installed. Results with umap-learn < 0.6 are unchanged
 - scrublet scores are reproducible: annoy built its index on all CPUs, which is not deterministic; sclab now builds it on one thread
