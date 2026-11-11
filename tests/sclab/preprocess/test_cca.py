@@ -174,3 +174,72 @@ def test_cca_invalid_solver_raises(data):
 def test_cca_feature_mismatch_raises():
     with pytest.raises(ValueError, match="same number of features"):
         cca(np.ones((5, 3)), np.ones((5, 4)), n_components=2)
+
+
+# ---------------------------------------------------------------------------
+# implicit cross-covariance operator vs the explicit matrix
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("sparse", [False, True])
+@pytest.mark.parametrize("shape", [(60, 50), (50, 60)])  # both transpose branches
+def test_cross_covariance_operator_matches_explicit_matrix(sparse, shape):
+    from sclab.preprocess._cca import _cross_covariance_operator
+
+    rng = np.random.default_rng(5)
+    X = rng.poisson(0.5, size=(shape[0], 40)).astype(float)
+    Y = rng.poisson(0.5, size=(shape[1], 40)).astype(float)
+    if sparse:
+        X, Y = sp.csr_matrix(X), sp.csr_matrix(Y)
+        C = _cross_covariance_sparse(X, Y, n_jobs=1)
+    else:
+        C = _cross_covariance_dense(X, Y)
+
+    op = _cross_covariance_operator(X, Y)
+    np.testing.assert_allclose(op @ np.eye(shape[1]), C, atol=1e-12)
+    np.testing.assert_allclose(op.T @ np.eye(shape[0]), C.T, atol=1e-12)
+
+
+@pytest.mark.parametrize("sparse", [False, True])
+@pytest.mark.parametrize("solver", ["randomized", "partial"])
+@pytest.mark.parametrize("shape", [(60, 50), (50, 60)])
+@pytest.mark.parametrize("normalize", [False, True])
+def test_cca_implicit_matches_old_dense_computation(sparse, solver, shape, normalize):
+    """Parity with the pre-operator code, which SVD'd the explicit n1 x n2 matrix.
+
+    Measured max abs difference ~1e-13 in float64 (~3e-5 in float32); the
+    'partial' (ARPACK) solver may flip some column signs, 'randomized' does not.
+    """
+    from scipy.sparse.linalg import svds
+    from sklearn.utils.extmath import randomized_svd
+
+    rng = np.random.default_rng(6)
+    X = rng.poisson(0.5, size=(shape[0], 40)).astype(float)
+    Y = rng.poisson(0.5, size=(shape[1], 40)).astype(float)
+    if sparse:
+        X, Y = sp.csr_matrix(X), sp.csr_matrix(Y)
+        C = _cross_covariance_sparse(X, Y, n_jobs=1)
+    else:
+        C = _cross_covariance_dense(X, Y)
+
+    k = 5
+    if solver == "randomized":
+        U0, s0, Vt0 = randomized_svd(C, n_components=k, random_state=0)
+    else:
+        U0, s0, Vt0 = svds(C, k=k, random_state=0)
+    order = np.argsort(-s0)
+    U0, s0, V0 = U0[:, order], s0[order], Vt0[order].T
+    if normalize:
+        U0 = U0 / np.linalg.norm(U0, axis=1, keepdims=True)
+        V0 = V0 / np.linalg.norm(V0, axis=1, keepdims=True)
+
+    U, s, V = cca(
+        X, Y, n_components=k, svd_solver=solver, normalize=normalize, random_state=0
+    )
+
+    sign = np.sign((U0 * U).sum(axis=0))
+    if solver == "randomized":
+        np.testing.assert_array_equal(sign, 1.0)
+    np.testing.assert_allclose(s, s0, rtol=1e-10)
+    np.testing.assert_allclose(U * sign, U0, atol=1e-10)
+    np.testing.assert_allclose(V * sign, V0, atol=1e-10)

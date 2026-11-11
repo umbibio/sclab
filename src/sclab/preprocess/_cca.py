@@ -6,11 +6,12 @@ import numpy as np
 from joblib import Parallel, delayed
 from numpy import matrix
 from numpy.typing import NDArray
-from scipy.linalg import svd
+from scipy.linalg import lu, qr, svd
 from scipy.sparse import csc_matrix, csr_matrix, issparse
 from scipy.sparse import vstack as sparse_vstack
-from scipy.sparse.linalg import svds
-from sklearn.utils.extmath import randomized_svd
+from scipy.sparse.linalg import LinearOperator, svds
+from sklearn.utils import check_random_state
+from sklearn.utils.extmath import svd_flip
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +50,24 @@ def cca(
     U : (n_cells(X), k) ndarray
     V : (n_cells(Y), k) ndarray
         Cell-level canonical variables.
+
+    Notes
+    -----
+    Follows Seurat's ``RunCCA`` (Butler et al. 2018; Stuart et al. 2019): the
+    canonical vectors are the leading singular vectors of the cell-by-cell
+    cross-covariance ``Xc @ Yc.T / (p - 1)``. Dense inputs are z-scored per
+    feature, sparse inputs are only centred. For the 'partial' and 'randomized'
+    solvers that matrix is applied implicitly (:func:`_cross_covariance_operator`)
+    and never formed, so memory scales with the inputs, not with ``n1 * n2``.
+
+    References
+    ----------
+    Butler et al. (2018). Integrating single-cell transcriptomic data across
+    different conditions, technologies, and species. *Nature Biotechnology*,
+    36, 411-420. https://doi.org/10.1038/nbt.4096
+
+    Stuart et al. (2019). Comprehensive Integration of Single-Cell Data.
+    *Cell*, 177, 1888-1902.e21. https://doi.org/10.1016/j.cell.2019.05.031
     """
     n1, p1 = X.shape
     n2, p2 = Y.shape
@@ -67,7 +86,9 @@ def cca(
             f"({min(n1, n2)}) for svd_solver='partial'"
         )
 
-    if issparse(X):
+    if svd_solver != "full":
+        C = _cross_covariance_operator(X, Y)
+    elif issparse(X):  # a full SVD needs the explicit n1 x n2 matrix anyway
         C = _cross_covariance_sparse(X, Y, n_jobs=n_jobs)
     else:
         C = _cross_covariance_dense(X, Y)
@@ -92,7 +113,7 @@ def cca(
 
 
 def _svd_decomposition(
-    C: NDArray,
+    C: NDArray | LinearOperator,
     k: int,
     svd_solver: Literal["full", "partial", "randomized"],
     random_state: int | None,
@@ -108,7 +129,7 @@ def _svd_decomposition(
 
     elif svd_solver == "randomized":
         logger.info("SVD decomposition with randomized SVD...")
-        Uc, s, Vct = randomized_svd(C, n_components=k, random_state=random_state)
+        Uc, s, Vct = _randomized_svd(C, k, random_state)
 
     else:
         raise ValueError("svd_solver must be 'full' or 'partial'.")
@@ -119,6 +140,75 @@ def _svd_decomposition(
     Vct = Vct[order, :]
 
     return Uc, s, Vct
+
+
+def _randomized_svd(
+    C: NDArray | LinearOperator, k: int, random_state: int | None
+) -> tuple[NDArray, NDArray, NDArray]:
+    """``sklearn.utils.extmath.randomized_svd`` with its defaults, for operators.
+
+    Halko, Martinsson & Tropp (2011), Finding structure with randomness.
+    *SIAM Review*, 53(2), 217-288. https://doi.org/10.1137/090771806
+    Ported from scikit-learn's ``randomized_svd`` / ``randomized_range_finder``
+    (https://github.com/scikit-learn/scikit-learn, sklearn/utils/extmath.py,
+    BSD-3-Clause, GPL-compatible), whose public function rejects
+    ``LinearOperator`` input. Same random draws, power iterations (LU), and
+    sign flip, so it matches ``randomized_svd(C, k, random_state=...)`` on the
+    explicit matrix up to rounding.
+    """
+    rng = check_random_state(random_state)
+    transpose = C.shape[0] < C.shape[1]
+    M = C.T if transpose else C
+    n_iter = 7 if k < 0.1 * min(M.shape) else 4
+
+    Q = rng.normal(size=(M.shape[1], k + 10))  # n_oversamples=10
+    if M.dtype == np.float32:
+        Q = Q.astype(np.float32, copy=False)
+    for _ in range(n_iter):
+        Q, _ = lu(M @ Q, permute_l=True, check_finite=False)
+        Q, _ = lu(M.T @ Q, permute_l=True, check_finite=False)
+    Q, _ = qr(M @ Q, mode="economic", check_finite=False)
+
+    B = (M.T @ Q).T  # Q.T @ M
+    Uhat, s, Vt = svd(B, full_matrices=False)
+    U = Q @ Uhat
+    U, Vt = svd_flip(U, Vt, u_based_decision=not transpose)
+
+    if transpose:
+        return Vt[:k].T, s[:k], U[:, :k].T
+    return U[:, :k], s[:k], Vt[:k]
+
+
+def _cross_covariance_operator(X, Y) -> LinearOperator:
+    """The cross-covariance of `cca` as a LinearOperator, never formed explicitly.
+
+    Applies ``C = (X - 1 mx)(Y - 1 my).T / (p - 1)`` as ``X @ (Y.T @ v)`` plus
+    rank-one mean corrections, so sparse inputs stay sparse. Matches
+    `_cross_covariance_dense` (z-scored) and `_cross_covariance_sparse`
+    (centred only) for dense and sparse ``X`` respectively.
+    """
+    p = X.shape[1]
+    if p != Y.shape[1]:
+        raise ValueError("The two matrices must have the same number of features.")
+
+    if not issparse(X):
+        X, Y = _dense_scale(X), _dense_scale(Y)
+    mx = np.asarray(X.mean(axis=0)).reshape(1, -1)
+    my = np.asarray(Y.mean(axis=0)).reshape(1, -1)
+
+    def apply(A, ma, B, mb, V):  # (A - 1 ma) @ (B - 1 mb).T @ V
+        V = V.reshape(B.shape[0], -1)
+        W = B.T @ V - mb.T @ V.sum(axis=0, keepdims=True)
+        return (np.asarray(A @ W) - ma @ W) / (p - 1)
+
+    return LinearOperator(
+        shape=(X.shape[0], Y.shape[0]),
+        dtype=np.result_type(mx, my),
+        matvec=lambda v: apply(X, mx, Y, my, v),
+        rmatvec=lambda v: apply(Y, my, X, mx, v),
+        matmat=lambda V: apply(X, mx, Y, my, V),
+        rmatmat=lambda V: apply(Y, my, X, mx, V),
+    )
 
 
 def _cross_covariance_sparse(X: csr_matrix, Y: csr_matrix, n_jobs=N_CPUS) -> NDArray:
