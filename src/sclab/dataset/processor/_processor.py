@@ -2,6 +2,7 @@ import html
 import inspect
 import json
 import logging
+import warnings
 from pathlib import Path
 from typing import Any, Callable, Literal
 
@@ -134,6 +135,7 @@ class Processor(EventClient):
     step_history: list[dict[str, str | tuple | dict]]
     main_accordion: Accordion
     _loaded_step_history: list[dict[str, str | tuple | dict]] | None = None
+    _replaying: str | None = None  # "step i/N (name)" while apply_step_history runs it
     # last plot (box/lasso) selection and its shape; None if none or not replayable
     _plot_selection: pd.Index | None = None
     _plot_shape: dict | None = None
@@ -1087,12 +1089,15 @@ class Processor(EventClient):
             logger.info(f"Applying step {i: 2d}/{N}: {step_description}")
             step = self.steps[step_description]
             n_recorded = len(self.step_history)
+            self._replaying = f"step {i}/{N} ({step_description})"
             try:
                 step.run(**_accepted_params(step.function, entry["params"]))
             except Exception as e:  # e.g. refused by validate() before running
                 cause, reason = e, f"{type(e).__name__}: {e}"
             else:
                 cause, reason = None, self._replay_failure(entry, n_recorded)
+            finally:
+                self._replaying = None
             if reason:
                 raise RuntimeError(
                     f"Replay stopped at step {i}/{N} ({step_description}): {reason}. "
@@ -1156,7 +1161,14 @@ class Processor(EventClient):
             store_selection(adata, shape, shape["id"])  # replay: for code export
         selected = selection_mask(adata, filters, shape, mask)
         if n is not None and selected.sum() != n:
-            logger.warning(f"Selection matched {selected.sum()} cells, recorded {n}")
+            message = f"Selection matched {selected.sum()} cells, recorded {n}"
+            logger.warning(message)
+            where = f"Replay {self._replaying}: " if self._replaying else ""
+            continued = "replay continued" if self._replaying else "continued"
+            warnings.warn(
+                f"{where}{message}; {continued} with the cells matched here",
+                UserWarning,
+            )
         return self.dataset.adata.obs_names[selected]
 
     def filter_rows(

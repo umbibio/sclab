@@ -27,6 +27,8 @@ Before applying anything, `apply_step_history()` checks that every remaining ste
 
 If a step then fails while replaying (or runs with other parameter values than recorded), the replay stops there with a `RuntimeError` naming the step number, the step and the error. Later steps are not run, because they would work on incomplete data. The steps before it stay applied, and the failed one is in the History tab marked as failed. Fix the cause (for example a missing column) and call `apply_step_history()` again: it continues from the failed step.
 
+A Keep/Drop or Label selection is replayed by its criteria (ranges, categories, the drawn shape), and the number of cells it selected is recorded. If on replay it selects a different number of cells, for example because the data differ, the replay does not stop: it continues with the cells selected here and emits a `UserWarning` naming the step and both counts.
+
 ### Which backend runs
 
 Steps with a choice of implementation (QC, Preprocess, PCA, Neighbors, Cluster, UMAP, Differential Expression with scanpy methods) record whether scanpy or sclab's native port ran. A replay uses the recorded one, so a history recorded with the native port replays natively even where scanpy is installed. A history recorded with scanpy is not replayed with the native port when scanpy is missing, because results may differ: run the step again interactively to use the native port.

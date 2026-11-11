@@ -1,6 +1,7 @@
 """Keep/Drop/Label record how cells were selected; the emitted code reproduces it."""
 
 import logging
+import re
 import tempfile
 
 import anndata
@@ -319,9 +320,17 @@ def test_history_file_replay_and_count_check(dash, tmp_path, caplog):
     other.obs["num_i"] = other.obs["num_i"][::-1].to_numpy()
     d3 = SCLabDashboard(other)
     d3.processor.load_step_history(path)
-    with caplog.at_level(logging.WARNING):
+    with caplog.at_level(logging.WARNING), pytest.warns(UserWarning) as record:
         d3.processor.apply_step_history()
     assert "recorded" in caplog.text
+    messages = [str(w.message) for w in record if "Selection matched" in str(w.message)]
+    assert len(messages) == 1
+    assert re.match(
+        r"Replay step \d+/\d+ \(.+\): Selection matched \d+ cells, recorded \d+; "
+        "replay continued",
+        messages[0],
+    )
+    assert d3.processor.step_history[-1]["status"] == "success"  # not fatal
 
 
 def test_legacy_entries_and_mask_without_uns(dash, tmp_path):
