@@ -6,10 +6,11 @@ it with micropip in Pyodide under node, builds `SCLabDashboard` on a small
 synthetic AnnData and runs QC, Preprocess (two HVG methods, union), PCA,
 Neighbors, Cluster and UMAP (sclab's native ports of the scanpy and umap-learn
 functions; it also times neighbors and Leiden on 10,000 cells), CCA and Harmony
-integration,
-Gene Expression, pseudobulk limma differential expression (function and
-dashboard step), pseudobulk edgeR (edgepython installed without numba) and
-scrublet doublet detection (installed without annoy, umap-learn and numba).
+integration, Gene Expression, cell-level differential expression (wilcoxon,
+t-test, logreg: sclab's port of `scanpy.tl.rank_genes_groups`), pseudobulk
+limma differential expression (function and dashboard step), pseudobulk edgeR
+(edgepython installed without numba) and scrublet doublet detection (installed
+without annoy, umap-learn and numba).
 
 It is not part of the pytest run. It needs node, [uv](https://docs.astral.sh/uv/)
 (to build the wheel) and network access to the Pyodide CDN (cdn.jsdelivr.net)

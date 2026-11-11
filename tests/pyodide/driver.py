@@ -183,7 +183,7 @@ ok(
 de = steps["Differential Expression"]
 c = de.variable_controls
 c["groupby"].value = "grp"
-assert de._reason.startswith("wilcoxon needs scanpy"), de._reason
+assert "scanpy" not in (de._reason or ""), de._reason  # sclab's port of it
 c["method"].value = "pseudobulk_limma"
 c["reference"].value = "A"
 assert de._reason is None, de._reason
@@ -193,5 +193,16 @@ assert de.run_button.button_style == "success", de.status.value
 table = d.dataset.adata.uns["differential_expression"]["table"]
 assert set(table["contrast"]) == {"B_vs_A"} and len(table) > 0
 ok("Differential Expression step pseudobulk_limma", f"({len(table)} rows)")
+
+lognorm = adata.copy()
+lognorm.X = lognorm.X.log1p()
+for method in ["wilcoxon", "t-test", "logreg"]:
+    t0 = time.perf_counter()
+    table = sclab.tools.de(lognorm, "grp", method=method, reference_group="A")
+    backend = lognorm.uns["differential_expression"]["params"]["backend"]
+    assert backend.startswith("sclab port"), backend
+    assert set(table["contrast"]) == {"B_vs_A"} and len(table) == n_vars
+    elapsed = f"({time.perf_counter() - t0:.2f} s)"
+    ok(f"sclab.tools.de {method} (port of rank_genes_groups)", elapsed)
 
 print("SMOKE TEST PASSED")
