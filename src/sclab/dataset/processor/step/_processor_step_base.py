@@ -11,6 +11,7 @@ from ipywidgets import Button, Output, VBox
 from ipywidgets.widgets.valuewidget import ValueWidget
 from ipywidgets.widgets.widget_description import DescriptionWidget
 
+from ...._compat import missing
 from ....event import EventClient, StepCancelled
 from .._processor import Processor
 from .._results_panel import _Results
@@ -238,6 +239,34 @@ class ProcessorStepBase(EventClient):
         re-checked when the step's controls or the dataset change, so it must
         be cheap. Leave rarer cases to the library's own errors.
         """
+        return None
+
+    def unavailable(self, params: dict) -> str | None:
+        """Why a run with ``params`` cannot happen here for lack of a package.
+
+        None if it can. Unlike :meth:`validate` it must not depend on the
+        data: replaying a history (:meth:`Processor.apply_step_history`)
+        checks every recorded entry with it before applying any. Override
+        (calling ``super()``) for packages a method, flavor or backend needs;
+        :meth:`validate` may return it too. The default is
+        :meth:`scanpy_missing`.
+        """
+        return self.scanpy_missing(params)
+
+    @staticmethod
+    def scanpy_missing(params: dict, *features: str) -> str | None:
+        """For a run recorded with ``backend="scanpy"``: the reason if scanpy,
+        or another of the ``features`` it ran with, is missing. A replay does not
+        switch to sclab's native port: its results may differ."""
+        if params.get("backend") != "scanpy":
+            return None
+        for feature in ("scanpy", *features):
+            if reason := missing(feature):
+                return (
+                    f"{reason} (recorded with backend 'scanpy', not replayed with "
+                    "sclab's native port as results may differ; install it, or "
+                    "run the step again: it then uses the native port)"
+                )
         return None
 
     def tool(self, params: dict) -> str:

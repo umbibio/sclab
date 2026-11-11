@@ -79,6 +79,10 @@ class Neighbors(ProcessorStepBase):
             return resolve_backend("auto", "bbknn")
         return resolve_backend("auto")
 
+    def unavailable(self, params: dict) -> str | None:
+        batch = params.get("group_by_batch") and params.get("batch_key")
+        return self.scanpy_missing(params, *["bbknn"] * bool(batch))
+
     def validate(self, params: dict) -> str | None:
         adata = self.parent.dataset.adata
         if params.get("use_rep") not in adata.obsm:

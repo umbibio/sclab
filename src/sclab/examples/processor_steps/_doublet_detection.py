@@ -3,7 +3,7 @@ import inspect
 
 from ipywidgets import Checkbox, Dropdown
 
-from sclab._compat import requirement
+from sclab._compat import missing, requirement
 from sclab.dataset.processor import Processor
 from sclab.dataset.processor._codegen import ADATA, call
 from sclab.dataset.processor.step import ProcessorStepBase
@@ -133,6 +133,19 @@ class DoubletDetection(ProcessorStepBase):
     def _default_backend(self) -> str | None:
         """What ``backend="auto"`` picks here: R if installed."""
         return next(iter(self.scdblfinder_backends), None)
+
+    def unavailable(self, params: dict) -> str | None:
+        flavor, backend = params.get("flavor"), params.get("backend")
+        if flavor == "scDblFinder":
+            backends = self.scdblfinder_backends
+            if backend in backends or (backend is None and backends):
+                return None
+            if backend == "python":
+                return missing("scDblFinder-py")
+            return missing("scDblFinder") or "Needs R with scDblFinder and scater"
+        if flavor in ("scrublet", "doubletdetection"):
+            return missing(flavor)
+        return super().unavailable(params)
 
     def tool(self, params: dict) -> str:
         flavor = params.get("flavor")

@@ -373,3 +373,44 @@ def test_periodic_genes_runs_without_scanpy(monkeypatch):
     assert "periodic" in var
     if expected is not None:  # sclab's normalize_total port: the same results
         pd.testing.assert_frame_equal(var, expected)
+
+
+def test_replay_checks_every_step_before_applying_any(
+    without_optional, monkeypatch, tmp_path
+):
+    import json
+
+    monkeypatch.setitem(sys.modules, "pyscdblfinder", None)
+    d = SCLabDashboard(make_adata(), counts_layer="counts")
+    run_step(d, "QC", min_counts=0, min_genes=0, min_cells=0)
+    path = tmp_path / "history.json"
+    d.processor.save_step_history(path)
+    d2 = SCLabDashboard(make_adata(), counts_layer="counts")
+    d2.processor.load_step_history(path)
+    d2.processor.apply_step_history()  # recorded native: replays here
+    assert d2.processor.step_history[-1]["params"]["backend"] == "native"
+
+    history = json.loads(path.read_text())
+    history[0]["params"]["backend"] = "scanpy"  # as run where scanpy is installed
+    ok = {"status": "success"}
+    history += [
+        {"step": "Integration", "params": {"flavor": "scanorama"}, **ok},
+        {"step": "Doublet Detection", "params": {"flavor": "scrublet"}, **ok},
+        {"step": "Nope", "params": {}, **ok},
+    ]
+    path.write_text(json.dumps(history))
+    d3 = SCLabDashboard(make_adata(), counts_layer="counts")
+    adata = d3.dataset.adata
+    d3.processor.load_step_history(path)
+    with pytest.raises(ValueError) as error:
+        d3.processor.apply_step_history()
+    lines = str(error.value).splitlines()
+    assert lines[0].endswith("nothing was applied:")
+    assert lines[1].startswith("step 1 (QC): Needs scanpy: pip install 'sclab[scanpy]'")
+    assert "not replayed with sclab's native port" in lines[1]
+    assert lines[2] == "step 2 (Integration): " + _compat.missing("scanorama")
+    assert lines[3].startswith("step 3 (Doublet Detection): Needs a doublet")
+    assert lines[4] == "step 4 (Nope): not a step of this dashboard"
+    assert d3.processor.step_history == [] and d3.dataset.adata is adata
+    assert list(adata.obs) == list(make_adata().obs)  # QC not applied
+    assert list(d2.dataset.adata.obs) != list(adata.obs)  # as it adds columns

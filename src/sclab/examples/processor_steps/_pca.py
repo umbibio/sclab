@@ -74,12 +74,17 @@ class PCA(ProcessorStepBase):
         ]
         return super().make_controls()
 
-    def validate(self, params: dict) -> str | None:
+    def unavailable(self, params: dict) -> str | None:
         hvg = params.get("reference_batch") and params.get("mask_var") == (
             "highly_variable"
         )
         if hvg and missing("skmisc"):  # HVGs recomputed with seurat_v3_paper
             return f"Reference batch HVGs need {requirement('skmisc')}"
+        return super().unavailable(params)
+
+    def validate(self, params: dict) -> str | None:
+        if reason := self.unavailable(params):
+            return reason
         X = self.parent.dataset.adata.X
         if self._checked_X is not X:  # checked once per matrix: it reads all values
             self._checked_X, self._X_is_raw = X, looks_like_raw_counts(X)

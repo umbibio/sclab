@@ -103,11 +103,16 @@ class Integration(ProcessorStepBase):
         if group_by.value == old and new in group_by.options.values():  # not chosen
             group_by.value = new
 
+    def unavailable(self, params: dict) -> str | None:
+        if params.get("flavor") == "scanorama":
+            return _compat.missing("scanorama")  # e.g. under Pyodide
+        return super().unavailable(params)
+
     def validate(self, params: dict) -> str | None:
         obs = self.parent.dataset.adata.obs
         group_by, flavor = params.get("group_by"), params.get("flavor")
-        if flavor == "scanorama" and (reason := _compat.missing("scanorama")):
-            return reason  # under Pyodide
+        if reason := self.unavailable(params):
+            return reason
         if group_by is None:
             return "Choose a 'GroupBy' column with at least 2 batches"
         if group_by not in obs:

@@ -101,13 +101,18 @@ class Preprocess(ProcessorStepBase):
             variable_controls=variable_controls,
         )
 
+    def unavailable(self, params: dict) -> str | None:
+        v3 = [m for m in params.get("hvg_methods") or () if m.startswith("seurat_v3")]
+        if v3 and missing("skmisc"):
+            return f"HVG {v3[0]} needs {requirement('skmisc')}"
+        return super().unavailable(params)
+
     def validate(self, params: dict) -> str | None:
         methods = params.get("hvg_methods")
         if not methods:
             return "Choose at least one 'HVG methods'"
-        v3 = [m for m in methods if m.startswith("seurat_v3")]
-        if v3 and missing("skmisc"):
-            return f"HVG {v3[0]} needs {requirement('skmisc')}"
+        if reason := self.unavailable(params):
+            return reason
         try:
             n_top = _n_top_genes(params.get("n_top_genes"))
         except ValueError:

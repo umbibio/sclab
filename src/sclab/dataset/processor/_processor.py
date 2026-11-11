@@ -1012,6 +1012,10 @@ class Processor(EventClient):
 
         The successful steps already in ``step_history`` must match the start
         of the loaded history (step and params); failed entries are skipped.
+        Before applying any, every step to replay is checked: if one cannot
+        run here (a missing package, see ``ProcessorStepBase.unavailable``,
+        or summarized params), ``ValueError`` lists them all and nothing is
+        applied.
         """
         assert self._loaded_step_history is not None, "No step history loaded"
 
@@ -1030,13 +1034,29 @@ class Processor(EventClient):
             )
             logger.info(f"Step {i + 1: 2d}/{N} already applied: {present_key['step']}")
 
+        problems = []
+        for i, entry in enumerate(new_step_history[n:], n + 1):
+            step = self.steps.get(entry["step"])
+            if step is None:
+                reason = "not a step of this dashboard"
+            elif isinstance(step, _UnavailableStep):
+                reason = str(step.error)
+            elif _history.is_summarized(entry["params"]):
+                reason = "summarized params (from adata.uns) cannot be replayed"
+            elif hasattr(step, "unavailable"):  # not BasicProcessorStep
+                reason = step.unavailable(entry["params"])
+            else:
+                reason = None
+            if reason:
+                problems.append(f"step {i} ({entry['step']}): {reason}")
+        if problems:
+            raise ValueError(
+                "Cannot replay the loaded history here, nothing was applied:\n"
+                + "\n".join(problems)
+            )
+
         for i, entry in enumerate(new_step_history[n:]):
             step_description = entry["step"]
-            if _history.is_summarized(entry["params"]):
-                raise ValueError(
-                    f"Step {n + i + 1} ({step_description}) has summarized params "
-                    "(from adata.uns) and cannot be replayed"
-                )
             logger.info(f"Applying step {n + i + 1: 2d}/{N}: {step_description}")
             step = self.steps[step_description]
             step.run(**_accepted_params(step.function, entry["params"]))

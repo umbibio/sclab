@@ -382,6 +382,9 @@ class DifferentialExpression(ProcessorStepBase):
             checked = self._raw_checked[layer] = (X, looks_like_raw_counts(X))
         return checked[1]
 
+    def unavailable(self, params: dict) -> str | None:
+        return _unavailable(params.get("method")) or super().unavailable(params)
+
     def validate(self, params: dict) -> str | None:
         adata = self.parent.dataset.adata
         groupby = params.get("groupby")
@@ -395,7 +398,7 @@ class DifferentialExpression(ProcessorStepBase):
         if groups and groups != "all" and set(groups) <= {params.get("reference")}:
             return "Choose a group other than the reference"
         method = params.get("method")
-        if (reason := _unavailable(method)) is not None:
+        if (reason := self.unavailable(params)) is not None:
             return reason
         keys = ["cell_identity"] + ["sample_key"] * (method in PSEUDOBULK_METHODS)
         for key in keys:
