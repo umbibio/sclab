@@ -8,8 +8,10 @@ from anndata import AnnData
 from sclab.utils import looks_like_raw_counts
 
 from ..._citations import record_citations
+from ...preprocess._scanpy_port import resolve_backend
 from ._pseudobulk_edgepython import pseudobulk_edgepython
 from ._pseudobulk_pylimma import pseudobulk_pylimma
+from ._rank_genes_groups import citation_keys
 
 SCANPY_METHODS = ("wilcoxon", "t-test", "logreg")
 
@@ -61,6 +63,7 @@ def differential_expression(
     sample_key: str | None = None,
     key_added: str = "differential_expression",
     random_state: int = 0,
+    backend: str = "auto",
     **method_kwargs,
 ) -> pd.DataFrame:
     """Differential expression between groups of cells, with one output format.
@@ -81,7 +84,8 @@ def differential_expression(
         - ``"wilcoxon"``, ``"t-test"``, ``"logreg"``: cell-level tests of
           :func:`scanpy.tl.rank_genes_groups` (methods ``"wilcoxon"``,
           ``"t-test"`` (Welch's t-test, not ``"t-test_overestim_var"``) and
-          ``"logreg"``). Require ``scanpy``.
+          ``"logreg"``), run by scanpy or sclab's port of it (see
+          ``backend``).
         - ``"pseudobulk_limma"``: limma-voom on pseudobulk samples,
           :func:`pseudobulk_pylimma`. Requires ``pylimma``.
         - ``"pseudobulk_edger"``: edgeR quasi-likelihood F-test on pseudobulk
@@ -119,6 +123,11 @@ def differential_expression(
     random_state : int, optional
         Seed for the pseudo-replica assignment (pseudobulk) and for
         ``logreg``. Default is 0.
+    backend : {"auto", "native", "scanpy"}, optional
+        Cell-level methods only. ``"scanpy"`` runs
+        :func:`scanpy.tl.rank_genes_groups`, ``"native"`` sclab's port of it
+        (numpy, scipy and scikit-learn; sparse data stay sparse), ``"auto"``
+        (default) scanpy if it is installed. The results are the same.
     **method_kwargs
         Passed to the backend: :func:`scanpy.tl.rank_genes_groups` (e.g.
         ``tie_correct``, ``corr_method``; for ``logreg`` also
@@ -225,6 +234,7 @@ def differential_expression(
         if sample_key is not None:
             raise ValueError("sample_key is only used by the pseudobulk methods")
         layer = "X" if layer is None else layer
+        backend = resolve_backend(backend)
         table = _scanpy_de(
             adata,
             group_key,
@@ -237,9 +247,14 @@ def differential_expression(
             {"random_state": random_state, **method_kwargs}
             if method == "logreg"
             else method_kwargs,
+            backend,
         )
-        backend = f"scanpy.tl.rank_genes_groups(method={method!r})"
-        packages = ["scanpy"]
+        if backend == "scanpy":
+            backend = f"scanpy.tl.rank_genes_groups(method={method!r})"
+            packages = ["scanpy"]
+        else:
+            backend = f"sclab port of scanpy.tl.rank_genes_groups(method={method!r})"
+            packages = ["scipy", "scikit-learn"]
     elif method in PSEUDOBULK_METHODS:
         layer = "counts" if layer is None else layer
         table = _pseudobulk_de(
@@ -281,8 +296,8 @@ def differential_expression(
         "table": table,
     }
     if method in SCANPY_METHODS:  # pseudobulk backends record their own
-        logreg = ("ntranos2019", "scikit-learn") if method == "logreg" else ()
-        record_citations(adata, "scanpy", *logreg)
+        corr_method = method_kwargs.get("corr_method", "benjamini-hochberg")
+        record_citations(adata, "scanpy", *citation_keys(method, corr_method))
     return table
 
 
@@ -296,13 +311,14 @@ def _scanpy_de(
     cids: list,
     layer: str,
     method_kwargs: dict,
+    backend: str,
 ) -> pd.DataFrame:
-    try:
+    if backend == "scanpy":
         import scanpy as sc
-    except ImportError as e:
-        raise ImportError(
-            f"method={method!r} requires scanpy. Install with `pip install scanpy`."
-        ) from e
+
+        rank_genes_groups = sc.tl.rank_genes_groups
+    else:
+        from ._rank_genes_groups import rank_genes_groups
 
     if layer == "X":
         X = adata.X
@@ -348,7 +364,7 @@ def _scanpy_de(
             codes[is_ref], codes[is_cnd] = 0, 1
             # "cnd" has the higher code: logreg's binary coefficient is for it
             shell.obs["_de"] = pd.Categorical.from_codes(codes, ["ref", "cnd"])
-            sc.tl.rank_genes_groups(
+            rank_genes_groups(
                 shell,
                 "_de",
                 groups=["cnd"],
