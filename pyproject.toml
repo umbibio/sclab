@@ -1,6 +1,6 @@
 [project]
 name = "sclab"
-version = "0.5.0.dev15"
+version = "0.5.0.dev16"
 description = "sclab"
 readme = "README.md"
 license = "GPL-3.0-or-later"

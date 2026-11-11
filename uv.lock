@@ -4186,7 +4186,7 @@ wheels = [
 
 [[package]]
 name = "sclab"
-version = "0.5.0.dev15"
+version = "0.5.0.dev16"
 source = { editable = "." }
 dependencies = [
     { name = "anndata" },
