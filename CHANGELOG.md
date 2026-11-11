@@ -68,6 +68,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `check_counts` parameter on `pseudobulk_pylimma()`, `pseudobulk_limma()` and `pseudobulk_edger()` (default `True`) to reject non-count input
 
 ### Changed
+- History replay stops at the first step that fails (raises, records a failed status, or runs with different params than recorded) with a `RuntimeError` naming the step; earlier steps stay applied and calling `apply_step_history()` again resumes at the failed step. Previously it logged a warning and continued.
 - CCA's "partial" and "full" solvers use the same sign convention as "randomized" (sklearn's `svd_flip`), so all three agree; about half of their components flip sign compared with earlier output (values unchanged). The default "randomized" output is unchanged.
 - Under Pyodide, `sclab.optional_dependencies()` and install hints say scanpy, bbknn, doubletdetection, scanorama and R are not available there (with the reason and, where one exists, sclab's native port) instead of suggesting a `micropip.install` that would fail
 - Replaying a history (`apply_step_history`) checks every step first and, if any can't run here (unknown or unavailable step, summarized params, or a missing package, including a step recorded with backend "scanpy" when scanpy is missing), raises one `ValueError` listing them all without applying anything. A recorded scanpy run is never switched to sclab's native port silently.
