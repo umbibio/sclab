@@ -1,7 +1,8 @@
 """Run by smoke.mjs inside Pyodide, after sclab and its dependencies are installed.
 
-Builds the dashboard without scanpy and runs the steps that work natively,
-and pseudobulk limma and edgeR (edgepython without numba).
+Builds the dashboard without scanpy and runs the steps that work natively
+(UMAP on a stand-in neighbor graph), and pseudobulk limma and edgeR
+(edgepython without numba).
 Any failed assertion fails the smoke test.
 """
 
@@ -44,9 +45,10 @@ adata.obsm["X_pca"] = rng.normal(size=(n_obs, 20))
 
 d = SCLabDashboard(adata, counts_layer="counts", batch_key="batch")
 steps = d.processor.steps
-for name in ["Neighbors", "UMAP", "Cluster"]:
+for name in ["Neighbors", "Cluster"]:
     assert steps[name].run_button.disabled, name
     assert steps[name]._reason.startswith("Needs scanpy"), steps[name]._reason
+assert steps["UMAP"]._reason == "Run the Neighbors step first"  # sclab's port
 assert steps["QC"]._reason is steps["Preprocess"]._reason is None  # sclab's port
 assert type(steps["Doublet Detection"]).__name__ == "_UnavailableStep"
 assert d.background_checkbox.disabled and not d.background_checkbox.value
@@ -80,6 +82,35 @@ backends = [e["params"]["backend"] for e in d.processor.step_history]
 assert backends == ["native"] * 3, backends
 assert d.generate_code().count('backend="native"') == 3
 ok("history and code: backend native")
+
+
+def standin_neighbors(adata, k=15):
+    """A kNN graph written as scanpy's neighbors would be.
+
+    shortcut: until the native Neighbors step runs in Pyodide; then replace
+    this function with run("Neighbors").
+    """
+    from sklearn.neighbors import kneighbors_graph
+
+    x = adata.obsm["X_pca"]
+    dist = kneighbors_graph(x, k - 1, mode="distance")
+    conn = kneighbors_graph(x, k - 1, mode="connectivity")
+    adata.obsp["distances"] = dist
+    adata.obsp["connectivities"] = conn.maximum(conn.T).tocsr()
+    adata.uns["neighbors"] = {
+        "params": {"n_neighbors": k, "method": "umap", "use_rep": "X_pca"},
+        "connectivities_key": "connectivities",
+        "distances_key": "distances",
+    }
+
+
+standin_neighbors(d.dataset.adata)
+elapsed = run("UMAP", n_components=2)
+xy = d.dataset.adata.obsm["X_2Dumap"]
+assert xy.shape == (d.dataset.adata.n_obs, 2) and np.isfinite(xy).all()
+assert d.processor.step_history[-1]["params"]["backend"] == "native"
+assert d.generate_code().count('backend="native"') == 4
+ok("UMAP (sclab's port of umap-learn, stand-in graph)", elapsed)
 
 
 integration = dict(group_by="batch", reference_batch=None, max_iters=10)

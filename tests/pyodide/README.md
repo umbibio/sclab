@@ -4,7 +4,8 @@ Checks that sclab installs and works in [Pyodide](https://pyodide.org)
 (JupyterLite, browser apps) without scanpy: it builds the sclab wheel, installs
 it with micropip in Pyodide under node, builds `SCLabDashboard` on a small
 synthetic AnnData and runs QC, Preprocess (two HVG methods, union) and PCA
-(sclab's native port of the scanpy functions), CCA and Harmony integration,
+(sclab's native port of the scanpy functions), UMAP (sclab's port of
+umap-learn, on a stand-in kNN graph), CCA and Harmony integration,
 Gene Expression, pseudobulk limma differential expression (function and
 dashboard step) and pseudobulk edgeR (edgepython installed without numba).
 
