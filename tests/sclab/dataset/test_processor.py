@@ -381,6 +381,59 @@ class TestStepHistory:
         assert steps_and_params(d2.processor) == steps_and_params(d1.processor)[1:]
         assert d2.processor.step_history_hash == d1.processor.step_history_hash
 
+    def _boom_history(self, tmp_path, fail):
+        """A saved 3-step history; in the replaying dashboard ``Boom`` may fail."""
+
+        def make_dash(boom):
+            d = SCLabDashboard(make_adata())
+            d.processor.add_step_func("Boom", boom)
+            return d
+
+        d1 = make_dash(lambda: None)
+        label_step(d1.processor, ["c00"], "lab", "A")
+        d1.processor.steps["Boom"].run()
+        label_step(d1.processor, ["c01"], "lab", "B")
+        p = tmp_path / "h.json"
+        d1.processor.save_step_history(p)
+
+        d2 = make_dash(fail)
+        d2.processor.load_step_history(p)
+        return d2
+
+    def test_replay_stops_at_failing_step(self, tmp_path):
+        d2 = self._boom_history(tmp_path, lambda: 1 / 0)
+        with pytest.raises(RuntimeError, match=r"step 2/3 \(Boom\).*ZeroDivisionError"):
+            d2.processor.apply_step_history()
+        assert [(e["step"], e["status"]) for e in d2.processor.step_history] == [
+            ("apply_label", "success"),
+            ("Boom", "failed"),
+        ]
+        col = d2.dataset.adata.obs["lab"]
+        assert col.loc["c00"] == "A" and "B" not in col.tolist()  # step 3 not run
+
+    def test_replay_raised_error_is_chained(self, tmp_path):
+        d2 = self._boom_history(tmp_path, lambda: None)
+
+        def refuse(**_):
+            raise ValueError("refused")
+
+        # e.g. validate() or a running job refusing the step: raises, records nothing
+        d2.processor.steps["Boom"].run = refuse
+        with pytest.raises(RuntimeError, match=r"step 2/3 \(Boom\)") as e:
+            d2.processor.apply_step_history()
+        assert isinstance(e.value.__cause__, ValueError)
+        assert len(d2.processor.step_history) == 1
+
+    def test_replay_stops_if_params_differ_from_recorded(self, tmp_path):
+        d2 = self._boom_history(tmp_path, lambda: None)
+        d2.processor.steps["Boom"].run = lambda **_: (
+            d2.processor.append_to_step_history("Boom", {"n": 1})
+        )
+        d2.processor._loaded_step_history[1]["params"] = {"n": 2}
+        with pytest.raises(RuntimeError, match=r"step 2/3 \(Boom\).*\(n\)"):
+            d2.processor.apply_step_history()
+        assert "B" not in d2.dataset.adata.obs["lab"].tolist()
+
     def test_old_format_file_is_accepted(self, tmp_path):
         old = [
             {

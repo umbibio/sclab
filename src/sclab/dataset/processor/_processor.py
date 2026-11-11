@@ -1033,8 +1033,16 @@ class Processor(EventClient):
 
         Each step runs with its recorded params, including the ``backend`` it
         ran with (``"native"`` is not replaced by scanpy, nor the reverse).
-        A replayed step that fails or ends up with other params than recorded
-        is logged as a warning, and the replay goes on.
+
+        The replay stops at the first step that fails: ``RuntimeError`` naming
+        its number, name and error (the exception it raised, or the error it
+        recorded as ``failed``/``cancelled``), and no later step runs. A step
+        also fails if a param it recorded is replayed with another value (e.g.
+        an implicit input such as ``batch_key`` resolved differently here); params
+        the step no longer accepts, or new defaults it adds, are not a mismatch.
+        The steps before it stay applied and are in ``step_history`` (the
+        failed one too, as ``failed``): fix the cause and call this again to
+        continue from the failed step.
         """
         assert self._loaded_step_history is not None, "No step history loaded"
 
@@ -1074,20 +1082,41 @@ class Processor(EventClient):
                 + "\n".join(problems)
             )
 
-        for i, entry in enumerate(new_step_history[n:]):
+        for i, entry in enumerate(new_step_history[n:], n + 1):
             step_description = entry["step"]
-            logger.info(f"Applying step {n + i + 1: 2d}/{N}: {step_description}")
+            logger.info(f"Applying step {i: 2d}/{N}: {step_description}")
             step = self.steps[step_description]
-            step.run(**_accepted_params(step.function, entry["params"]))
+            n_recorded = len(self.step_history)
+            try:
+                step.run(**_accepted_params(step.function, entry["params"]))
+            except Exception as e:  # e.g. refused by validate() before running
+                cause, reason = e, f"{type(e).__name__}: {e}"
+            else:
+                cause, reason = None, self._replay_failure(entry, n_recorded)
+            if reason:
+                raise RuntimeError(
+                    f"Replay stopped at step {i}/{N} ({step_description}): {reason}. "
+                    f"Steps 1-{i - 1} stay applied (see step_history); later steps "
+                    "were not run."
+                ) from cause
 
-            applied = self.step_history[-1]
-            if applied["status"] != "success" or _history.entry_key(
-                applied
-            ) != _history.entry_key(entry):
-                logger.warning(
-                    f"Replayed step {n + i + 1} ({step_description}) differs from "
-                    f"the loaded history: {applied.get('error') or applied['params']}"
-                )
+    def _replay_failure(self, entry: dict, n_recorded: int) -> str | None:
+        """Why the step just replayed for ``entry`` counts as failed, if it does.
+
+        Steps catch their own errors and record them as ``failed`` entries. The
+        recorded params must come back unchanged, ignoring only keys the step
+        dropped or added (see :func:`_accepted_params`, ``resolved_params``).
+        """
+        if len(self.step_history) == n_recorded:
+            return "the step recorded nothing"
+        applied = self.step_history[-1]
+        if applied["status"] != "success":
+            return applied.get("error") or applied["status"]
+        got = _history.entry_key(applied)["params"]
+        want = _history.entry_key(entry)["params"]
+        if differ := sorted(k for k in got.keys() & want.keys() if got[k] != want[k]):
+            return f"replayed with other params than recorded ({', '.join(differ)})"
+        return None
 
     def print_step_history(self, with_hash: bool = False):
         for i, step in enumerate(self.step_history):

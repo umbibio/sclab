@@ -25,6 +25,8 @@ dashboard.processor.apply_step_history()
 
 Before applying anything, `apply_step_history()` checks that every remaining step can run here. If some cannot (a step the dashboard does not have, a missing package such as scanpy for a step recorded with scanpy), it raises a single `ValueError` listing all of them and applies nothing.
 
+If a step then fails while replaying (or runs with other parameter values than recorded), the replay stops there with a `RuntimeError` naming the step number, the step and the error. Later steps are not run, because they would work on incomplete data. The steps before it stay applied, and the failed one is in the History tab marked as failed. Fix the cause (for example a missing column) and call `apply_step_history()` again: it continues from the failed step.
+
 ### Which backend runs
 
 Steps with a choice of implementation (QC, Preprocess, PCA, Neighbors, Cluster, UMAP, Differential Expression with scanpy methods) record whether scanpy or sclab's native port ran. A replay uses the recorded one, so a history recorded with the native port replays natively even where scanpy is installed. A history recorded with scanpy is not replayed with the native port when scanpy is missing, because results may differ: run the step again interactively to use the native port.

@@ -333,7 +333,8 @@ def test_legacy_entries_and_mask_without_uns(dash, tmp_path):
     dash.processor.save_step_history(path)
     d2 = SCLabDashboard(original())  # its uns lacks the mask
     d2.processor.load_step_history(path)
-    d2.processor.apply_step_history()
+    with pytest.raises(RuntimeError, match=r"'sel1' not in adata.uns"):
+        d2.processor.apply_step_history()
     entry = d2.processor.step_history[-1]
     assert entry["status"] == "failed" and "'sel1' not in adata.uns" in entry["error"]
 
