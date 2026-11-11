@@ -122,6 +122,25 @@ def test_cca_solvers_agree_with_full_on_leading_components(data, solver):
     np.testing.assert_allclose(s, s_full, rtol=1e-3)
 
 
+@pytest.mark.parametrize("sparse", [False, True])
+def test_cca_solvers_agree_in_sign_and_values(data, sparse):
+    X, Y = data
+    if sparse:
+        X, Y = sp.csr_matrix(X), sp.csr_matrix(Y)
+    kw = dict(n_components=3, random_state=0, n_jobs=1)
+    U0, s0, V0 = cca(X, Y, svd_solver="full", **kw)
+
+    # svd_flip convention: largest-magnitude entry of each U column is positive
+    top = np.abs(U0).argmax(axis=0)
+    assert np.all(U0[top, np.arange(3)] > 0)
+
+    for solver in ["partial", "randomized"]:
+        U, s, V = cca(X, Y, svd_solver=solver, **kw)
+        np.testing.assert_allclose(s, s0, rtol=1e-3)
+        np.testing.assert_allclose(U, U0, atol=1e-3)
+        np.testing.assert_allclose(V, V0, atol=1e-3)
+
+
 def test_cca_randomized_is_reproducible_with_seed(data):
     X, Y = data
     a = cca(X, Y, n_components=3, svd_solver="randomized", random_state=7)
@@ -207,11 +226,11 @@ def test_cross_covariance_operator_matches_explicit_matrix(sparse, shape):
 def test_cca_implicit_matches_old_dense_computation(sparse, solver, shape, normalize):
     """Parity with the pre-operator code, which SVD'd the explicit n1 x n2 matrix.
 
-    Measured max abs difference ~1e-13 in float64 (~3e-5 in float32); the
-    'partial' (ARPACK) solver may flip some column signs, 'randomized' does not.
+    Measured max abs difference ~1e-13 in float64 (~3e-5 in float32); signs
+    match too, as every solver applies ``svd_flip`` (the reference does the same).
     """
     from scipy.sparse.linalg import svds
-    from sklearn.utils.extmath import randomized_svd
+    from sklearn.utils.extmath import randomized_svd, svd_flip
 
     rng = np.random.default_rng(6)
     X = rng.poisson(0.5, size=(shape[0], 40)).astype(float)
@@ -227,6 +246,7 @@ def test_cca_implicit_matches_old_dense_computation(sparse, solver, shape, norma
         U0, s0, Vt0 = randomized_svd(C, n_components=k, random_state=0)
     else:
         U0, s0, Vt0 = svds(C, k=k, random_state=0)
+        U0, Vt0 = svd_flip(U0, Vt0)
     order = np.argsort(-s0)
     U0, s0, V0 = U0[:, order], s0[order], Vt0[order].T
     if normalize:
@@ -238,8 +258,7 @@ def test_cca_implicit_matches_old_dense_computation(sparse, solver, shape, norma
     )
 
     sign = np.sign((U0 * U).sum(axis=0))
-    if solver == "randomized":
-        np.testing.assert_array_equal(sign, 1.0)
+    np.testing.assert_array_equal(sign, 1.0)
     np.testing.assert_allclose(s, s0, rtol=1e-10)
     np.testing.assert_allclose(U * sign, U0, atol=1e-10)
     np.testing.assert_allclose(V * sign, V0, atol=1e-10)
