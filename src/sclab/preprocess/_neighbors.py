@@ -1,3 +1,6 @@
+from importlib.metadata import PackageNotFoundError, version
+
+import numpy as np
 from anndata import AnnData
 
 from .._citations import record_citations
@@ -78,14 +81,36 @@ def neighbors(
             neighbors_within_batch=n_neighbors,
         )
     else:
-        sc.pp.neighbors(
-            adata,
-            n_neighbors=n_neighbors,
-            use_rep=use_rep,
-            n_pcs=n_dims,
-            metric=metric,
-            random_state=random_state,
-        )
+        rep = adata.obsm[use_rep]
+        upcast = getattr(rep, "dtype", None) == np.float32 and _umap_rejects_float32()
+        if upcast:  # the same values; restored below
+            adata.obsm[use_rep] = rep.astype(np.float64)
+        try:
+            sc.pp.neighbors(
+                adata,
+                n_neighbors=n_neighbors,
+                use_rep=use_rep,
+                n_pcs=n_dims,
+                metric=metric,
+                random_state=random_state,
+            )
+        finally:
+            if upcast:
+                adata.obsm[use_rep] = rep
 
     keys = ("bbknn",) if batch_key else ("umap", "scikit-learn")
     record_citations(adata, "scanpy", *keys)
+
+
+def _umap_rejects_float32() -> bool:
+    """True with umap-learn >= 0.6, whose ``fuzzy_simplicial_set`` requires
+    C-contiguous kNN distances: scanpy (1.12.5, ``neighbors/_common.py``) slices
+    them from the exact kNN matrix, a non-contiguous view that umap only copies
+    when it is not already float32 (e.g. ``metric="cosine"`` on a float32
+    representation). A float64 representation (the same values) avoids it;
+    umap-learn < 0.6 is left alone so its results do not change."""
+    try:
+        major, minor = (int(v) for v in version("umap-learn").split(".")[:2])
+    except (PackageNotFoundError, ValueError):
+        return False
+    return (major, minor) >= (0, 6)
