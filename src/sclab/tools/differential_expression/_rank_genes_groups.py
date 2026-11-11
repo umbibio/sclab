@@ -42,7 +42,7 @@ from anndata import AnnData
 from scipy import sparse, stats
 
 METHODS = ("logreg", "t-test", "wilcoxon", "t-test_overestim_var")
-_NNZ_BLOCK = 2_000_000  # stored values ranked at a time: bounds the sort buffers
+_NNZ_BLOCK = 1_000_000  # stored values ranked at a time: bounds the sort buffers
 
 
 def citation_keys(method: str, corr_method: str = "benjamini-hochberg") -> tuple:
@@ -210,11 +210,9 @@ def _tests(X, masks, iref, method, tie_correct, labels, groups_order, kwds):
         if not t_test:  # all cells ranked together, once
             rank_sums, tc_all = _rank_sums(X, codes, k + 1, tie_correct)
     else:
-        in_groups = masks.any(axis=0)
-        codes = masks.argmax(axis=0)[in_groups]
-        x = X if in_groups.all() else X[in_groups]
+        codes = np.where(masks.any(axis=0), masks.argmax(axis=0), -1)
         counts = masks.sum(axis=1)
-        mean, var = _group_mean_var(x, codes, k, t_test)
+        mean, var = _group_mean_var(X, codes, k, t_test)
 
     for gi in range(k):
         if gi == iref:
@@ -260,17 +258,19 @@ def _tests(X, masks, iref, method, tie_correct, labels, groups_order, kwds):
 
 
 def _group_mean_var(X, codes, n_codes: int, need_var: bool):
-    """Per group (row code) and gene: mean and variance (ddof=1; None if not
-    ``need_var``) in float64, as ``scanpy.get.aggregate(func=["mean", "var"])``.
+    """Per group (row code; rows coded -1 are skipped) and gene: mean and
+    variance (ddof=1; None if not ``need_var``) in float64, as
+    ``scanpy.get.aggregate(func=["mean", "var"])``.
 
-    The means alone are sums over counts; with the variances, both come from
-    Welford's online algorithm over the rows in order, for sparse X over the
-    stored values only, then merged with the gene's zeros (scanpy's
-    ``mean_var_csr`` / ``mean_var_dense`` kernels, vectorized over genes).
+    The means alone are sums over counts, accumulated row after row as
+    scanpy's ``agg_sum_csr``; with the variances, both come from Welford's
+    online algorithm over the rows in order, for sparse X over the stored
+    values only, then merged with the gene's zeros (scanpy's ``mean_var_csr``
+    / ``mean_var_dense`` kernels, vectorized over genes).
     """
     n_cells, m = X.shape
     codes = np.asarray(codes, dtype=np.intp)
-    counts = np.bincount(codes, minlength=n_codes)
+    counts = np.bincount(codes[codes >= 0], minlength=n_codes)
     if issparse := sparse.issparse(X):
         X = sparse.csr_matrix(X)
         if (X.data == 0).any():  # scanpy eliminates explicit zeros first
@@ -278,9 +278,15 @@ def _group_mean_var(X, codes, n_codes: int, need_var: bool):
             X.eliminate_zeros()
     if not need_var:
         if issparse:
-            row_codes = np.repeat(codes, np.diff(X.indptr))
-            flat = row_codes * m + X.indices
-            sums = np.bincount(flat, weights=X.data, minlength=n_codes * m)
+            sums = np.zeros(n_codes * m)
+            for top, bottom in _blocks(X.indptr):  # rows; add.at adds in order
+                start, end = X.indptr[top], X.indptr[bottom]
+                row_codes = np.repeat(
+                    codes[top:bottom], np.diff(X.indptr[top : bottom + 1])
+                )
+                keep = row_codes >= 0
+                flat = row_codes[keep] * m + X.indices[start:end][keep]
+                np.add.at(sums, flat, X.data[start:end][keep].astype(np.float64))
             sums = sums.reshape(n_codes, m)
         else:
             sums = np.stack(
@@ -296,7 +302,7 @@ def _group_mean_var(X, codes, n_codes: int, need_var: bool):
         indptr, indices, data = X.indptr, X.indices, X.data
         for r in range(n_cells):
             c, start, end = codes[r], indptr[r], indptr[r + 1]
-            if start == end:
+            if start == end or c < 0:
                 continue
             cols, value = indices[start:end], data[start:end].astype(np.float64)
             n = nnz[c, cols] + 1
@@ -318,6 +324,8 @@ def _group_mean_var(X, codes, n_codes: int, need_var: bool):
         seen = np.zeros(n_codes, dtype=np.int64)
         for r in range(n_cells):
             c = codes[r]
+            if c < 0:
+                continue
             value = np.asarray(X[r], dtype=np.float64).ravel()
             seen[c] += 1
             delta = value - mean[c]
@@ -383,11 +391,7 @@ def _rank_sums(X, codes, n_codes: int, tie_correct: bool):
     rank_sums, tc = np.zeros((n_codes, m)), np.ones(m)
     if sparse.issparse(X):
         X = sparse.csc_matrix(X)
-        bounds, left = [], 0
-        while left < m:  # blocks of genes with about _NNZ_BLOCK stored values
-            right = np.searchsorted(X.indptr, X.indptr[left] + _NNZ_BLOCK, "right") - 1
-            bounds.append((left, right := min(max(right, left + 1), m)))
-            left = right
+        bounds = _blocks(X.indptr)
     else:
         step = max(_NNZ_BLOCK // max(n, 1), 1)
         bounds = [(i, min(i + step, m)) for i in range(0, m, step)]
@@ -425,6 +429,17 @@ def _rank_sums(X, codes, n_codes: int, tie_correct: bool):
             z = zeros.astype(np.float64)
             tc[left:right] = 1.0 - (t + z**3 - z) / (float(n) ** 3 - n)
     return rank_sums, tc
+
+
+def _blocks(indptr: np.ndarray) -> list[tuple[int, int]]:
+    """Consecutive (first, end) rows (CSR) or columns (CSC) holding about
+    _NNZ_BLOCK stored values each (at least one row or column)."""
+    bounds, left, n = [], 0, len(indptr) - 1
+    while left < n:
+        right = np.searchsorted(indptr, indptr[left] + _NNZ_BLOCK, "right") - 1
+        bounds.append((left, right := min(max(right, left + 1), n)))
+        left = right
+    return bounds
 
 
 def _select_top_n(scores: np.ndarray, n_top: int) -> np.ndarray:
