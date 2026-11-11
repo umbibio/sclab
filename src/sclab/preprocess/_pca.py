@@ -51,8 +51,9 @@ def pca(
         recomputed on the reference cells with
         :func:`sclab.preprocess.highly_variable_genes` (its defaults: the
         union of the ``seurat`` flavor, on ``log1p`` of the counts, taken from
-        the layer ``"{counts_layer}_log1p"`` if present, else computed on the
-        fly, and the ``seurat_v3_paper`` flavor, on the counts). Raises
+        the layer ``"{counts_layer}_log1p"`` if present (older sclab stored
+        it), else computed on the fly for the reference cells only and not
+        kept, and the ``seurat_v3_paper`` flavor, on the counts). Raises
         ``ValueError`` if the layer is missing. ``layer`` remains the input to
         PCA. Default is ``"counts"``.
     random_state : int, optional

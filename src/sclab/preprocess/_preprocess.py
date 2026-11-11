@@ -6,6 +6,7 @@ from anndata import AnnData
 from tqdm.auto import tqdm
 
 from .._citations import record_citations
+from ..utils import set_x_name
 from ._hvg import highly_variable_genes, hvg_citations
 from ._scanpy_port import get_pp
 
@@ -32,9 +33,10 @@ def preprocess(
 
     Applies a configurable preprocessing pipeline: optional filtering,
     highly-variable gene selection, normalization, log1p transformation,
-    optional covariate regression, and per-group scaling. The resulting
-    processed matrix is stored in a new named layer whose suffix encodes
-    the applied steps (e.g. ``counts_normt_log1p_scale``).
+    optional covariate regression, and per-group scaling. The result
+    replaces ``adata.X`` (float32), and its name, the counts layer plus a
+    suffix per applied step (e.g. ``counts_normt_log1p_scale``), is recorded
+    in ``adata.uns["sclab"]["X"]``. No copy of it is kept in a layer.
 
     Parameters
     ----------
@@ -91,7 +93,9 @@ def preprocess(
         Default is True.
     scale : bool, optional
         If True, scale each gene to unit variance (zero-center disabled).
-        Applied per group when ``group_by`` is set. Default is True.
+        Applied per group when ``group_by`` is set. The data before scaling
+        is kept in the layer named like it (e.g. ``counts_normt_log1p``,
+        float32). Default is True.
     backend : {"auto", "native", "scanpy"}, optional
         ``"scanpy"`` runs the scanpy functions (``calculate_qc_metrics``,
         ``filter_cells``, ``filter_genes``, ``highly_variable_genes``,
@@ -102,8 +106,8 @@ def preprocess(
     Returns
     -------
     None
-        Modifies ``adata`` in-place. Stores the processed matrix in a new
-        layer and updates ``adata.X``.
+        Modifies ``adata`` in-place: replaces ``adata.X`` with the processed
+        matrix and records its name in ``adata.uns["sclab"]["X"]``.
 
     References
     ----------
@@ -138,14 +142,10 @@ def preprocess(
     with tqdm(total=100, bar_format="{percentage:3.0f}%|{bar}|") as pbar:
         if counts_layer not in adata.layers:
             adata.layers[counts_layer] = adata.X.copy()
-
-        if f"{counts_layer}_log1p" not in adata.layers:
-            adata.layers[f"{counts_layer}_log1p"] = pp.log1p(
-                adata.layers[counts_layer].copy()
-            )
         pbar.update(10)
 
         adata.X = adata.layers[counts_layer].copy()
+        set_x_name(adata, None)  # until it is done
         pp.calculate_qc_metrics(
             adata,
             percent_top=None,
@@ -172,19 +172,31 @@ def preprocess(
                 n_top_genes=n_top_genes,
                 backend=backend,
             )
-            if group_by is not None:
-                adata.var["highly_variable"] = False
-                merged = None
-                for name, idx in adata.obs.groupby(
-                    group_by, observed=True
-                ).groups.items():
-                    df = highly_variable_genes(adata[idx], inplace=False, **hvg_kwargs)
-                    adata.var[f"highly_variable_{name}"] = df["highly_variable"]
-                    merged = df if merged is None else merged | df
-                for column in merged:  # per method, and combined: union of groups
-                    adata.var[column] = merged[column]
-            else:
-                highly_variable_genes(adata, **hvg_kwargs)
+            # log1p of the counts for the dispersion flavors, computed once for
+            # all groups and not kept (older sclab stored it: then it is used)
+            log1p_layer = f"{counts_layer}_log1p"
+            temporary = log1p_layer not in adata.layers
+            if temporary:
+                adata.layers[log1p_layer] = pp.log1p(adata.layers[counts_layer].copy())
+            try:
+                if group_by is not None:
+                    adata.var["highly_variable"] = False
+                    merged = None
+                    for name, idx in adata.obs.groupby(
+                        group_by, observed=True
+                    ).groups.items():
+                        df = highly_variable_genes(
+                            adata[idx], inplace=False, **hvg_kwargs
+                        )
+                        adata.var[f"highly_variable_{name}"] = df["highly_variable"]
+                        merged = df if merged is None else merged | df
+                    for column in merged:  # per method, and combined: union of groups
+                        adata.var[column] = merged[column]
+                else:
+                    highly_variable_genes(adata, **hvg_kwargs)
+            finally:
+                if temporary:
+                    del adata.layers[log1p_layer]
 
         pbar.update(10)
         pbar.update(10)
@@ -226,6 +238,8 @@ def preprocess(
         pbar.update(10)
 
         if scale:
+            # the one intermediate kept: the data before scaling (float32 like X)
+            adata.layers[new_layer] = adata.X.astype(np.float32)
             new_layer += "_scale"
             if group_by is not None:
                 group_col = adata.obs[group_by].astype("str").fillna("_unassigned")
@@ -241,11 +255,10 @@ def preprocess(
             else:
                 pp.scale(adata, zero_center=False)
 
-        adata.layers[new_layer] = adata.X.copy()
-
         pbar.update(10)
 
         adata.X = adata.X.astype(np.float32)
+        set_x_name(adata, new_layer)
 
     hvg_keys = hvg_citations(hvg_methods) if compute_hvg else ()
     record_citations(adata, "scanpy", *hvg_keys)

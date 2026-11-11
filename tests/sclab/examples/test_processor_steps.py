@@ -17,7 +17,7 @@ from sclab import SCLabDashboard
 from sclab.preprocess import pca as library_pca
 from sclab.preprocess import preprocess as library_preprocess
 from sclab.preprocess import qc as library_qc
-from sclab.utils import layer_keys
+from sclab.utils import layer_keys, x_name
 from sclab.examples.processor_steps._differential_expression import _sheet_name
 from sclab.tools.differential_expression import edgepython_is_available
 
@@ -92,10 +92,39 @@ def test_layer_dropdown_options_never_include_none(dash):
             if getattr(control, "description", "").strip(" :.").lower() != "layer":
                 continue
             seen += 1
-            values = list(control.options)
+            options = control.options
+            values = list(options.values() if isinstance(options, dict) else options)
             assert None not in values
-            assert set(values) <= set(layer_keys(dash.dataset.adata))
+            assert set(values) <= {"X", *layer_keys(dash.dataset.adata)}
     assert seen
+
+
+def test_x_is_labelled_with_what_it_holds():
+    d = SCLabDashboard(make_adata(300, 300))
+    gene_layer = d.processor.steps["Gene Expression"].variable_controls["layer"]
+    de = d.processor.steps["Differential Expression"].variable_controls
+    assert gene_layer.options == {"X": "X", "counts": "counts"}  # raw data: unknown
+
+    strict_run_step(d, "QC")
+    strict_run_step(d, "Preprocess")
+    assert x_name(d.dataset.adata) == "counts_normt_log1p_scale"
+    for control in (gene_layer, de["layer"]):
+        assert control.options == {
+            "X (counts_normt_log1p_scale)": "X",
+            "counts": "counts",
+            "counts_normt_log1p": "counts_normt_log1p",
+        }
+    assert de["override_layer"].description == (
+        "Override layer (X (counts_normt_log1p_scale))"
+    )
+    gene_layer.value = "X"
+    assert gene_layer.label == "X (counts_normt_log1p_scale)"
+
+    strict_run_step(d, "Preprocess", scale=False)  # X replaced: the label follows
+    assert gene_layer.value == "X" and gene_layer.label == "X (counts_normt_log1p)"
+    assert de["override_layer"].description == "Override layer (X (counts_normt_log1p))"
+    qc = d.processor.steps["QC"].variable_controls["layer"]
+    assert "X" not in list(qc.options)  # counts pickers do not offer X
 
 
 # --------------------------------------------------------------------------
@@ -269,13 +298,16 @@ class TestPCA:
         for name in ["QC", "Preprocess"]:
             strict_run_step(d, name)
         adata = d.dataset.adata
-        del adata.layers["counts_log1p"]
+        assert "counts_log1p" not in adata.layers  # Preprocess does not store it
+        old_style = adata.copy()  # older sclab stored it: same result
+        old_style.layers["counts_log1p"] = np.log1p(old_style.layers["counts"])
 
-        strict_run_step(
-            d, "PCA", n_comps=5, mask_var="highly_variable", reference_batch="b1"
-        )
+        kwargs = dict(n_comps=5, mask_var="highly_variable", reference_batch="b1")
+        strict_run_step(d, "PCA", **kwargs)
         assert adata.uns["pca"]["reference_batch"] == "b1"
         assert "counts_log1p" not in adata.layers
+        library_pca(old_style, batch_key="batch", **kwargs)
+        np.testing.assert_array_equal(adata.obsm["X_pca"], old_style.obsm["X_pca"])
 
     @pytest.mark.parametrize("reference_batch", [None, "b1"])
     @pytest.mark.parametrize("mask_var", [None, "highly_variable"])
@@ -738,7 +770,7 @@ class TestDoubletDetection:
             "Doublet Detection",
             flavor="scrublet",
             override_layer=True,
-            layer="counts_log1p",
+            layer="counts_normt_log1p",
         )
         assert not ok
         assert "does not look like raw counts" in dash.broker.exceptions_log[-1]
@@ -1157,7 +1189,7 @@ class TestDifferentialExpressionStep:
             groups=("B", "C"),
             reference="A",
             override_layer=True,
-            layer="counts_log1p",
+            layer="counts_normt_log1p",
             name="ref",
         )
         _, ok = run_step(dash, DE, **params)
@@ -1165,7 +1197,7 @@ class TestDifferentialExpressionStep:
         res = dash.dataset.adata.uns["differential_expression_ref"]
         assert list(res["table"]["contrast"].unique()) == ["B_vs_A", "C_vs_A"]
         assert res["params"]["reference_group"] == "A"
-        assert res["params"]["layer"] == "counts_log1p"
+        assert res["params"]["layer"] == "counts_normt_log1p"
 
     def test_method_switch_sets_the_layer(self, dash):
         step = dash.processor.steps[DE]
@@ -1177,8 +1209,8 @@ class TestDifferentialExpressionStep:
         assert "(counts)" in c["override_layer"].description
         c["method"].value = "t-test"
         assert step.resolved_params(step._control_params())["layer"] == "X"
-        assert c["layer"].value is None
-        assert "(X)" in c["override_layer"].description
+        assert c["layer"].value == "X"
+        assert "(X (counts_normt_log1p_scale))" in c["override_layer"].description
         c["method"].value = "wilcoxon"
 
     def test_override_checkbox_reveals_the_layer(self, dash):
@@ -1187,10 +1219,13 @@ class TestDifferentialExpressionStep:
         assert c["layer"].layout.display == "none"
         c["override_layer"].value = True
         assert c["layer"].layout.display is None
-        c["layer"].value = "counts_log1p"
-        assert step.resolved_params(step._control_params())["layer"] == "counts_log1p"
+        c["layer"].value = "counts_normt_log1p"
+        assert (
+            step.resolved_params(step._control_params())["layer"]
+            == "counts_normt_log1p"
+        )
         c["method"].value = "pseudobulk_edger"  # the override is kept
-        assert c["layer"].value == "counts_log1p"
+        assert c["layer"].value == "counts_normt_log1p"
         c["override_layer"].value = False
         assert c["layer"].layout.display == "none"
         assert c["layer"].value == "counts"
@@ -1220,7 +1255,7 @@ class TestDifferentialExpressionStep:
         assert 'key_added="differential_expression_ref"' in code
         assert 'condition_group=["B", "C"]' in code
         assert 'reference_group="A"' in code
-        assert 'layer="counts_log1p"' in code
+        assert 'layer="counts_normt_log1p"' in code
 
     def test_metadata_change_refreshes_identity_and_sample_keys(self, dash):
         c = dash.processor.steps[DE].variable_controls

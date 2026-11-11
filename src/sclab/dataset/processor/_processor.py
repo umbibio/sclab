@@ -40,6 +40,7 @@ from ...event import EventBroker, EventClient
 from ...utils import (
     CodeActions,
     layer_keys,
+    layer_options,
     set_options_keep_value,
     text_or_category_columns,
 )
@@ -1390,7 +1391,8 @@ class Processor(EventClient):
                     control.value = current_value
 
     def dset_anndata_layers_change_callback(self, *args, **kwargs):
-        layer_options = {key: key for key in layer_keys(self.dataset.adata)}
+        layers = {key: key for key in layer_keys(self.dataset.adata)}
+        with_x = layer_options(self.dataset.adata)  # X labelled with what it holds
         obsm_options = {key: key for key in self.dataset.adata.obsm.keys()}
 
         for control in self.all_controls_list:
@@ -1400,15 +1402,16 @@ class Processor(EventClient):
 
             if description.lower().strip(" :.") == "layer":
                 current_value = control.value
-                control.options = layer_options
-                if current_value not in control.options:
-                    control.value = None
-                else:
-                    control.value = current_value
+                options = control.options
+                has_x = isinstance(options, dict) and "X" in options.values()
+                control.options = with_x if has_x else layers
+                options = control.options  # an observer may have filtered them
+                values = options.values() if isinstance(options, dict) else options
+                control.value = current_value if current_value in values else None
 
             if description.lower().strip(" :.") == "use rep":
                 current_value = control.value
-                control.options = {**layer_options, **obsm_options}
+                control.options = {**layers, **obsm_options}
                 if current_value not in control.options:
                     control.value = None
                 else:

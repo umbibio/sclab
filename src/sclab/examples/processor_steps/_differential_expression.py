@@ -37,10 +37,12 @@ from sclab.tools.differential_expression._differential_expression import (
 from sclab.utils import (
     LazyOutput,
     layer_keys,
+    layer_options,
     looks_like_raw_counts,
     set_options_keep_value,
     text_or_category_columns,
     write_excel,
+    x_label,
 )
 from sclab.utils._widgets import Download
 
@@ -311,7 +313,7 @@ class DifferentialExpression(ProcessorStepBase):
             ),
             override_layer=Checkbox(value=False, description="Override layer"),
             layer=Dropdown(
-                options=tuple(layer_keys(parent.dataset.adata)),
+                options=layer_options(parent.dataset.adata),
                 value=None,
                 description="Layer",
             ),
@@ -348,6 +350,9 @@ class DifferentialExpression(ProcessorStepBase):
     def dset_counts_layer_change_callback(self, old: str, new: str):
         self._update_method()  # the auto layer, unless overridden
 
+    def dset_anndata_layers_change_callback(self, *args, **kwargs):
+        self._update_method()  # X's name in the caption may have changed
+
     def _auto_layer(self, method: str | None) -> str:
         """The layer ``method`` uses unless overridden."""
         return self.parent.dataset.counts_layer if method in PSEUDOBULK_METHODS else "X"
@@ -363,9 +368,10 @@ class DifferentialExpression(ProcessorStepBase):
         method, override = c["method"].value, c["override_layer"].value
         pseudobulk = method in PSEUDOBULK_METHODS
         auto = self._auto_layer(method)
-        c["override_layer"].description = f"Override layer ({auto})"
+        label = x_label(self.parent.dataset.adata) if auto == "X" else auto
+        c["override_layer"].description = f"Override layer ({label})"
         if not override:
-            c["layer"].value = auto if auto in c["layer"].options else None
+            c["layer"].value = auto if auto in c["layer"].options.values() else None
         shown = {
             "sample_key": pseudobulk,
             "replicas_per_group": pseudobulk and c["sample_key"].value is None,

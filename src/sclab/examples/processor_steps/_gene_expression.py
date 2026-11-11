@@ -6,7 +6,7 @@ from ipywidgets import Combobox, Dropdown
 
 from sclab.dataset.processor import Processor
 from sclab.dataset.processor.step import ProcessorStepBase
-from sclab.utils import layer_keys
+from sclab.utils import layer_options
 
 colorscales = list(
     filter(lambda s: "swatch" not in s and not s.startswith("_"), dir(pc.sequential))
@@ -56,7 +56,7 @@ class GeneExpression(ProcessorStepBase):
                 ensure_option=True,
             ),
             layer=Dropdown(
-                options=tuple(layer_keys(parent.dataset.adata)),
+                options=layer_options(parent.dataset.adata),
                 value=None,
                 description="Layer",
             ),
@@ -153,6 +153,6 @@ class GeneExpression(ProcessorStepBase):
             color=gene_id,
             color_continuous_scale=colorscale,
             hover_name=metadata.index,
-            title=f"Gene: {gene_id}, Layer: {layer}",
+            title=f"Gene: {gene_id}, Layer: {self.variable_controls['layer'].label}",
         )
         self.broker.publish("dplt_plot_figure_request", figure=fig)

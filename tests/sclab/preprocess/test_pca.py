@@ -200,7 +200,9 @@ def test_reference_batch_highly_variable_uses_existing_log1p_layer(
     counts_adata.layers["counts_log1p"] = np.log1p(counts_adata.layers["counts"])
     pca(counts_adata, **kwargs)
 
-    np.testing.assert_allclose(counts_adata.varm["PCs"], fresh.varm["PCs"])
+    # older sclab stored the layer; without it, it is computed: same results
+    np.testing.assert_array_equal(counts_adata.varm["PCs"], fresh.varm["PCs"])
+    np.testing.assert_array_equal(counts_adata.obsm["X_pca"], fresh.obsm["X_pca"])
 
 
 def test_reference_batch_highly_variable_custom_counts_layer(counts_adata: AnnData):
