@@ -4,8 +4,9 @@ Checks that sclab installs and works in [Pyodide](https://pyodide.org)
 (JupyterLite, browser apps) without scanpy: it builds the sclab wheel, installs
 it with micropip in Pyodide under node, builds `SCLabDashboard` on a small
 synthetic AnnData and runs QC, Preprocess (two HVG methods, union), PCA,
-Neighbors, Cluster and UMAP (sclab's native ports of the scanpy and umap-learn
-functions; it also times neighbors and Leiden on 10,000 cells), CCA and Harmony
+Neighbors (also with Group By Batch: sclab's port of bbknn), Cluster and UMAP
+(sclab's native ports of the scanpy, bbknn and umap-learn functions; it also
+times neighbors, Leiden and the bbknn port on 10,000 cells), CCA and Harmony
 integration, Gene Expression, cell-level differential expression (wilcoxon,
 t-test, logreg: sclab's port of `scanpy.tl.rank_genes_groups`), pseudobulk
 limma differential expression (function and dashboard step), pseudobulk edgeR

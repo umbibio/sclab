@@ -1,9 +1,9 @@
 """Run by smoke.mjs inside Pyodide, after sclab and its dependencies are installed.
 
 Builds the dashboard without scanpy and runs the steps that work natively
-(QC through Neighbors, Cluster and UMAP), pseudobulk limma and edgeR
-(edgepython without numba), and scrublet (installed without its annoy,
-umap-learn and numba dependencies).
+(QC through Neighbors, also with Group By Batch, Cluster and UMAP), pseudobulk
+limma and edgeR (edgepython without numba), and scrublet (installed without
+its annoy, umap-learn and numba dependencies).
 Any failed assertion fails the smoke test.
 """
 
@@ -77,19 +77,27 @@ ok("Preprocess seurat | seurat_v3", elapsed)
 elapsed = run("PCA", n_comps=10, mask_var="highly_variable")
 assert d.dataset.adata.obsm["X_pca"].shape == (d.dataset.adata.n_obs, 10)
 ok("PCA", elapsed)
+assert find_spec("bbknn") is None
+neighbors_kw = dict(use_rep="X_pca", dims=(1, 10), n_neighbors=5, group_by_batch=True)
+assert "sclab (port of bbknn" in steps["Neighbors"].tool(neighbors_kw)
+elapsed = run("Neighbors", **neighbors_kw)
+params = d.dataset.adata.uns["neighbors"]["params"]
+assert params["n_neighbors"] == 10 and params["bbknn"]["batch_key"] == "batch"
+assert d.dataset.adata.obsp["connectivities"].nnz > 0
+ok("Neighbors Group By Batch (sclab's port of bbknn)", elapsed)
 neighbors_kw = dict(use_rep="X_pca", dims=(1, 10), n_neighbors=15, group_by_batch=False)
-elapsed = run("Neighbors", **neighbors_kw)  # Group By Batch needs bbknn
+elapsed = run("Neighbors", **neighbors_kw)
 assert d.dataset.adata.obsp["connectivities"].nnz > 0
 ok("Neighbors", elapsed)
 elapsed = run("Cluster", resolution=1.0)
 assert d.dataset.adata.obs["leiden"].nunique() > 0
 ok("Cluster", elapsed)
 backends = [e["params"]["backend"] for e in d.processor.step_history]
-assert backends == ["native"] * 5, backends
-assert d.generate_code().count('backend="native"') == 5
+assert backends == ["native"] * 6, backends
+assert d.generate_code().count('backend="native"') == 6
 ok("history and code: backend native")
 
-# timings of the native neighbors and Leiden on 10k cells (30 dims)
+# timings of the native neighbors, Leiden and bbknn on 10k cells (30 dims)
 big = ad.AnnData(np.zeros((10_000, 1), np.float32))
 centers = rng.normal(0, 3, (15, 30))
 big.obsm["X_pca"] = (
@@ -105,13 +113,18 @@ ok(
     "10k cells: neighbors, leiden",
     f"({t1 - t0:.2f} s, {t2 - t1:.2f} s; {n_clusters} clusters)",
 )
+big.obs["batch"] = pd.Categorical(rng.choice(["b1", "b2", "b3"], big.n_obs))
+t0 = time.perf_counter()
+sclab.preprocess.neighbors(big, dims=(1, 30), n_neighbors=20, batch_key="batch")
+assert big.uns["neighbors"]["params"]["bbknn"]["computation"] == "brute"
+ok("10k cells, 3 batches: bbknn port", f"({time.perf_counter() - t0:.2f} s)")
 
 
 elapsed = run("UMAP", n_components=2)
 xy = d.dataset.adata.obsm["X_2Dumap"]
 assert xy.shape == (d.dataset.adata.n_obs, 2) and np.isfinite(xy).all()
 assert d.processor.step_history[-1]["params"]["backend"] == "native"
-assert d.generate_code().count('backend="native"') == 6
+assert d.generate_code().count('backend="native"') == 7
 ok("UMAP (sclab's port of umap-learn)", elapsed)
 
 
