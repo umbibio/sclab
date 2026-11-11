@@ -13,26 +13,25 @@ def get_neighbors_adjacency_matrix(
     weighted: bool = False,
     directed: bool = True,
 ) -> csr_matrix:
-    from scanpy import Neighbors
-
-    # get the current neighbors
-    neigh = Neighbors(adata, neighbors_key=key)
-    params = adata.uns[key]["params"]
+    # the stored graph, as scanpy's Neighbors(adata, neighbors_key=key) reads it
+    uns = adata.uns[key]
+    params = uns["params"]
+    distances = adata.obsp[uns.get("distances_key", "distances")]
+    connectivities = adata.obsp[uns.get("connectivities_key", "connectivities")]
+    current = params["n_neighbors"]
 
     if n_neighbors is None:
-        n_neighbors = neigh.n_neighbors
+        n_neighbors = current
 
-    if n_neighbors < neigh.n_neighbors and not weighted:
+    if n_neighbors < current and not weighted:
         distances = _filter_knn_matrix(
-            neigh.distances, n_neighbors=n_neighbors, mode="distances"
+            distances, n_neighbors=n_neighbors, mode="distances"
         )
 
-    elif n_neighbors != neigh.n_neighbors:
-        neigh.compute_neighbors(**{**params, "n_neighbors": n_neighbors})
-        distances = neigh.distances
-
-    else:
-        distances = neigh.distances
+    elif n_neighbors != current:
+        distances, connectivities = _recompute_neighbors(
+            adata, {**params, "n_neighbors": n_neighbors}, key
+        )
 
     adjacency = distances.copy()
     adjacency.data = np.ones_like(adjacency.data)
@@ -43,9 +42,27 @@ def get_neighbors_adjacency_matrix(
 
     if weighted:
         # use the connectivities to assign weights
-        adjacency = adjacency.multiply(neigh.connectivities)
+        adjacency = adjacency.multiply(connectivities)
 
     return adjacency
+
+
+def _recompute_neighbors(adata: AnnData, params: dict, key: str):
+    """``(distances, connectivities)`` of the graph ``params`` describe:
+    scanpy's ``Neighbors.compute_neighbors`` if scanpy is installed, else
+    sclab's port (method ``"umap"`` only)."""
+    from ._scanpy_port import _choose_rep, knn_graph, resolve_backend
+
+    if resolve_backend("auto") == "scanpy":
+        from scanpy import Neighbors
+
+        neigh = Neighbors(adata, neighbors_key=key)
+        neigh.compute_neighbors(**params)
+        return neigh.distances, neigh.connectivities
+    if params.get("method", "umap") != "umap":
+        raise NotImplementedError("without scanpy, only method='umap' is ported")
+    x = _choose_rep(adata, params["use_rep"], params.get("n_pcs"))
+    return knn_graph(x, params["n_neighbors"], params.get("metric", "euclidean"))
 
 
 def _filter_knn_matrix(

@@ -24,6 +24,12 @@ Advanced analysis functions available via `sclab.tools`.
 
 ---
 
+## Clustering
+
+::: sclab.tools.cluster.leiden
+
+---
+
 ## Doublet Detection
 
 ::: sclab.tools.doublet_detection.scrublet

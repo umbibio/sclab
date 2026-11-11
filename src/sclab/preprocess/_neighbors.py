@@ -5,6 +5,7 @@ from anndata import AnnData
 
 from .._citations import record_citations
 from .._compat import require
+from ._scanpy_port import get_pp, resolve_backend
 
 
 def neighbors(
@@ -16,6 +17,7 @@ def neighbors(
     metric: str = "euclidean",
     batch_key: str | None = None,
     random_state: int = 0,
+    backend: str = "auto",
 ):
     """Build the k-nearest-neighbor graph on a range of embedding dimensions.
 
@@ -37,9 +39,20 @@ def neighbors(
     batch_key : str or None, optional
         If given, build a batch-balanced graph with
         :func:`scanpy.external.pp.bbknn` (exact neighbor search, no seed
-        needed), else use :func:`scanpy.pp.neighbors`. Default is None.
+        needed; also needs scanpy), else use :func:`scanpy.pp.neighbors`.
+        Default is None.
     random_state : int, optional
-        Seed for :func:`scanpy.pp.neighbors`. Default is 0.
+        Seed for :func:`scanpy.pp.neighbors` (its approximate search, from
+        4096 cells). Default is 0.
+    backend : {"auto", "native", "scanpy"}, optional
+        Without ``batch_key``: ``"scanpy"`` runs :func:`scanpy.pp.neighbors`
+        (method ``"umap"``), ``"native"`` sclab's port of it (exact kNN with
+        scikit-learn, connectivities by a numpy port of umap-learn's
+        ``fuzzy_simplicial_set``), ``"auto"`` (default) scanpy if it is
+        installed. Below 4096 cells scanpy's kNN search is exact too: the
+        distances are the same and the connectivities equal within 1e-5
+        (float32 rounding); from 4096 cells scanpy searches approximately
+        (pynndescent) and the graphs differ slightly.
 
     References
     ----------
@@ -51,6 +64,11 @@ def neighbors(
     Projection for Dimension Reduction. *arXiv*, 1802.03426.
     https://doi.org/10.48550/arXiv.1802.03426
 
+    McInnes et al. (2018). UMAP: Uniform Manifold Approximation and
+    Projection. *Journal of Open Source Software*, 3, 861.
+    https://doi.org/10.21105/joss.00861 (umap-learn, ported for
+    ``backend="native"``)
+
     Pedregosa et al. (2011). Scikit-learn: Machine Learning in Python.
     *Journal of Machine Learning Research*, 12, 2825–2830.
     https://jmlr.org/papers/v12/pedregosa11a.html
@@ -59,8 +77,6 @@ def neighbors(
     transcriptomes. *Bioinformatics*, 36, 964–965.
     https://doi.org/10.1093/bioinformatics/btz625
     """
-    import scanpy as sc
-
     min_dim, max_dim = dims
     min_dim = min_dim - 1
 
@@ -71,6 +87,9 @@ def neighbors(
 
     if batch_key:
         require("bbknn")
+        require("scanpy")
+        import scanpy as sc
+
         sc.external.pp.bbknn(
             adata,
             batch_key=batch_key,
@@ -81,12 +100,17 @@ def neighbors(
             neighbors_within_batch=n_neighbors,
         )
     else:
+        backend = resolve_backend(backend)
         rep = adata.obsm[use_rep]
-        upcast = getattr(rep, "dtype", None) == np.float32 and _umap_rejects_float32()
+        upcast = (
+            backend == "scanpy"
+            and getattr(rep, "dtype", None) == np.float32
+            and _umap_rejects_float32()
+        )
         if upcast:  # the same values; restored below
             adata.obsm[use_rep] = rep.astype(np.float64)
         try:
-            sc.pp.neighbors(
+            get_pp(backend).neighbors(
                 adata,
                 n_neighbors=n_neighbors,
                 use_rep=use_rep,
@@ -98,7 +122,12 @@ def neighbors(
             if upcast:
                 adata.obsm[use_rep] = rep
 
-    keys = ("bbknn",) if batch_key else ("umap", "scikit-learn")
+    if batch_key:
+        keys = ("bbknn",)
+    elif backend == "native":
+        keys = ("umap", "umap-learn", "scikit-learn")
+    else:
+        keys = ("umap", "scikit-learn")
     record_citations(adata, "scanpy", *keys)
 
 

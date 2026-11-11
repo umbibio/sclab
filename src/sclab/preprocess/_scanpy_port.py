@@ -1,5 +1,5 @@
 """numpy/scipy/scikit-learn ports of the ``scanpy.pp`` functions that sclab's
-QC, Preprocess and PCA run, for environments without scanpy (e.g. Pyodide).
+QC, Preprocess, PCA and Neighbors run, for environments without scanpy (e.g. Pyodide).
 
 Ported from scanpy 1.12.5 (https://github.com/scverse/scanpy, BSD-3-Clause,
 Copyright (c) 2017 F. Alexander Wolf, P. Angerer, Theis Lab; see
@@ -13,6 +13,10 @@ THIRD_PARTY_NOTICES.md), files ``src/scanpy/preprocessing/``:
   cell_ranger, seurat_v3, seurat_v3_paper; with ``batch_key``)
 - ``_pca/__init__.py``: ``pca`` (scikit-learn PCA with the ARPACK solver)
 
+and ``src/scanpy/neighbors/`` (``__init__.py``, ``_common.py``): ``neighbors``
+with exact kNN (scikit-learn) and umap-learn's connectivities
+(:mod:`._fuzzy_simplicial_set`, ported from umap-learn 0.5.12).
+
 The numba kernels are replaced by vectorized numpy/scipy code. Only the options
 sclab uses are ported, with ``scanpy.pp``'s call signatures, so the library
 calls ``pp.<function>(...)`` with ``pp`` either ``scanpy.pp`` or this module
@@ -24,7 +28,8 @@ large-scale single-cell gene expression data analysis. Genome Biology, 19, 15.
 https://doi.org/10.1186/s13059-017-1382-0 -- and, for the methods,
 Satija et al. (2015) (seurat), Zheng et al. (2017) (cell_ranger), Stuart et al.
 (2019) (seurat_v3), Pedregosa et al. (2011) and Lehoucq et al. (1998) (PCA:
-scikit-learn, ARPACK); see :mod:`sclab._citations`.
+scikit-learn, ARPACK), McInnes et al. (2018) (neighbors: UMAP connectivities);
+see :mod:`sclab._citations`.
 """
 
 import sys
@@ -34,6 +39,7 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 from anndata import AnnData
+from scipy import sparse
 from scipy.sparse import issparse
 
 from .._compat import missing, require
@@ -692,3 +698,83 @@ def _check_mask(adata: AnnData, mask) -> np.ndarray:
     if mask.dtype != bool or mask.shape != (adata.n_vars,):
         raise ValueError("mask_var must be a boolean column or array, one per gene")
     return mask
+
+
+# --- neighbors: neighbors/__init__.py, neighbors/_common.py, _connectivity.py ---
+
+
+def neighbors(
+    adata: AnnData,
+    n_neighbors: int = 15,
+    n_pcs: int | None = None,
+    *,
+    use_rep: str,
+    metric: str = "euclidean",
+    random_state=0,
+) -> None:
+    """``scanpy.pp.neighbors`` on ``adata.obsm[use_rep]`` (its first ``n_pcs``
+    columns), with ``method="umap"`` and ``knn=True``.
+
+    The kNN search is exact (scikit-learn, brute force), as scanpy's for fewer
+    than 4096 cells; scanpy searches more cells approximately (pynndescent),
+    so the graphs differ there. The connectivities are umap-learn's fuzzy
+    simplicial set (:mod:`._fuzzy_simplicial_set`). ``random_state`` is only
+    recorded: the exact search needs no seed. Stores ``obsp["distances"]``,
+    ``obsp["connectivities"]`` and ``uns["neighbors"]`` as scanpy does.
+    """
+    x = _choose_rep(adata, use_rep, n_pcs)
+    if n_neighbors > adata.n_obs:  # very small datasets
+        n_neighbors = 1 + int(0.5 * adata.n_obs)
+    distances, connectivities = knn_graph(x, n_neighbors, metric)
+    adata.uns["neighbors"] = dict(
+        connectivities_key="connectivities",
+        distances_key="distances",
+        params=dict(
+            n_neighbors=n_neighbors,
+            method="umap",
+            random_state=random_state,
+            metric=metric,
+            use_rep=use_rep,
+            **({} if n_pcs is None else dict(n_pcs=n_pcs)),
+        ),
+    )
+    adata.obsp["distances"] = distances
+    adata.obsp["connectivities"] = connectivities
+
+
+def _choose_rep(adata: AnnData, use_rep: str, n_pcs: int | None):
+    """scanpy's ``_choose_representation`` for a ``use_rep`` in ``obsm``."""
+    if use_rep not in adata.obsm:
+        raise ValueError(f"Did not find {use_rep} in `.obsm.keys()`.")
+    x = adata.obsm[use_rep]
+    if n_pcs is None:
+        return x
+    if n_pcs > x.shape[1]:
+        raise ValueError(f"{use_rep} has fewer than n_pcs={n_pcs} dimensions")
+    return x[:, :n_pcs]
+
+
+def knn_graph(x, n_neighbors: int, metric: str = "euclidean"):
+    """The ``(distances, connectivities)`` CSR matrices of
+    :func:`neighbors`: exact kNN of each row of ``x`` (itself included, as the
+    first of ``n_neighbors``), then the fuzzy simplicial set."""
+    from sklearn.neighbors import NearestNeighbors
+
+    from ._fuzzy_simplicial_set import fuzzy_simplicial_set
+
+    n = x.shape[0]
+    # scanpy's KNeighborsTransformer(algorithm="brute").fit_transform(x): each
+    # cell is its own extra neighbor
+    k = min(n - 1, n_neighbors)
+    nn = NearestNeighbors(n_neighbors=k, algorithm="brute", metric=metric).fit(x)
+    dist, ind = nn.kneighbors(x, n_neighbors=k + 1)
+    dist[ind == np.arange(n)[:, None]] = 0  # scanpy zeroes the diagonal
+    # shortcut: assumes the cell is its own first neighbor (scanpy prepends it
+    # when no cell is); true for an exact search unless every cell has duplicates
+    ind, dist = ind[:, :n_neighbors], dist[:, :n_neighbors]
+    m = n_neighbors - 1
+    distances = sparse.csr_matrix(
+        (dist[:, 1:].ravel(), ind[:, 1:].ravel(), np.arange(0, n * m + 1, m)),
+        shape=(n, n),
+    )
+    return distances, fuzzy_simplicial_set(ind, dist, n, n_neighbors)

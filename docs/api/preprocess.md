@@ -28,6 +28,10 @@ Low-level preprocessing functions available via `sclab.preprocess`.
 
 ---
 
+::: sclab.preprocess.neighbors
+
+---
+
 ## Batch Integration
 
 ::: sclab.preprocess.cca_integrate
