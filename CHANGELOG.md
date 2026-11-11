@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- Neighbors with Group By Batch (step and `sclab.preprocess.neighbors(batch_key=...)`) runs without bbknn, numba or scanpy: a port of bbknn 1.6.0 with exact per-batch kNN and trimming. `backend="auto"` still calls bbknn through scanpy when both are installed, so existing results don't change. The port matches bbknn's exact `cKDTree` search: identical neighbors, connectivities within 1e-5. It differs from bbknn's approximate default (pynndescent).
+- JupyterLite demo (`jupyterlite/`): build config pinning Pyodide 314.0.7, a demo notebook with a synthetic dataset and the dashboard, and `build.sh` (`--wheel` bundles a locally built sclab until 0.5 is on PyPI)
+- ALRA warns when its dense memory estimate exceeds 2 GB
 - Neighbors and Cluster (steps, `sclab.preprocess.neighbors()` and new `sclab.tools.cluster.leiden()`) run without scanpy: `backend="auto" | "native" | "scanpy"`, `"auto"` = scanpy when installed (results unchanged). The port uses exact kNN (scikit-learn) and umap-learn's fuzzy simplicial set: distances identical to scanpy's exact path, connectivities within ~4e-6 (umap-learn ≥ 0.5.12); Leiden labels identical to scanpy's igraph flavor for the same graph and seed. Above 4096 cells scanpy uses approximate neighbors, the port stays exact. Group By Batch still needs bbknn
 - UMAP (step and `sclab.tools.embedding.umap()`) runs without scanpy or umap-learn: a NumPy port of umap-learn's `simplicial_set_embedding` (same spectral initialization, epoch schedule and gradients; each epoch's updates applied as one vectorized step and numpy random numbers, so layouts are deterministic per seed but not identical to umap-learn's; trustworthiness and cluster separation match scanpy's). `"auto"` = scanpy when installed
 - Cell-level DE (`sclab.tools.de()` wilcoxon, t-test, logreg and the dashboard step) runs without scanpy: a port of `scanpy.tl.rank_genes_groups` that keeps X sparse; results bit-identical to scanpy 1.12.5. `"auto"` = scanpy when installed. DE records the Welch / Wilcoxon / Mann-Whitney and Benjamini-Hochberg citations
@@ -64,6 +67,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `check_counts` parameter on `pseudobulk_pylimma()`, `pseudobulk_limma()` and `pseudobulk_edger()` (default `True`) to reject non-count input
 
 ### Changed
+- CCA integration applies the cross-covariance implicitly instead of forming the cells × cells matrix (two groups of 10k cells: ~20–60 MB instead of ~1.5–2.7 GB on sparse input, 10–15× faster). Results match to ~1e-13 in float64; the default randomized solver keeps the same signs. The "partial" solver can flip the sign of some components. The "full" solver is unchanged.
+- `expression_dynamics` selects genes on sparse X before densifying (same results, a fraction of the memory)
 - Cluster step's generated code calls `sclab.tools.cluster.leiden(...)` instead of `sc.tl.leiden(...)` (same clusters)
 - `preprocess(group_by=..., compute_hvg=True)` raises `ValueError` when a group is named like one of the HVG methods (its `highly_variable_<group>` column was silently overwritten)
 - Native `scale(zero_center=True)` explains that zero-centering densifies sparse data and points to `zero_center=False`
@@ -72,7 +77,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Randomized steps are seeded by default: `cca_integrate()` / `cca_integrate_pair()` (`random_state=0`, also passed to the partial ARPACK SVD), `aggregate_and_filter()`, `pseudobulk_pylimma()`, `pseudobulk_edgepython()` and the R `pseudobulk_edger()` / `pseudobulk_limma()` (new `random_state`, default 0). The Differential Expression step follows the Settings "Random seed". doubletdetection's default PhenoGraph clustering cannot be seeded (documented)
 - sclab's citation uses its Zenodo DOI (10.5281/zenodo.23739925)
 - **Breaking:** requires Python ≥ 3.12 (was 3.10–3.13); 3.14 supported. 3.15 not yet: h5py has no 3.15 wheels
-- **Breaking:** `bbknn` is no longer a core dependency (extra `bbknn`, needed for Neighbors "Group By Batch"); `igraph` is now core. New extras `doublets` (scrublet, doubletdetection) and `de-edger` (edgepython); `de` now installs only pylimma. `xlsxwriter` has no minimum version
+- **Breaking:** `bbknn` is no longer a core dependency (extra `bbknn`, used by Neighbors "Group By Batch" when installed with scanpy); `igraph` is now core. New extras `doublets` (scrublet, doubletdetection) and `de-edger` (edgepython); `de` now installs only pylimma. `xlsxwriter` has no minimum version
 - Doublet Detection is always listed in the dashboard (R is no longer started at import to check for scDblFinder); Integration offers scanorama only when scanorama and scanpy are installed
 - **License:** sclab is now GPL-3.0-or-later (was BSD-3-Clause), so it can include GPL code such as the vendored Harmony (from harmonypy, GPL-3) and the scDblFinder fast-clustering port. `THIRD_PARTY_NOTICES.md` lists vendored code with origin and license; builds need `flit_core>=3.12`
 - Dashboard obs/var tables and the differential expression table are built and sent only while their tab is open, and dropped from widget state when hidden (on 16k cells after DE: page reload 57 MB → 6 MB, DE step 79 MB → ~0 MB sent). Opening a tab now takes a moment while its table is sent
@@ -118,6 +123,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ALRA uses a scoped rpy2 converter instead of the deprecated global `numpy2ri.activate()`
 
 ### Fixed
+- Weighted normalization per batch truncated integer counts to whole numbers; integer input is now converted to float first (float64 for 64-bit integers, float32 otherwise). Float input is unchanged.
 - Neighbors with scanpy and umap-learn ≥ 0.6: scanpy failed for some metric / dataset-size combinations (umap-learn 0.6 rejects scanpy's non-contiguous float32 kNN distances); sclab now hands scanpy a float64 copy of the representation, only when umap-learn ≥ 0.6 is installed. Results with umap-learn < 0.6 are unchanged
 - scrublet scores are reproducible: annoy built its index on all CPUs, which is not deterministic; sclab now builds it on one thread
 - `scdblfinder()`: `dbr_sd` is passed to R as `dbr.sd`, `known_doublets_col` accepts a column name and keeps the column, `clusters_col=True` runs scDblFinder's own clustering, and known-doublet runs no longer return empty (NaN) class labels
