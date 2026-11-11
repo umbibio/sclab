@@ -9,6 +9,7 @@ below. All of their licenses are compatible with GPL-3.0.
 | `src/sclab/scanpy/` (`_compat.py`, `_settings.py`, `logging.py`, `readwrite.py`, `plotting/`) | [scanpy](https://github.com/scverse/scanpy), copied and trimmed | 1.10.4 | BSD-3-Clause |
 | `src/sclab/preprocess/_harmony_integrate.py` | scanpy, `scanpy.external.pp.harmony_integrate`, adapted | 1.10.x | BSD-3-Clause |
 | `src/sclab/preprocess/_scanpy_port.py` | scanpy, `src/scanpy/preprocessing/` (`_qc.py`, `_simple.py`, `_normalization.py`, `_scale.py`, `_highly_variable_genes.py`, `_pca/__init__.py`), ported to numpy/scipy/scikit-learn (no numba) | 1.12.5 | BSD-3-Clause |
+| `src/sclab/tools/embedding/_umap_port.py` | [umap-learn](https://github.com/lmcinnes/umap), `umap/umap_.py` (`find_ab_params`, `make_epochs_per_sample`, `simplicial_set_embedding`), `umap/spectral.py` (`spectral_layout`, `multi_component_layout`, `component_layout`), `umap/layouts.py` (`optimize_layout_euclidean`), ported to numpy/scipy (no numba; vectorized per epoch); and scanpy, `src/scanpy/tools/_umap.py` (`umap`), `tools/_utils.py` (`_choose_representation`) | umap-learn 0.5.12, scanpy 1.12.5 | BSD-3-Clause |
 | `src/sclab/preprocess/_harmony.py` | [harmonypy](https://github.com/slowkow/harmonypy), `harmonypy/harmony.py`, modified (reference batches) | based on 0.0.10 | GPL-3.0-or-later |
 | `src/sclab/tools/differential_expression/_edgepython_kernels.py` | [edgePython](https://github.com/pachterlab/edgePython), `edgepython/glm_kernels.py`, `ql_weights.py`, `dispersion_lowlevel.py`, `weighted_lowess.py` (numba ports of edgeR's and limma's C code), vectorised with NumPy | 0.5.1 | GPL-3.0-or-later |
 | `src/sclab/tools/differential_expression/_edger_preprocessing.py` | edgePython, `edgepython/filtering.py` (`filter_by_expr`) and `normalization.py` (TMM `calc_norm_factors`), reduced | 0.5.1 | GPL-3.0-or-later |
@@ -16,8 +17,9 @@ below. All of their licenses are compatible with GPL-3.0.
 
 ## scanpy
 
-The files under `src/sclab/scanpy/`, `src/sclab/preprocess/_harmony_integrate.py`
-and `src/sclab/preprocess/_scanpy_port.py` are distributed under the following
+The files under `src/sclab/scanpy/`, `src/sclab/preprocess/_harmony_integrate.py`,
+`src/sclab/preprocess/_scanpy_port.py` and `src/sclab/tools/embedding/_umap_port.py`
+are distributed under the following
 license:
 
 ```
@@ -51,6 +53,51 @@ CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
+
+## umap-learn
+
+`src/sclab/tools/embedding/_umap_port.py` is distributed under the following
+license:
+
+```
+BSD 3-Clause License
+
+Copyright (c) 2017, Leland McInnes
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+* Redistributions of source code must retain the above copyright notice, this
+  list of conditions and the following disclaimer.
+
+* Redistributions in binary form must reproduce the above copyright notice,
+  this list of conditions and the following disclaimer in the documentation
+  and/or other materials provided with the distribution.
+
+* Neither the name of the copyright holder nor the names of its
+  contributors may be used to endorse or promote products derived from
+  this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```
+
+McInnes L, Healy J, Melville J. UMAP: Uniform Manifold Approximation and
+Projection for Dimension Reduction. arXiv 1802.03426 (2018).
+https://doi.org/10.48550/arXiv.1802.03426
+
+McInnes L, Healy J, Saul N, Großberger L. UMAP: Uniform Manifold Approximation
+and Projection. Journal of Open Source Software 3, 861 (2018).
+https://doi.org/10.21105/joss.00861
 
 ## harmonypy
 
