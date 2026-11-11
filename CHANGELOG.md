@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- `periodic_genes_cosinor()` in `sclab.tools.cellflow.utils.periodic_genes`: detect periodic genes by cosinor regression (intercept plus `n_harmonics` cosine/sine pairs) on pseudobulked, CP10k-normalized log profiles over `n` time bins, with an F-test p-value per gene, BH-adjusted p-values, amplitude, phase and peak time
+
+### Changed
+- **License:** sclab is now licensed under GPL-3.0-or-later (was BSD-3-Clause). `THIRD_PARTY_NOTICES.md` lists the code included from other projects (vendored scanpy subset and `harmony_integrate`, BSD-3-Clause; Harmony from harmonypy, GPL-3.0-or-later); builds need `flit_core>=3.12`
+
+### Fixed
+- `cca_integrate_pair()` no longer fails when `adata` holds groups other than the two being integrated; only the two integrated groups are updated
 
 ## [0.4.2] - 2026-07-13
 ### Added
