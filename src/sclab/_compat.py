@@ -20,8 +20,8 @@ class Feature(NamedTuple):
 
 FEATURES: dict[str, Feature] = {
     "scanpy": Feature(
-        "wilcoxon, t-test, logreg DE; Neighbors with Group By Batch; "
-        "QC, Preprocess, PCA, Neighbors, UMAP, Cluster use it when installed "
+        "Neighbors with Group By Batch; QC, Preprocess, PCA, Neighbors, UMAP, "
+        "Cluster and wilcoxon/t-test/logreg DE use it when installed "
         "(else sclab's native port)",
         ("scanpy",),
         "scanpy",
