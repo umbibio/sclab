@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- `adata.uns["sclab"]["X_scaled"]` records whether X was scaled (`False`, `True`, or the `group_by` column for per-group scaling), inferred from the step history for older datasets; helpers `x_scaled()`, `unscaled_layer()`, `layer_scaled()` in `sclab.utils`
+- Warnings for cell-level DE on scaled data (step: a non-blocking note below Run; `sclab.tools.de`: `UserWarning`): fold changes are not meaningful on scaled data; with per-group scaling, wilcoxon/t-test scores and p-values are affected; logreg depends on the scaling
 - User guide page "Reproducing an analysis": the History tab's generated script, and saving, loading and replaying a step history (`save_step_history()`, `load_step_history()`, `apply_step_history()`)
 - Neighbors with Group By Batch (step and `sclab.preprocess.neighbors(batch_key=...)`) runs without bbknn, numba or scanpy: a port of bbknn 1.6.0 with exact per-batch kNN and trimming. `backend="auto"` still calls bbknn through scanpy when both are installed, so existing results don't change. The port matches bbknn's exact `cKDTree` search: identical neighbors, connectivities within 1e-5. It differs from bbknn's approximate default (pynndescent).
 - JupyterLite demo (`jupyterlite/`): build config pinning Pyodide 314.0.7, a demo notebook with a synthetic dataset and the dashboard, and `build.sh` (`--wheel` bundles a locally built sclab until 0.5 is on PyPI)
@@ -68,6 +70,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `check_counts` parameter on `pseudobulk_pylimma()`, `pseudobulk_limma()` and `pseudobulk_edger()` (default `True`) to reject non-count input
 
 ### Changed
+- Differential Expression step: wilcoxon, t-test and logreg use log-normalized, unscaled data by default: X when Preprocess didn't scale, else the unscaled layer it keeps (e.g. `counts_normt_log1p`); "Override layer" names the layer used. Fold changes are now computed on log-normalized data. wilcoxon/t-test scores and p-values are unchanged when scaling was global and change when it was per group; logreg results change. Datasets without an unscaled layer keep using X (same numbers). Pseudobulk methods are unchanged.
+- Gene Expression step defaults to the same log-normalized, unscaled data once Preprocess has run
 - Preprocess stores less: no `counts_log1p` layer (HVG selection and PCA's reference-batch mode compute log1p of the counts when needed) and no copy of X under its transformation name. With `scale=True` it keeps one unscaled layer (the data just before scaling, e.g. `counts_normt_log1p`, float32). Results are unchanged. 20k cells × 20k genes: 916 MiB of X + layers → 687 MiB with scaling, 458 MiB without. Layers already in a dataset are kept.
 - What X holds is recorded in `adata.uns["sclab"]["X"]` (e.g. `"counts_normt_log1p_scale"`; `sclab.utils.x_name()`), kept in h5ad files; the Gene Expression and Differential Expression layer dropdowns now offer X, labelled "X (counts_normt_log1p_scale)"
 - Replaying a Keep/Drop selection that matches a different number of cells than recorded now shows a `UserWarning` (step, matched and recorded counts); the replay continues
