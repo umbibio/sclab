@@ -42,6 +42,7 @@ nav:
   - User Guide:
       - The Dashboard: user-guide/dashboard.md
       - Standard Workflow: user-guide/standard-workflow.md
+      - Reproducing an Analysis: user-guide/reproducing-an-analysis.md
       - Exploring Results: user-guide/exploring-results.md
       - Batch Integration: user-guide/batch-integration.md
       - Doublet Detection: user-guide/doublet-detection.md

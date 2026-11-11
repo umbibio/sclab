@@ -975,6 +975,13 @@ class Processor(EventClient):
     def save_step_history(
         self, path: str | Path, format: Literal["pickle", "json"] | None = None
     ):
+        """Save ``step_history`` (every entry, failed ones included) to ``path``.
+
+        ``format`` is ``"json"`` or ``"pickle"``; by default the file extension
+        (``.json`` / ``.pickle``) decides. ``ValueError`` for anything else.
+        Reload it with :meth:`load_step_history` and :meth:`apply_step_history`.
+        For a script that reproduces the analysis, use :meth:`generate_code`.
+        """
         path = Path(path)
         if format is None:
             format = path.suffix[1:]
@@ -991,6 +998,12 @@ class Processor(EventClient):
             raise ValueError(f"Unsupported format {format}")
 
     def load_step_history(self, path: str):
+        """Load a history saved by :meth:`save_step_history` for replay.
+
+        The format follows the extension (``.json`` or ``.pickle``; ``ValueError``
+        otherwise). Nothing is applied: call :meth:`apply_step_history`. A pickle
+        runs code on load: only load files you trust.
+        """
         path = Path(path)
         format = path.suffix[1:]
 
@@ -1010,12 +1023,18 @@ class Processor(EventClient):
     def apply_step_history(self):
         """Replay the successful steps of the loaded history not yet applied.
 
-        The successful steps already in ``step_history`` must match the start
-        of the loaded history (step and params); failed entries are skipped.
-        Before applying any, every step to replay is checked: if one cannot
-        run here (a missing package, see ``ProcessorStepBase.unavailable``,
-        or summarized params), ``ValueError`` lists them all and nothing is
-        applied.
+        Continues where this dashboard left off: the successful steps already
+        in ``step_history`` must match the start of the loaded history (step and
+        params), else ``AssertionError``; failed and cancelled entries are
+        skipped. Before applying any, every step to replay is checked: if one
+        cannot run here (not a step of this dashboard, a missing package, see
+        ``ProcessorStepBase.unavailable``, or summarized params), ``ValueError``
+        lists them all and nothing is applied.
+
+        Each step runs with its recorded params, including the ``backend`` it
+        ran with (``"native"`` is not replaced by scanpy, nor the reverse).
+        A replayed step that fails or ends up with other params than recorded
+        is logged as a warning, and the replay goes on.
         """
         assert self._loaded_step_history is not None, "No step history loaded"
 
