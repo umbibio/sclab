@@ -19,10 +19,15 @@ jobs:
         id: tag
         run: |
           TAG=${GITHUB_REF#refs/tags/}
+          # a patch on an older line after a newer release must not become Latest or move stable
+          NEWEST=$(git tag --list 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1)
+          if [ "$TAG" = "$NEWEST" ]; then LATEST=true; else LATEST=false; fi
           echo "tag=$TAG" >> $GITHUB_OUTPUT
-          echo "Processing version tag: $TAG"
+          echo "latest=$LATEST" >> $GITHUB_OUTPUT
+          echo "Processing version tag: $TAG (newest release: $NEWEST, latest: $LATEST)"
 
       - name: Update stable tag
+        if: steps.tag.outputs.latest == 'true'
         run: |
           # Configure git
           git config --global user.name "github-actions[bot]"
@@ -44,4 +49,4 @@ jobs:
           gh release create ${{ steps.tag.outputs.tag }} \
             --title "Release ${{ steps.tag.outputs.tag }}" \
             --generate-notes \
-            --latest
+            --latest=${{ steps.tag.outputs.latest }}
