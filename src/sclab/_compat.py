@@ -20,9 +20,8 @@ class Feature(NamedTuple):
 
 FEATURES: dict[str, Feature] = {
     "scanpy": Feature(
-        "Neighbors with Group By Batch; QC, Preprocess, PCA, Neighbors, UMAP, "
-        "Cluster and wilcoxon/t-test/logreg DE use it when installed "
-        "(else sclab's native port)",
+        "QC, Preprocess, PCA, Neighbors, UMAP, Cluster and wilcoxon/t-test/logreg "
+        "DE use it when installed (else sclab's native port)",
         ("scanpy",),
         "scanpy",
         ("scanpy",),
@@ -33,7 +32,13 @@ FEATURES: dict[str, Feature] = {
         None,
         ("scikit-misc",),
     ),
-    "bbknn": Feature("Neighbors with Group By Batch", ("bbknn",), "bbknn", ("bbknn",)),
+    "bbknn": Feature(
+        "Neighbors with Group By Batch uses it when installed with scanpy "
+        "(else sclab's native port)",
+        ("bbknn",),
+        "bbknn",
+        ("bbknn",),
+    ),
     "scanorama": Feature(
         "Integration flavor scanorama",
         ("scanorama", "scanpy"),

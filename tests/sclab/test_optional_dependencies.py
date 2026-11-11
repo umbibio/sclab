@@ -148,6 +148,23 @@ def test_neighbors_cluster_run_without_scanpy(without_optional):
     assert sys.modules["scanpy"] is None  # not imported meanwhile
 
 
+def test_neighbors_group_by_batch_runs_without_bbknn(without_optional):
+    d = SCLabDashboard(make_adata(), batch_key="grp")  # Group By Batch: on
+    step = d.processor.steps["Neighbors"]
+    step.variable_controls["use_rep"].value = "Y_array8"
+    assert step._reason is None
+    assert "sclab (port of bbknn" in step.tool({"group_by_batch": True})
+    run_step(d, "Neighbors", use_rep="Y_array8", dims=(1, 8), n_neighbors=5)
+    adata = d.dataset.adata
+    params = adata.uns["neighbors"]["params"]
+    assert params["n_neighbors"] == 15 and params["bbknn"]["batch_key"] == "grp"
+    assert adata.obsp["connectivities"].nnz > 0
+    assert d.processor.step_history[-1]["params"]["backend"] == "native"
+    code = d.generate_code()
+    assert "batch_key=batch_key" in code and 'backend="native"' in code
+    assert sys.modules["scanpy"] is None and sys.modules["bbknn"] is None
+
+
 def test_seurat_v3_hvg_needs_skmisc(monkeypatch):
     monkeypatch.setitem(sys.modules, "skmisc", None)
     reason = "HVG seurat_v3_paper needs skmisc: pip install scikit-misc"
@@ -319,10 +336,5 @@ def test_messages_come_from_the_registry(monkeypatch):
     adata = make_adata()
     adata.obsm["X_pca"] = np.zeros((adata.n_obs, 10))
     with pytest.raises(ImportError) as error:
-        neighbors(adata, batch_key="grp")
+        neighbors(adata, batch_key="grp", backend="scanpy")
     assert str(error.value) == reason
-
-    d = SCLabDashboard(make_adata(), batch_key="grp")  # Group By Batch: on
-    step = d.processor.steps["Neighbors"]
-    step.variable_controls["use_rep"].value = "Y_array2"
-    assert step._reason == f"Group By Batch: {reason}"

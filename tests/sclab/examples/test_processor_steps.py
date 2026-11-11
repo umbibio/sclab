@@ -983,6 +983,28 @@ class TestNativeBackendCaptions:
         )
 
     @pytest.mark.parametrize("backend", ["scanpy", "native"])
+    def test_bbknn_says_which_backend_runs(self, monkeypatch, backend):
+        from sclab.examples.processor_steps import _neighbors
+
+        seen = []
+
+        def resolve(_, *features):
+            seen.append(features)
+            return backend
+
+        monkeypatch.setattr(_neighbors, "resolve_backend", resolve)
+        d = SCLabDashboard(make_adata(120, 60), batch_key="batch")
+        step = d.processor.steps["Neighbors"]
+        params = {"group_by_batch": True}
+        assert step.tool(params) == (
+            "Python · sclab (port of bbknn / umap-learn fuzzy_simplicial_set)"
+            if backend == "native"
+            else "Python · bbknn (scanpy.external.pp.bbknn)"
+        )
+        assert step.resolved_params(params)["backend"] == backend
+        assert seen[-1] == ("bbknn",)
+
+    @pytest.mark.parametrize("backend", ["scanpy", "native"])
     def test_de_says_which_backend_runs(self, monkeypatch, backend):
         from sclab.examples.processor_steps import _differential_expression as mod
 

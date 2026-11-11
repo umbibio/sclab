@@ -1,6 +1,5 @@
 from ipywidgets import Dropdown, IntRangeSlider, IntText
 
-from sclab._compat import missing
 from sclab.dataset.processor import Processor
 from sclab.dataset.processor._codegen import ADATA, call
 from sclab.dataset.processor.step import ProcessorStepBase
@@ -22,11 +21,13 @@ class Neighbors(ProcessorStepBase):
     graph using a selected embedding (``use_rep``) and a specified range of
     dimensions. Supports standard k-NN (via :func:`scanpy.pp.neighbors`) and
     batch-aware BBKNN graph construction when ``group_by_batch`` is enabled
-    and the dashboard has a ``batch_key`` (needs ``bbknn`` and ``scanpy``).
+    and the dashboard has a ``batch_key``.
 
     The standard k-NN graph uses scanpy if it is installed, else sclab's
     native port of :func:`scanpy.pp.neighbors` (``backend="auto"``; exact
-    k-NN, umap-learn's connectivities); the history records which ran.
+    k-NN, umap-learn's connectivities); BBKNN uses bbknn if it and scanpy are
+    installed, else sclab's native port of bbknn (exact k-NN per batch). The
+    history records which ran.
     """
 
     parent: Processor
@@ -73,19 +74,27 @@ class Neighbors(ProcessorStepBase):
             variable_controls=variable_controls,
         )
 
-    def validate(self, params: dict) -> str | None:
+    def _backend(self, params: dict) -> str:
         if params.get("group_by_batch") and self.parent.batch_key:
-            if reason := missing("bbknn") or missing("scanpy"):
-                return f"Group By Batch: {reason}"
+            return resolve_backend("auto", "bbknn")
+        return resolve_backend("auto")
+
+    def validate(self, params: dict) -> str | None:
         adata = self.parent.dataset.adata
         if params.get("use_rep") not in adata.obsm:
             return "Choose a 'Use rep.' representation (run PCA first)"
         return None
 
     def tool(self, params: dict) -> str:
+        native = self._backend(params) == "native"
         if params.get("group_by_batch") and self.parent.batch_key:
+            if native:
+                return (
+                    "Python · sclab (port of bbknn / "
+                    "umap-learn fuzzy_simplicial_set)"
+                )
             return "Python · bbknn (scanpy.external.pp.bbknn)"
-        if resolve_backend("auto") == "scanpy":
+        if not native:
             return "Python · scanpy.pp.neighbors"
         return (
             "Python · sclab (port of scanpy.pp.neighbors / "
@@ -96,7 +105,7 @@ class Neighbors(ProcessorStepBase):
         return {
             **super().resolved_params(params),
             "batch_key": self.parent.batch_key,
-            "backend": resolve_backend("auto"),
+            "backend": self._backend(params),
         }
 
     def to_code(self, params: dict) -> str:

@@ -41,7 +41,7 @@ the zoom. Path drawing, custom figures and extra traces still use plotly. The
 
 | Extra | Installs | For |
 | --- | --- | --- |
-| `bbknn` | bbknn | Neighbors with "Group By Batch" |
+| `bbknn` | bbknn | Neighbors with "Group By Batch" (else sclab's native port of bbknn) |
 | `doublets` | scrublet, doubletdetection | Doublet Detection |
 | `de` | pylimma | `pseudobulk_limma` differential expression |
 | `de-edger` | edgepython | `pseudobulk_edger`, and edgeR-style filtering for `pseudobulk_limma` |
