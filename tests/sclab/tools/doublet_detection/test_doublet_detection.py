@@ -1,3 +1,4 @@
+import sys
 import warnings
 from importlib.util import find_spec
 
@@ -175,6 +176,21 @@ class TestScrublet:
             np.testing.assert_array_equal(scores[0], other)
         assert annoy.AnnoyIndex.__module__ == "annoy"  # restored
 
+    def test_without_annoy_umap_numba(self, result, doublet_data, monkeypatch):
+        # as under Pyodide (scrublet installed with deps=False): exact neighbors
+        for name in ("annoy", "umap", "numba", "pynndescent"):
+            monkeypatch.setitem(sys.modules, name, None)
+        adata = doublet_data[0].copy()
+        scrublet(adata, scrub_doublets_kwargs=QUIET)
+        exact = adata.obs["scrublet_score"].to_numpy()
+        scrublet(adata, scrub_doublets_kwargs=QUIET)
+        np.testing.assert_array_equal(exact, adata.obs["scrublet_score"].to_numpy())
+
+        is_doublet = doublet_data[1]
+        assert exact[is_doublet].mean() > 3 * exact[~is_doublet].mean()
+        approx = result.obs["scrublet_score"].to_numpy()
+        assert np.corrcoef(exact, approx)[0, 1] > 0.9
+
     def test_key_added_and_layer(self, doublet_data):
         adata = doublet_data[0].copy()
         adata.layers["counts"] = adata.X.copy()
@@ -246,10 +262,32 @@ class TestScrublet:
         assert seen["scrub_kwargs"] == {"min_counts": 1}
 
     def test_import_error_when_not_installed(self, adata, monkeypatch):
-        monkeypatch.setattr(scrub_mod, "find_spec", lambda name: None)
+        monkeypatch.setitem(sys.modules, "scrublet", None)
 
-        with pytest.raises(ImportError, match="pip install scrublet"):
+        with pytest.raises(ImportError, match="Needs scrublet: pip install"):
             scrublet(adata)
+
+    def test_exact_neighbors_without_annoy(self, adata, monkeypatch):
+        import scrublet as scrublet_pkg
+
+        seen = {}
+
+        class _Fake:
+            def __init__(self, **kwargs):
+                self.n = kwargs["counts_matrix"].shape[0]
+
+            def scrub_doublets(self, **kwargs):
+                seen.update(kwargs)
+                return np.zeros(self.n), np.zeros(self.n, bool)
+
+        monkeypatch.setattr(scrublet_pkg, "Scrublet", _Fake)
+        scrublet(adata, scrub_doublets_kwargs=QUIET)
+        assert seen["use_approx_neighbors"] is True  # annoy installed: unchanged
+
+        monkeypatch.setitem(sys.modules, "annoy", None)
+        scrublet(adata, scrub_doublets_kwargs=QUIET)
+        assert seen["use_approx_neighbors"] is False
+        assert QUIET["use_approx_neighbors"] is True  # the caller's dict is untouched
 
 
 @needs_doubletdetection
@@ -292,6 +330,21 @@ class TestDoubletDetection:
 
         if is_doublet.any():
             assert score[is_doublet].mean() > score[~is_doublet].mean()
+
+    def test_without_annoy_umap_numba(self, result, doublet_data, monkeypatch):
+        # as under Pyodide (scrublet installed with deps=False): exact neighbors
+        for name in ("annoy", "umap", "numba", "pynndescent"):
+            monkeypatch.setitem(sys.modules, name, None)
+        adata = doublet_data[0].copy()
+        scrublet(adata, scrub_doublets_kwargs=QUIET)
+        exact = adata.obs["scrublet_score"].to_numpy()
+        scrublet(adata, scrub_doublets_kwargs=QUIET)
+        np.testing.assert_array_equal(exact, adata.obs["scrublet_score"].to_numpy())
+
+        is_doublet = doublet_data[1]
+        assert exact[is_doublet].mean() > 3 * exact[~is_doublet].mean()
+        approx = result.obs["scrublet_score"].to_numpy()
+        assert np.corrcoef(exact, approx)[0, 1] > 0.9
 
     def test_key_added_and_layer(self, doublet_data):
         adata = doublet_data[0].copy()

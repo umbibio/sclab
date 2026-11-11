@@ -8,6 +8,7 @@ from anndata import AnnData
 from numpy import ndarray
 
 from sclab._citations import cites
+from sclab._compat import require
 from sclab.utils import check_raw_counts
 
 
@@ -80,6 +81,10 @@ def scrublet(
     labelled as ``"singlet"`` or ``"doublet"``.
 
     Requires ``scrublet`` to be installed (``pip install scrublet``).
+    Without ``annoy`` (e.g. under Pyodide, where scrublet is installed with
+    ``micropip.install('scrublet', deps=False)``) the neighbors are exact
+    (``use_approx_neighbors=False``) instead of approximate; scrublet's
+    umap-learn and numba dependencies are not used here.
 
     Parameters
     ----------
@@ -127,10 +132,7 @@ def scrublet(
         - ``{key_added}_label`` (Categorical): ``"singlet"`` or
           ``"doublet"``.
     """
-    if find_spec("scrublet") is None:
-        raise ImportError(
-            "scrublet is not installed. Install with:\npip install scrublet"
-        )
+    require("scrublet")
     from scrublet import Scrublet  # noqa: E402
 
     if layer == "X":
@@ -158,8 +160,11 @@ def scrublet(
         random_state=random_state,
     )
 
+    kwargs = dict(scrub_doublets_kwargs)
+    if find_spec("annoy") is None:  # e.g. Pyodide; scrublet would print a warning
+        kwargs["use_approx_neighbors"] = False  # exact: sklearn NearestNeighbors
     with _single_threaded_annoy():
-        _scores, labels = scrub.scrub_doublets(**scrub_doublets_kwargs)
+        _scores, labels = scrub.scrub_doublets(**kwargs)
     if labels is not None:
         _labels = list(map(lambda v: "doublet" if v else "singlet", labels))
         _labels = pd.Categorical(_labels, ["singlet", "doublet"])
