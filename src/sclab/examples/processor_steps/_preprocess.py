@@ -1,4 +1,4 @@
-from ipywidgets import Checkbox, Dropdown, SelectMultiple
+from ipywidgets import Checkbox, Dropdown, SelectMultiple, Text
 
 from sclab._compat import missing, requirement
 from sclab.dataset.processor import Processor
@@ -16,6 +16,12 @@ NORMALIZATION_METHODS = {
     "Library size": "library",
     "Weighted library size": "weighted",
 }
+
+
+def _n_top_genes(value) -> int | None:
+    """The "N top genes" text: empty is None (the methods' defaults)."""
+    value = str(value or "").strip()
+    return int(value) if value else None
 
 
 class Preprocess(ProcessorStepBase):
@@ -64,6 +70,12 @@ class Preprocess(ProcessorStepBase):
                 description="HVG methods",
             ),
             hvg_combine=Dropdown(options=HVG_COMBINE, description="HVG combine"),
+            n_top_genes=Text(
+                value="",
+                placeholder="method default",
+                description="N top genes",
+                continuous_update=False,
+            ),
             normalization_method=Dropdown(
                 options=tuple(NORMALIZATION_METHODS),
                 value="Library size",
@@ -96,6 +108,12 @@ class Preprocess(ProcessorStepBase):
         v3 = [m for m in methods if m.startswith("seurat_v3")]
         if v3 and missing("skmisc"):
             return f"HVG {v3[0]} needs {requirement('skmisc')}"
+        try:
+            n_top = _n_top_genes(params.get("n_top_genes"))
+        except ValueError:
+            n_top = 0
+        if n_top is not None and n_top < 1:
+            return "'N top genes' must be a positive integer or empty"
         dataset = self.parent.dataset
         if (params.get("layer") or dataset.counts_layer) not in layer_keys(
             dataset.adata
@@ -135,6 +153,7 @@ class Preprocess(ProcessorStepBase):
         resolved = super().resolved_params(params)
         if resolved.get("layer") is None:
             resolved["layer"] = self.parent.dataset.counts_layer
+        resolved["n_top_genes"] = _n_top_genes(resolved.get("n_top_genes"))
         return {**resolved, "backend": resolve_backend("auto")}
 
     def to_code(self, params: dict) -> str:
@@ -145,6 +164,7 @@ class Preprocess(ProcessorStepBase):
             counts_layer=params["layer"],
             group_by=params["group_by"],
             **{k: params[k] for k in ("hvg_methods", "hvg_combine") if k in params},
+            **({"n_top_genes": n} if (n := params.get("n_top_genes")) else {}),
             regress_total_counts=params["regress_total_counts"],
             regress_n_genes=params["regress_n_genes"],
             normalization_method=method,
@@ -159,6 +179,7 @@ class Preprocess(ProcessorStepBase):
         group_by: str | None = None,
         hvg_methods: tuple[str, ...] = ("seurat", "seurat_v3_paper"),
         hvg_combine: str = "union",
+        n_top_genes: str | int | None = None,
         regress_total_counts: bool = False,
         regress_n_genes: bool = False,
         normalization_method: str = "No normalization",
@@ -177,6 +198,7 @@ class Preprocess(ProcessorStepBase):
                 group_by=group_by,
                 hvg_methods=tuple(hvg_methods),
                 hvg_combine=hvg_combine,
+                n_top_genes=_n_top_genes(n_top_genes),
                 regress_total_counts=regress_total_counts,
                 regress_n_genes=regress_n_genes,
                 normalization_method=NORMALIZATION_METHODS[normalization_method],

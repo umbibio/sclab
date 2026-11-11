@@ -344,6 +344,23 @@ def test_hvg_bad_arguments():
         highly_variable_genes(adata, combine="xor")
 
 
+def test_preprocess_group_named_like_a_method_raises():
+    adata = make_counts()
+    adata.obs["batch"] = adata.obs["batch"].cat.rename_categories({"b1": "seurat"})
+    shape = adata.shape
+    with pytest.raises(ValueError, match="seurat"):
+        preprocess(adata, group_by="batch", backend="native")
+    assert adata.shape == shape and "highly_variable" not in adata.var
+    preprocess(adata, group_by="batch", hvg_methods="cell_ranger", backend="native")
+    assert "highly_variable_seurat" in adata.var  # the group's column
+
+
+def test_preprocess_n_top_genes():
+    adata = make_counts()
+    preprocess(adata, hvg_methods="seurat", n_top_genes=100, backend="native")
+    assert adata.var["highly_variable"].sum() == 100
+
+
 def test_backend_argument(monkeypatch):
     adata = make_counts()
     with pytest.raises(ValueError, match="backend"):

@@ -26,6 +26,7 @@ def preprocess(
     log1p: bool = True,
     scale: bool = True,
     backend: str = "auto",
+    n_top_genes: int | None = None,
 ):
     """Normalize, transform, and scale single-cell RNA-seq count data.
 
@@ -58,13 +59,19 @@ def preprocess(
         and store the result in ``adata.var["highly_variable"]``, with one
         ``highly_variable_<method>`` column per method. With ``group_by``,
         genes are selected per group (``highly_variable_<group>``) and the
-        groups' selections are merged by union. Default is True.
+        groups' selections are merged by union; a group named like one of
+        ``hvg_methods`` is an error (its column would clash). Default is True.
     hvg_methods : str or sequence of str, optional
         HVG flavors: ``"seurat"``, ``"cell_ranger"``, ``"seurat_v3"``,
         ``"seurat_v3_paper"``. Default ``("seurat", "seurat_v3_paper")``
         (``seurat_v3_paper`` selects as many genes as ``seurat``).
     hvg_combine : {"union", "intersection"}, optional
         How the methods' selections are combined. Default ``"union"``.
+    n_top_genes : int or None, optional
+        Genes each HVG method selects (see
+        :func:`sclab.preprocess.highly_variable_genes`). If None (default),
+        the dispersion methods use scanpy's default cutoffs and the seurat_v3
+        methods select as many genes as the first method.
     regress_total_counts : bool, optional
         If True, regress out total counts (or log1p total counts if
         ``log1p=True``) per cell. Default is False.
@@ -117,6 +124,14 @@ def preprocess(
     https://doi.org/10.1038/ncomms14049
     """
     pp = get_pp(backend)
+    if compute_hvg and group_by is not None:  # before adata is changed
+        methods = {hvg_methods} if isinstance(hvg_methods, str) else set(hvg_methods)
+        if clash := sorted(methods & set(map(str, adata.obs[group_by].unique()))):
+            raise ValueError(
+                f"group_by={group_by!r} has groups named like HVG methods "
+                f"({', '.join(clash)}): their highly_variable_<name> columns "
+                "would clash; rename the groups"
+            )
 
     from ._normalize_weighted import normalize_weighted
 
@@ -154,6 +169,7 @@ def preprocess(
                 methods=hvg_methods,
                 combine=hvg_combine,
                 counts_layer=counts_layer,
+                n_top_genes=n_top_genes,
                 backend=backend,
             )
             if group_by is not None:

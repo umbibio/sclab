@@ -112,6 +112,7 @@ class TestQCPreprocessMatchLibrary:
                 {"group_by": "batch", "normalization_method": "Weighted library size"},
                 {"group_by": "batch", "normalization_method": "weighted"},
             ),
+            ({"n_top_genes": " 60 "}, {"n_top_genes": 60}),
             (
                 {
                     "normalization_method": "No normalization",
@@ -159,6 +160,16 @@ class TestQCPreprocessMatchLibrary:
         qc_entry, pp_entry = d.processor.step_history
         assert qc_entry["params"]["layer"] == pp_entry["params"]["layer"] == "counts"
         assert pp_entry["shape_before"] == qc_entry["shape_after"]
+
+    def test_n_top_genes_must_be_a_positive_integer(self):
+        d = SCLabDashboard(make_adata(300, 300))
+        step = d.processor.steps["Preprocess"]
+        for bad in ("abc", "0", "-5"):
+            step.variable_controls["n_top_genes"].value = bad
+            assert "N top genes" in step.status.value
+            assert step.run_button.disabled
+        step.variable_controls["n_top_genes"].value = ""
+        assert not step.run_button.disabled
 
     def test_unknown_normalization_method_fails(self):
         d = SCLabDashboard(make_adata(300, 300))

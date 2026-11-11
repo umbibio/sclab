@@ -168,6 +168,7 @@ def test_pipeline_with_selections_roundtrip(n_vertices):
                         "group_by": "batch",
                         "normalization_method": "Weighted library size",
                         "regress_n_genes": True,
+                        "n_top_genes": "40",
                     },
                 ),
             ],
