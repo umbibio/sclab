@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.4.3] - 2026-11-11
 ### Added
 - `periodic_genes_cosinor()` in `sclab.tools.cellflow.utils.periodic_genes`: detect periodic genes by cosinor regression (intercept plus `n_harmonics` cosine/sine pairs) on pseudobulked, CP10k-normalized log profiles over `n` time bins, with an F-test p-value per gene, BH-adjusted p-values, amplitude, phase and peak time
 
