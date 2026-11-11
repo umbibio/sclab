@@ -1,7 +1,7 @@
 """Run by smoke.mjs inside Pyodide, after sclab and its dependencies are installed.
 
 Builds the dashboard without scanpy and runs the steps that work natively
-(UMAP on a stand-in neighbor graph), and pseudobulk limma and edgeR
+(QC through Neighbors, Cluster and UMAP), and pseudobulk limma and edgeR
 (edgepython without numba).
 Any failed assertion fails the smoke test.
 """
@@ -16,6 +16,7 @@ import pandas as pd
 import scipy.sparse as sp
 
 import sclab
+import sclab.tools.cluster
 from sclab import SCLabDashboard, _compat
 from sclab.tools.differential_expression import _edgepython_kernels, _pseudobulk_pylimma
 
@@ -45,9 +46,6 @@ adata.obsm["X_pca"] = rng.normal(size=(n_obs, 20))
 
 d = SCLabDashboard(adata, counts_layer="counts", batch_key="batch")
 steps = d.processor.steps
-for name in ["Neighbors", "Cluster"]:
-    assert steps[name].run_button.disabled, name
-    assert steps[name]._reason.startswith("Needs scanpy"), steps[name]._reason
 assert steps["UMAP"]._reason == "Run the Neighbors step first"  # sclab's port
 assert steps["QC"]._reason is steps["Preprocess"]._reason is None  # sclab's port
 assert type(steps["Doublet Detection"]).__name__ == "_UnavailableStep"
@@ -78,39 +76,42 @@ ok("Preprocess seurat | seurat_v3", elapsed)
 elapsed = run("PCA", n_comps=10, mask_var="highly_variable")
 assert d.dataset.adata.obsm["X_pca"].shape == (d.dataset.adata.n_obs, 10)
 ok("PCA", elapsed)
+neighbors_kw = dict(use_rep="X_pca", dims=(1, 10), n_neighbors=15, group_by_batch=False)
+elapsed = run("Neighbors", **neighbors_kw)  # Group By Batch needs bbknn
+assert d.dataset.adata.obsp["connectivities"].nnz > 0
+ok("Neighbors", elapsed)
+elapsed = run("Cluster", resolution=1.0)
+assert d.dataset.adata.obs["leiden"].nunique() > 0
+ok("Cluster", elapsed)
 backends = [e["params"]["backend"] for e in d.processor.step_history]
-assert backends == ["native"] * 3, backends
-assert d.generate_code().count('backend="native"') == 3
+assert backends == ["native"] * 5, backends
+assert d.generate_code().count('backend="native"') == 5
 ok("history and code: backend native")
 
-
-def standin_neighbors(adata, k=15):
-    """A kNN graph written as scanpy's neighbors would be.
-
-    shortcut: until the native Neighbors step runs in Pyodide; then replace
-    this function with run("Neighbors").
-    """
-    from sklearn.neighbors import kneighbors_graph
-
-    x = adata.obsm["X_pca"]
-    dist = kneighbors_graph(x, k - 1, mode="distance")
-    conn = kneighbors_graph(x, k - 1, mode="connectivity")
-    adata.obsp["distances"] = dist
-    adata.obsp["connectivities"] = conn.maximum(conn.T).tocsr()
-    adata.uns["neighbors"] = {
-        "params": {"n_neighbors": k, "method": "umap", "use_rep": "X_pca"},
-        "connectivities_key": "connectivities",
-        "distances_key": "distances",
-    }
+# timings of the native neighbors and Leiden on 10k cells (30 dims)
+big = ad.AnnData(np.zeros((10_000, 1), np.float32))
+centers = rng.normal(0, 3, (15, 30))
+big.obsm["X_pca"] = (
+    centers[rng.integers(0, 15, big.n_obs)] + rng.normal(size=(big.n_obs, 30))
+).astype(np.float32)
+t0 = time.perf_counter()
+sclab.preprocess.neighbors(big, dims=(1, 30), n_neighbors=20)
+t1 = time.perf_counter()
+sclab.tools.cluster.leiden(big)
+t2 = time.perf_counter()
+n_clusters = big.obs["leiden"].nunique()
+ok(
+    "10k cells: neighbors, leiden",
+    f"({t1 - t0:.2f} s, {t2 - t1:.2f} s; {n_clusters} clusters)",
+)
 
 
-standin_neighbors(d.dataset.adata)
 elapsed = run("UMAP", n_components=2)
 xy = d.dataset.adata.obsm["X_2Dumap"]
 assert xy.shape == (d.dataset.adata.n_obs, 2) and np.isfinite(xy).all()
 assert d.processor.step_history[-1]["params"]["backend"] == "native"
-assert d.generate_code().count('backend="native"') == 4
-ok("UMAP (sclab's port of umap-learn, stand-in graph)", elapsed)
+assert d.generate_code().count('backend="native"') == 6
+ok("UMAP (sclab's port of umap-learn)", elapsed)
 
 
 integration = dict(group_by="batch", reference_batch=None, max_iters=10)
@@ -132,7 +133,10 @@ de_kw = dict(reference_group="A", layer="counts", replicas_per_group=3, random_s
 assert find_spec("edgepython") is not None and find_spec("numba") is None
 table = sclab.tools.de(adata.copy(), "grp", method="pseudobulk_limma", **de_kw)
 assert {"gene", "logFC", "pval", "padj"} <= set(table.columns), table.columns
-ok("sclab.tools.de pseudobulk_limma (edgepython filterByExpr, TMM)", f"({len(table)} rows)")
+ok(
+    "sclab.tools.de pseudobulk_limma (edgepython filterByExpr, TMM)",
+    f"({len(table)} rows)",
+)
 
 # sclab's own filterByExpr and TMM, used when edgepython is not installed
 _pseudobulk_pylimma.edgepython_is_available = lambda: False
@@ -147,7 +151,10 @@ assert len(table) > 0 and table["pval"].between(0, 1).all()
 import edgepython.glm_kernels  # noqa: E402  (imported by sclab without numba)
 
 assert edgepython.glm_kernels.fit_leven_mat is _edgepython_kernels.fit_leven_mat
-ok("sclab.tools.de pseudobulk_edger (edgepython, NumPy kernels)", f"({len(table)} rows)")
+ok(
+    "sclab.tools.de pseudobulk_edger (edgepython, NumPy kernels)",
+    f"({len(table)} rows)",
+)
 
 de = steps["Differential Expression"]
 c = de.variable_controls
