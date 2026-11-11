@@ -331,7 +331,7 @@ def test_global_scaling_leaves_scores_and_pvalues_unchanged(adata, method):
     with pytest.warns(UserWarning, match="adata.X is scaled: fold changes are not"):
         scaled = _de(adata, method, "X")
     with warnings.catch_warnings():
-        warnings.simplefilter("error")
+        warnings.filterwarnings("error", r".*scaled", UserWarning)
         unscaled = _de(adata, method, "counts_normt_log1p")
     assert scaled.index.equals(unscaled.index)
     for column in ("score", "pval", "padj"):
@@ -357,7 +357,7 @@ def test_logreg_on_scaled_data_warns(adata):
 
 def test_no_scaling_warning_when_unknown_or_unscaled(adata):
     with warnings.catch_warnings():
-        warnings.simplefilter("error")
+        warnings.filterwarnings("error", r".*scaled", UserWarning)
         _de(adata, "wilcoxon", "X")  # not preprocessed by sclab: unknown
         _preprocessed(adata, scale=False)
         _de(adata, "wilcoxon", "X")
