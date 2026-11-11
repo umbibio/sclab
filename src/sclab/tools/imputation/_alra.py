@@ -7,6 +7,7 @@ from numpy.typing import NDArray
 from scipy.sparse import csc_matrix, csr_matrix, issparse
 
 from ..._citations import cites
+from ..._compat import require
 
 
 ALRA_WARN_BYTES = 2e9
@@ -55,6 +56,7 @@ def _alra_on_ndarray(
     RNA-seq data. *Nature Communications*, 13, 192.
     https://doi.org/10.1038/s41467-021-27729-z
     """
+    require("R")  # and the ALRA R package
     import rpy2.robjects as robjects
     from rpy2.robjects import numpy2ri
     from rpy2.robjects.conversion import localconverter

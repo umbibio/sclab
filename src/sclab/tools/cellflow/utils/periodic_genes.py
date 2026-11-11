@@ -6,6 +6,7 @@ from anndata import AnnData
 from scipy.signal import get_window, periodogram
 
 from sclab._citations import cites
+from sclab.preprocess._scanpy_port import get_pp
 from sclab.tools.utils import aggregate_and_filter
 from sclab.utils import check_raw_counts
 
@@ -168,8 +169,6 @@ def _binned_log_profiles(
     Returns the profiles (surviving bins x genes, in bin order, indexed by
     bin-center label) and the labels of all ``n`` bins.
     """
-    import scanpy as sc
-
     if not tmax > tmin:
         raise ValueError(f"tmax ({tmax}) must be greater than tmin ({tmin}).")
 
@@ -226,7 +225,7 @@ def _binned_log_profiles(
         make_stats=False,
         make_dummies=False,
     )
-    sc.pp.normalize_total(aggregated, target_sum=1e4)
+    get_pp("auto").normalize_total(aggregated, target_sum=1e4)
     log_cnts = np.log1p(aggregated.X)
 
     surviving = aggregated.obs["timepoint"].astype(str).tolist()

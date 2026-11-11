@@ -23,6 +23,7 @@ from plotly.graph_objs.scatter import Marker as Marker2D
 from plotly.graph_objs.scatter3d import Marker as Marker3D
 from scipy.interpolate import make_smoothing_spline
 
+from ..._compat import install_command
 from ...event import EventBroker, EventClient
 from ...utils._widgets import Download, ResizeNotifier
 from .._dataset import SCLabDataset
@@ -323,8 +324,8 @@ class Plotter(GridBox, EventClient):
             except ImportError:
                 self.backend_dropdown.value = "plotly"
                 self._say(
-                    "jupyter-scatter is not installed (pip install jupyter-scatter): "
-                    "using plotly"
+                    "jupyter-scatter is not installed "
+                    f"({install_command('jscatter')}): using plotly"
                 )
                 return
         self._show(self.g)

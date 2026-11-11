@@ -338,3 +338,38 @@ def test_messages_come_from_the_registry(monkeypatch):
     with pytest.raises(ImportError) as error:
         neighbors(adata, batch_key="grp", backend="scanpy")
     assert str(error.value) == reason
+
+
+def test_library_functions_name_the_missing_package(monkeypatch):
+    from sclab.tools.doublet_detection import doubletdetection, scdblfinder
+    from sclab.tools.imputation._alra import _alra_on_ndarray
+
+    for m in ("doubletdetection", "rpy2", "pyscdblfinder"):
+        monkeypatch.setitem(sys.modules, m, None)
+    adata = make_adata()
+    reason = "Needs doubletdetection: pip install 'sclab[doublets]'"
+    with pytest.raises(ImportError) as error:
+        doubletdetection(adata, layer="counts")
+    assert str(error.value) == reason
+    with pytest.raises(ImportError) as error:
+        _alra_on_ndarray(np.ones((3, 3)))  # also scdblfinder(backend="r") etc.
+    assert str(error.value) == "Needs rpy2, anndata2ri: pip install 'sclab[r]'"
+    with pytest.raises(ImportError, match=r"pyscdblfinder, igraph: pip install"):
+        scdblfinder(adata, layer="counts", backend="python")
+
+
+def test_periodic_genes_runs_without_scanpy(monkeypatch):
+    from sclab.tools.cellflow import periodic_genes
+
+    def run():
+        adata = simple_loop_adata(n_obs=600, n_vars=40)
+        adata.layers["counts"] = adata.X.copy()
+        periodic_genes(adata, "time", n=6, alpha=0.05)
+        return adata.var
+
+    expected = run() if find_spec("scanpy") else None
+    monkeypatch.setitem(sys.modules, "scanpy", None)
+    var = run()
+    assert "periodic" in var
+    if expected is not None:  # sclab's normalize_total port: the same results
+        pd.testing.assert_frame_equal(var, expected)

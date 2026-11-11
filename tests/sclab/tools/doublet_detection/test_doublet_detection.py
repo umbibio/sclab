@@ -352,22 +352,11 @@ class TestScDblFinder:
         with pytest.raises((ImportError, ModuleNotFoundError)):
             scdblfinder(adata)
 
-    def test_missing_rpy2_message(self, adata, monkeypatch, capsys):
-        import builtins
-
-        real_import = builtins.__import__
-
-        def fake_import(name, *args, **kwargs):
-            if name.startswith("rpy2"):
-                raise ModuleNotFoundError(name)
-            return real_import(name, *args, **kwargs)
-
-        monkeypatch.setattr(builtins, "__import__", fake_import)
-
-        with pytest.raises(ModuleNotFoundError, match="rpy2 and anndata2ri"):
+    def test_missing_rpy2_message(self, adata, monkeypatch):
+        monkeypatch.setitem(sys.modules, "rpy2", None)  # import rpy2 raises
+        reason = r"Needs rpy2, anndata2ri: pip install 'sclab\[r\]'"
+        with pytest.raises(ImportError, match=reason):
             scdblfinder(adata, backend="r")
-
-        assert "pip install rpy2 anndata2ri" in capsys.readouterr().out
 
     @needs_scdblfinder
     def test_unknown_clusters_column_is_rejected(self, adata):

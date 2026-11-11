@@ -7,6 +7,7 @@ import pandas as pd
 from anndata import AnnData
 
 from sclab._citations import cites
+from sclab._compat import require, requirement
 from sclab.utils import check_raw_counts, layer_keys
 
 PYTHON_DEPENDENCIES = ["rpy2", "anndata2ri"]
@@ -296,7 +297,7 @@ def _scdblfinder_python(
     if not _pyscdblfinder_available():
         raise ImportError(
             "scdblfinder needs either R with scDblFinder (backend='r') or the "
-            "Python port: pip install 'sclab[scdblfinder-py]'"
+            f"Python port, {requirement('scDblFinder-py')}"
         )
 
     from pyscdblfinder import sc_dbl_finder
@@ -375,6 +376,7 @@ def _warn_on_broken_xgboost() -> None:
 
 
 def _try_imports():
+    require("scDblFinder")  # rpy2, anndata2ri; the R packages are checked below
     try:
         import rpy2.robjects as robjects
         from rpy2.robjects.packages import PackageNotInstalledError, importr
@@ -389,17 +391,6 @@ def _try_imports():
         importr("scDblFinder")
         importr("BiocParallel")
         importr("SingleCellExperiment")
-
-    except ModuleNotFoundError:
-        message = (
-            "scdblfinder requires rpy2 and anndata2ri to be installed.\n"
-            "please install with one of the following:\n"
-            "$ pip install rpy2 anndata2ri\n"
-            "or\n"
-            "$ conda install -c conda-forge rpy2 anndata2ri\n"
-        )
-        print(message)
-        raise ModuleNotFoundError(message)
 
     except PackageNotInstalledError:
         message = (

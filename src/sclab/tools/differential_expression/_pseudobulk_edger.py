@@ -5,6 +5,7 @@ import pandas as pd
 from anndata import AnnData
 
 from ..._citations import cites
+from ..._compat import require
 from ..utils import aggregate_and_filter
 from ._pseudobulk_helpers import validate_counts_layer
 
@@ -337,6 +338,7 @@ fit_edger_model <- function(adata_, group_key, cell_identity_key = "None", verbo
 
 
 def _try_imports():
+    require("R")  # rpy2, anndata2ri; the R packages are checked below
     try:
         import rpy2.robjects as robjects
         from rpy2.robjects.packages import PackageNotInstalledError, importr
@@ -350,17 +352,6 @@ def _try_imports():
         importr("edgeR")
         importr("MAST")
         importr("SingleCellExperiment")
-
-    except ModuleNotFoundError:
-        message = (
-            "edger_pseudobulk requires rpy2 and anndata2ri to be installed.\n"
-            "please install with one of the following:\n"
-            "$ pip install rpy2 anndata2ri\n"
-            "or\n"
-            "$ conda install -c conda-forge rpy2 anndata2ri\n"
-        )
-        print(message)
-        raise ModuleNotFoundError(message)
 
     except PackageNotInstalledError:
         message = (

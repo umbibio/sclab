@@ -1,3 +1,5 @@
+import sys
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -49,22 +51,13 @@ class TestAvailability:
         assert "batch_key" not in inspect.signature(pseudobulk_edger).parameters
 
 
-def test_missing_rpy2_raises_helpful_error(monkeypatch, counts_adata, capsys):
-    import builtins
+def test_missing_rpy2_raises_helpful_error(monkeypatch, counts_adata):
+    monkeypatch.setitem(sys.modules, "rpy2", None)  # import rpy2 raises
 
-    real_import = builtins.__import__
-
-    def fake_import(name, *args, **kwargs):
-        if name.startswith("rpy2"):
-            raise ModuleNotFoundError(name)
-        return real_import(name, *args, **kwargs)
-
-    monkeypatch.setattr(builtins, "__import__", fake_import)
-
-    with pytest.raises(ModuleNotFoundError, match="rpy2 and anndata2ri"):
+    with pytest.raises(
+        ImportError, match=r"Needs rpy2, anndata2ri: pip install 'sclab\[r\]'"
+    ):
         pseudobulk_edger(counts_adata, "cond", replicas_per_group=2)
-
-    assert "pip install rpy2 anndata2ri" in capsys.readouterr().out
 
 
 @pytest.mark.skipif(

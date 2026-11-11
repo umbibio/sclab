@@ -6,6 +6,7 @@ from numpy import ndarray
 from numpy.ma.core import MaskedArray
 
 from sclab._citations import cites
+from sclab._compat import require
 from sclab.utils import check_raw_counts
 
 
@@ -62,6 +63,7 @@ def doubletdetection(
         ``clustering_algorithm="leiden"`` (as the dashboard does) for
         reproducible results.
     """
+    require("doubletdetection")
     from doubletdetection.doubletdetection import BoostClassifier
 
     clf = BoostClassifier(
