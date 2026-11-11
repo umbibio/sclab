@@ -170,6 +170,28 @@ def test_regress_out_singular_design(lognorm):
     np.testing.assert_allclose(a.X, b.X, rtol=1e-4, atol=1e-5)
 
 
+def test_regress_out_categorical(lognorm):
+    """Per-category gene means (scanpy fits a GLM per gene); a cell with a
+    missing category and the unexpressed (constant) genes included."""
+    a, b = lognorm.copy(), lognorm.copy()
+    for adata in (a, b):
+        adata.obs.loc[adata.obs_names[0], "batch"] = np.nan
+    sc.pp.regress_out(a, keys="batch", n_jobs=1)
+    native.regress_out(b, keys="batch")
+    assert a.X.dtype == b.X.dtype
+    # scanpy's float32 category means follow numba's summation order: the port
+    # matches numba 0.68 bit for bit (residuals within 5e-13); with numba 0.64
+    # they differ by an ulp, and the residuals by up to 1.4e-5
+    np.testing.assert_allclose(a.X, b.X, rtol=RTOL, atol=5e-5)
+    with pytest.raises(ValueError, match="only a single one"):
+        native.regress_out(lognorm.copy(), keys=["batch", "n_genes"])
+
+
+def test_scale_zero_center_is_not_ported(lognorm):
+    with pytest.raises(NotImplementedError, match="zero_center=False"):
+        native.scale(lognorm, zero_center=True)
+
+
 @pytest.mark.parametrize("mask_var", [None, "hvg"])
 @pytest.mark.parametrize("zero_center", [True, False])
 def test_pca(lognorm, mask_var, zero_center):

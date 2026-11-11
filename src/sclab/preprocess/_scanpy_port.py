@@ -216,9 +216,18 @@ def scale(data, *, zero_center: bool = True):
     An AnnData's X is scaled in place and ``var["mean"]``, ``var["std"]`` set;
     an array or sparse matrix is scaled in place (integer input: a float64
     copy) and returned.
+
+    ``zero_center=True`` is deliberately not ported: subtracting the means
+    turns a sparse matrix dense (cells x genes floats). Use
+    ``zero_center=False``, which keeps sparse data sparse; the PCA that
+    follows centers the data implicitly (:func:`pca`, ``zero_center=True``).
     """
     if zero_center:
-        raise NotImplementedError("only zero_center=False is ported")
+        raise NotImplementedError(
+            "scale(zero_center=True) would densify the data and is not ported; "
+            "use zero_center=False (keeps sparse data sparse; PCA centers "
+            "implicitly)"
+        )
     if isinstance(data, AnnData):
         data.X, data.var["mean"], data.var["std"] = _scale(data.X)
         return None
@@ -243,13 +252,21 @@ def _scale(x):
 
 
 def regress_out(adata: AnnData, keys, *, n_jobs: int | None = None) -> None:
-    """``scanpy.pp.regress_out(adata, keys)`` for numeric ``adata.obs`` keys:
-    replace X (densified) by the residuals of a per-gene linear regression on
-    the keys plus an intercept. ``n_jobs`` is ignored.
+    """``scanpy.pp.regress_out(adata, keys)``: replace X (densified) by the
+    residuals of a per-gene linear regression on the numeric ``adata.obs``
+    keys plus an intercept, or on the per-category gene means of a single
+    categorical (or string) key. ``n_jobs`` is ignored.
     """
     keys = [keys] if isinstance(keys, str) else list(keys)
-    if isinstance(adata.obs[keys[0]].dtype, pd.CategoricalDtype):
-        raise NotImplementedError("regressing out a categorical key is not ported")
+    key0 = adata.obs[keys[0]]
+    if not pd.api.types.is_numeric_dtype(key0):  # scanpy sanitizes strings
+        if len(keys) > 1:
+            raise ValueError(
+                "If providing categorical variable, only a single one is allowed. "
+                "For this one we regress on the mean for each category."
+            )
+        adata.X = _regress_out_categorical(adata.X, key0.astype("category"))
+        return
     x = adata.X
     if issparse(x):
         x = x.toarray()
@@ -273,6 +290,43 @@ def regress_out(adata: AnnData, keys, *, n_jobs: int | None = None) -> None:
         y = res[:, varying]
         res[:, varying] = y - r @ (np.linalg.pinv(r) @ y)
     adata.X = res
+
+
+def _regress_out_categorical(x, key: pd.Series) -> np.ndarray:
+    """scanpy's categorical branch: each gene ``y`` is fit by a Gaussian GLM
+    on ``[1, m]``, ``m`` the float32 mean of ``y`` in each cell's category
+    (``_create_regressor_categorical``; 0 for a missing category), and
+    replaced by the residuals (float64). Constant genes are kept as they are.
+    The GLM is ordinary least squares, done here in closed form per column
+    block; with a constant ``m`` (rank-deficient) it reduces to ``y - mean(y)``
+    as statsmodels' pseudo-inverse fit.
+    """
+    codes = key.cat.codes.to_numpy()
+    n_cat = len(key.cat.categories)
+    dtype = x.dtype
+    if np.issubdtype(dtype, np.integer):
+        dtype = np.float32 if dtype.itemsize <= 4 else np.float64
+    res = np.empty(x.shape, dtype=np.float64)
+    for j in range(0, x.shape[1], 1000):
+        y = x[:, j : j + 1000]
+        y = np.asarray(y.toarray() if issparse(y) else y, dtype=dtype)
+        means = np.zeros((n_cat + 1, y.shape[1]), np.float32)  # last: code -1
+        for c in np.unique(codes[codes >= 0]):
+            # numba's mean: a sequential sum in x's dtype (cumsum is sequential)
+            yc = y[codes == c]
+            means[c] = np.cumsum(yc, axis=0, dtype=dtype)[-1] / np.float64(len(yc))
+        r = means[codes].astype(np.float64)
+        y = y.astype(np.float64)
+        r -= r.mean(axis=0)
+        yc = y - y.mean(axis=0)
+        rr = np.einsum("ij,ij->j", r, r)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            slope = np.where(rr > 0, np.einsum("ij,ij->j", r, yc) / rr, 0.0)
+        yc -= r * slope
+        constant = ~(y != y[:1]).any(axis=0)
+        yc[:, constant] = y[:, constant]
+        res[:, j : j + 1000] = yc
+    return res
 
 
 # --- highly variable genes: _highly_variable_genes.py -------------------------
