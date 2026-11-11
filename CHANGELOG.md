@@ -68,6 +68,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `check_counts` parameter on `pseudobulk_pylimma()`, `pseudobulk_limma()` and `pseudobulk_edger()` (default `True`) to reject non-count input
 
 ### Changed
+- Preprocess stores less: no `counts_log1p` layer (HVG selection and PCA's reference-batch mode compute log1p of the counts when needed) and no copy of X under its transformation name. With `scale=True` it keeps one unscaled layer (the data just before scaling, e.g. `counts_normt_log1p`, float32). Results are unchanged. 20k cells × 20k genes: 916 MiB of X + layers → 687 MiB with scaling, 458 MiB without. Layers already in a dataset are kept.
+- What X holds is recorded in `adata.uns["sclab"]["X"]` (e.g. `"counts_normt_log1p_scale"`; `sclab.utils.x_name()`), kept in h5ad files; the Gene Expression and Differential Expression layer dropdowns now offer X, labelled "X (counts_normt_log1p_scale)"
+- Replaying a Keep/Drop selection that matches a different number of cells than recorded now shows a `UserWarning` (step, matched and recorded counts); the replay continues
 - History replay stops at the first step that fails (raises, records a failed status, or runs with different params than recorded) with a `RuntimeError` naming the step; earlier steps stay applied and calling `apply_step_history()` again resumes at the failed step. Previously it logged a warning and continued.
 - CCA's "partial" and "full" solvers use the same sign convention as "randomized" (sklearn's `svd_flip`), so all three agree; about half of their components flip sign compared with earlier output (values unchanged). The default "randomized" output is unchanged.
 - Under Pyodide, `sclab.optional_dependencies()` and install hints say scanpy, bbknn, doubletdetection, scanorama and R are not available there (with the reason and, where one exists, sclab's native port) instead of suggesting a `micropip.install` that would fail
