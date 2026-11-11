@@ -324,7 +324,38 @@ def test_optional_dependencies_table(capsys, monkeypatch):
     assert "micropip.install('edgepython', deps=False)" in install["edgepython"]
     assert "micropip.install('scrublet', deps=False)" in install["scrublet"]
     assert install["scanorama"].startswith("not available under Pyodide")
+    # no wasm build of numba, annoy, leidenalg, rpy2: micropip cannot install these
+    unavailable = {k for k, v in install.items() if v.startswith("not available")}
+    assert unavailable == {
+        "scanpy",
+        "bbknn",
+        "scanorama",
+        "doubletdetection",
+        "scDblFinder",
+        "R",
+    }
+    assert "needs numba; sclab's native ports run instead" in install["scanpy"]
+    assert "sclab's native port runs instead" in install["bbknn"]
+    for feature in ("skmisc", "scDblFinder-py", "pylimma", "lazy"):  # installable
+        assert install[feature].startswith("await micropip.install(["), feature
     assert capsys.readouterr().out == ""
+
+
+def test_wasm_messages_say_not_available(monkeypatch):
+    from sclab.preprocess import neighbors
+    from sclab.tools.doublet_detection import doubletdetection
+
+    for m in ("scanpy", "bbknn", "doubletdetection"):
+        monkeypatch.setitem(sys.modules, m, None)
+    monkeypatch.setattr(_compat, "IS_WASM", True)
+    adata = make_adata()
+    adata.obsm["X_pca"] = np.zeros((adata.n_obs, 10))
+    with pytest.raises(ImportError) as error:
+        neighbors(adata, batch_key="grp", backend="scanpy")
+    assert str(error.value).startswith("Needs scanpy: not available under Pyodide")
+    neighbors(adata, use_rep="X_pca", batch_key="grp")  # auto: the native port
+    with pytest.raises(ImportError, match="Needs doubletdetection: not available"):
+        doubletdetection(adata, layer="counts")
 
 
 def test_messages_come_from_the_registry(monkeypatch):

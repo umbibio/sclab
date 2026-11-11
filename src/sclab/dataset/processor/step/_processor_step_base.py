@@ -264,8 +264,8 @@ class ProcessorStepBase(EventClient):
             if reason := missing(feature):
                 return (
                     f"{reason} (recorded with backend 'scanpy', not replayed with "
-                    "sclab's native port as results may differ; install it, or "
-                    "run the step again: it then uses the native port)"
+                    "sclab's native port as results may differ: run the step "
+                    "again to use it)"
                 )
         return None
 

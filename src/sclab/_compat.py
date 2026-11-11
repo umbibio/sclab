@@ -88,13 +88,26 @@ FEATURES: dict[str, Feature] = {
 }
 
 
+# why micropip cannot install them: dependencies with neither a wasm build nor a
+# pure Python wheel (checked with micropip 0.11.1 under Pyodide 2026.0)
+NOT_IN_PYODIDE = {
+    "scanpy": "scanpy needs numba; sclab's native ports run instead "
+    "(backend 'auto' or 'native')",
+    "bbknn": "bbknn needs annoy and numba; sclab's native port runs instead "
+    "(backend 'auto' or 'native')",
+    "scanorama": "scanorama needs annoy and fbpca, scanpy numba",
+    "doubletdetection": "doubletdetection needs scanpy (numba) and phenograph "
+    "(leidenalg); scrublet works",
+}
+
+
 def install_command(feature: str) -> str:
     """How to install ``feature``'s packages: micropip under Pyodide, else pip."""
     f = FEATURES[feature]
     if IS_WASM and f.extra == "r":
         return "not available under Pyodide (no R)"
-    if IS_WASM and feature == "scanorama":
-        return "not available under Pyodide (scanorama needs annoy, scanpy numba)"
+    if IS_WASM and feature in NOT_IN_PYODIDE:
+        return f"not available under Pyodide ({NOT_IN_PYODIDE[feature]})"
     if IS_WASM and feature == "edgepython":  # without numba (no wasm build)
         return (
             "await micropip.install(['statsmodels', 'matplotlib']); "
