@@ -114,9 +114,9 @@ def test_x_is_labelled_with_what_it_holds():
             "counts": "counts",
             "counts_normt_log1p": "counts_normt_log1p",
         }
-    assert de["override_layer"].description == (
-        "Override layer (X (counts_normt_log1p_scale))"
-    )
+    # X is scaled: the log-normalized unscaled data are the default
+    assert de["override_layer"].description == "Override layer (counts_normt_log1p)"
+    assert gene_layer.value == "counts_normt_log1p"
     gene_layer.value = "X"
     assert gene_layer.label == "X (counts_normt_log1p_scale)"
 
@@ -851,6 +851,38 @@ class TestGeneExpression:
         assert len(control.options) == 27
         assert control.value == ""
 
+    @pytest.mark.parametrize(
+        "preprocess, default",
+        [({}, "counts_normt_log1p"), ({"scale": False}, "X")],
+    )
+    def test_default_layer_is_the_unscaled_data(self, preprocess, default):
+        d = SCLabDashboard(make_adata(120, 60))
+        layer = d.processor.steps["Gene Expression"].variable_controls["layer"]
+        assert layer.value is None  # raw data: nothing log-normalized yet
+        strict_run_step(d, "QC")
+        strict_run_step(d, "Preprocess", **preprocess)
+        assert layer.value == default
+        assert "X" in layer.options.values()  # scaled X stays selectable
+        # a new dashboard on the preprocessed data starts with it too
+        layer = (
+            SCLabDashboard(d.dataset.adata.copy())
+            .processor.steps["Gene Expression"]
+            .variable_controls["layer"]
+        )
+        assert layer.value == default
+
+    def test_chosen_layer_kept_when_preprocess_reruns(self):
+        d = SCLabDashboard(make_adata(120, 60))
+        strict_run_step(d, "QC")
+        strict_run_step(d, "Preprocess", scale=False)
+        layer = d.processor.steps["Gene Expression"].variable_controls["layer"]
+        assert layer.value == "X"
+        strict_run_step(d, "Preprocess")  # X scaled: the default follows
+        assert layer.value == "counts_normt_log1p"
+        layer.value = "X"  # chosen
+        strict_run_step(d, "Preprocess", group_by="batch")
+        assert layer.value == "X"
+
     def test_nothing_published_until_gene_and_layer_chosen(self, gene_dash):
         calls = capture(gene_dash, "dplt_plot_figure_request")
         step = gene_dash.processor.steps["Gene Expression"]
@@ -1143,7 +1175,9 @@ class TestDifferentialExpressionStep:
             "B_vs_rest",
             "C_vs_rest",
         ]
-        assert params["method"] == "wilcoxon" and params["layer"] == "X"
+        # X is scaled: the log-normalized unscaled data are tested
+        assert params["method"] == "wilcoxon"
+        assert params["layer"] == "counts_normt_log1p"
         assert params["reference_group"] == "rest"
         # every group's top gene is up in that group relative to the rest
         X = adata.X.toarray()
@@ -1154,7 +1188,7 @@ class TestDifferentialExpressionStep:
             assert top["score"] > 0
             assert X[inside, j].mean() > X[~inside, j].mean()
         recorded = dash.processor.step_history[-1]["params"]
-        assert recorded["layer"] == "X"
+        assert recorded["layer"] == "counts_normt_log1p"
         assert recorded["key_added"] == "differential_expression"
         # results panel follows the new analysis
         results = step.results
@@ -1208,9 +1242,10 @@ class TestDifferentialExpressionStep:
         assert c["layer"].value == "counts"
         assert "(counts)" in c["override_layer"].description
         c["method"].value = "t-test"
-        assert step.resolved_params(step._control_params())["layer"] == "X"
-        assert c["layer"].value == "X"
-        assert "(X (counts_normt_log1p_scale))" in c["override_layer"].description
+        resolved = step.resolved_params(step._control_params())
+        assert resolved["layer"] == "counts_normt_log1p"
+        assert c["layer"].value == "counts_normt_log1p"
+        assert "(counts_normt_log1p)" in c["override_layer"].description
         c["method"].value = "wilcoxon"
 
     def test_override_checkbox_reveals_the_layer(self, dash):
@@ -1297,6 +1332,90 @@ class TestDifferentialExpressionStep:
         n = len(d.broker.exceptions_log)
         d.broker.publish("dset_var_dataframe_change", d.dataset.adata.var)
         assert d.broker.exceptions_log[n:] == []
+
+
+def _preprocessed(**preprocess) -> SCLabDashboard:
+    d = SCLabDashboard(make_adata(240, 120))
+    strict_run_step(d, "QC")
+    strict_run_step(d, "Preprocess", **preprocess)
+    return d
+
+
+def _de_state(d: SCLabDashboard, **params) -> tuple[str, str, str]:
+    """(resolved layer, override caption, status) of the DE step for ``params``."""
+    step = d.processor.steps[DE]
+    c = step.variable_controls
+    for key, value in de_params(**params).items():
+        c[key].value = value
+    step._refresh()  # coalesced otherwise
+    layer = step.resolved_params(step._control_params())["layer"]
+    return layer, c["override_layer"].description, step.status.value
+
+
+class TestDifferentialExpressionLayer:
+    """Cell-level tests run on the log-normalized unscaled data."""
+
+    def test_unscaled_x(self):
+        d = _preprocessed(scale=False)
+        layer, caption, status = _de_state(d)
+        assert layer == "X"
+        assert caption == "Override layer (X (counts_normt_log1p))"
+        assert status == ""
+
+    def test_scaled_x_uses_the_unscaled_layer(self):
+        d = _preprocessed()
+        layer, caption, status = _de_state(d)
+        assert layer == "counts_normt_log1p"
+        assert caption == "Override layer (counts_normt_log1p)"
+        assert status == ""
+        strict_run_step(d, DE, **de_params())
+        res = d.dataset.adata.uns["differential_expression"]
+        assert res["params"]["layer"] == "counts_normt_log1p"
+        assert d.processor.step_history[-1]["params"]["layer"] == "counts_normt_log1p"
+        assert 'layer="counts_normt_log1p"' in d.generate_code()
+        # pseudobulk unchanged
+        assert _de_state(d, method="pseudobulk_edger")[0] == "counts"
+
+    def test_scaled_x_override_warns(self):
+        d = _preprocessed()
+        layer, _, status = _de_state(d, override_layer=True, layer="X")
+        assert layer == "X"
+        assert "Warning: adata.X is scaled: fold changes are not meaningful" in status
+        assert "Use layer 'counts_normt_log1p' (unscaled)." in status
+        _, _, status = _de_state(d, method="logreg", override_layer=True, layer="X")
+        assert "logreg results depend on the scaling" in status
+
+    def test_scaled_x_without_unscaled_layer_falls_back_to_x(self):
+        d = _preprocessed()
+        del d.dataset.adata.layers["counts_normt_log1p"]  # as older sclab left it
+        d.broker.publish("dset_anndata_layers_change", layer_keys(d.dataset.adata))
+        layer, caption, status = _de_state(d)
+        assert layer == "X"
+        assert caption == "Override layer (X (counts_normt_log1p_scale))"
+        assert "Warning: adata.X is scaled: fold changes are not meaningful" in status
+        assert "Rerun Preprocess to keep the unscaled data." in status
+        step = d.processor.steps[DE]
+        assert not step.run_button.disabled  # a warning, not a refusal
+        with pytest.warns(UserWarning, match="adata.X is scaled"):
+            strict_run_step(d, DE, **de_params())
+        assert d.processor.step_history[-1]["params"]["layer"] == "X"
+        assert 'layer="X"' in d.generate_code()
+
+    def test_per_group_scaling_warns_about_p_values(self):
+        d = _preprocessed(group_by="batch")
+        assert _de_state(d) == (
+            "counts_normt_log1p",
+            "Override layer (counts_normt_log1p)",
+            "",
+        )
+        for method in ("wilcoxon", "t-test"):
+            _, _, status = _de_state(d, method=method, override_layer=True, layer="X")
+            assert "adata.X was scaled per group of" in status
+            assert "scores and p-values are affected" in status
+        d.dataset.adata.layers.pop("counts_normt_log1p")
+        d.broker.publish("dset_anndata_layers_change", layer_keys(d.dataset.adata))
+        layer, _, status = _de_state(d)  # the fallback warns too
+        assert layer == "X" and "scores and p-values are affected" in status
 
 
 @needs_edgepython

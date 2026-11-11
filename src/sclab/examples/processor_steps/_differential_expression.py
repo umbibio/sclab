@@ -33,6 +33,7 @@ from sclab.tools.differential_expression import (
 from sclab.tools.differential_expression._differential_expression import (
     PSEUDOBULK_METHODS,
     SCANPY_METHODS,
+    scaling_warning,
 )
 from sclab.utils import (
     LazyOutput,
@@ -41,6 +42,7 @@ from sclab.utils import (
     looks_like_raw_counts,
     set_options_keep_value,
     text_or_category_columns,
+    unscaled_layer,
     write_excel,
     x_label,
 )
@@ -273,11 +275,15 @@ class DifferentialExpression(ProcessorStepBase):
     Compares each condition group with a reference group (or the rest of
     the cells), optionally within each cell identity. Methods: the cell-level
     tests of :func:`scanpy.tl.rank_genes_groups` (``wilcoxon``, ``t-test``,
-    ``logreg``) on ``adata.X``,
+    ``logreg``) on the log-normalized unscaled data (``adata.X``, or the
+    layer Preprocess kept before scaling it, see
+    :func:`sclab.utils.unscaled_layer`),
     and the pseudobulk tests (``pseudobulk_limma``, ``pseudobulk_edger``,
     with the ``de`` extra) on the dataset's counts layer; tick "Override
-    layer" to pick another layer. Results are stored in ``adata.uns`` and
-    shown in a :class:`DifferentialExpressionResults` panel.
+    layer" to pick another layer. A cell-level test on scaled data runs
+    with a warning below the Run button. The layer used is recorded
+    in the history and the generated code. Results are stored in
+    ``adata.uns`` and shown in a :class:`DifferentialExpressionResults` panel.
 
     The cell-level tests use scanpy if it is installed, else sclab's native
     port of :func:`scanpy.tl.rank_genes_groups` (``backend="auto"``; the same
@@ -354,8 +360,11 @@ class DifferentialExpression(ProcessorStepBase):
         self._update_method()  # X's name in the caption may have changed
 
     def _auto_layer(self, method: str | None) -> str:
-        """The layer ``method`` uses unless overridden."""
-        return self.parent.dataset.counts_layer if method in PSEUDOBULK_METHODS else "X"
+        """The layer ``method`` uses unless overridden: the counts for the
+        pseudobulk methods, else the log-normalized unscaled data."""
+        if method in PSEUDOBULK_METHODS:
+            return self.parent.dataset.counts_layer
+        return unscaled_layer(self.parent.dataset.adata)
 
     def _layer(self, params: dict) -> str | None:
         if params.get("override_layer"):
@@ -390,6 +399,10 @@ class DifferentialExpression(ProcessorStepBase):
 
     def unavailable(self, params: dict) -> str | None:
         return _unavailable(params.get("method")) or super().unavailable(params)
+
+    def warning(self, params: dict) -> str | None:
+        adata = self.parent.dataset.adata
+        return scaling_warning(adata, params.get("method"), self._layer(params))
 
     def validate(self, params: dict) -> str | None:
         adata = self.parent.dataset.adata

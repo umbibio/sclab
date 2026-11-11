@@ -6,7 +6,7 @@ from ipywidgets import Combobox, Dropdown
 
 from sclab.dataset.processor import Processor
 from sclab.dataset.processor.step import ProcessorStepBase
-from sclab.utils import layer_options
+from sclab.utils import layer_options, unscaled_layer, x_name, x_scaled
 
 colorscales = list(
     filter(lambda s: "swatch" not in s and not s.startswith("_"), dir(pc.sequential))
@@ -21,6 +21,10 @@ class GeneExpression(ProcessorStepBase):
     scatter (colored by gene expression) or as a scatter plot against any
     numeric metadata column (e.g. pseudotime). The plot updates reactively
     whenever the gene, layer, axis, or color scale selection changes.
+
+    The layer defaults to the log-normalized unscaled data once Preprocess
+    ran (see :func:`sclab.utils.unscaled_layer`); scaled ``adata.X`` stays
+    selectable.
     """
 
     parent: Processor
@@ -43,6 +47,12 @@ class GeneExpression(ProcessorStepBase):
 
         return tuple(gene_input_options.to_list())
 
+    @staticmethod
+    def _default_layer(adata) -> str | None:
+        """The log-normalized unscaled data, None before Preprocess."""
+        known = x_name(adata) is not None or x_scaled(adata) is not None
+        return unscaled_layer(adata) if known else None
+
     def __init__(self, parent: Processor) -> None:
         df = parent.dataset.metadata.select_dtypes("number")
         df = parent.dataset.metadata
@@ -57,7 +67,7 @@ class GeneExpression(ProcessorStepBase):
             ),
             layer=Dropdown(
                 options=layer_options(parent.dataset.adata),
-                value=None,
+                value=self._default_layer(parent.dataset.adata),
                 description="Layer",
             ),
             time_key=Dropdown(
@@ -70,6 +80,7 @@ class GeneExpression(ProcessorStepBase):
             ),
         )
 
+        self._default = variable_controls["layer"].value
         super().__init__(
             parent=parent,
             fixed_params={},
@@ -79,6 +90,14 @@ class GeneExpression(ProcessorStepBase):
         send_plot = self.guarded(self.send_plot)
         for key in ("gene_input", "layer", "time_key", "colorscale"):
             self.variable_controls[key].observe(send_plot, names="value")
+
+    def dset_anndata_layers_change_callback(self, *args, **kwargs):
+        # after Processor's (it sets the options): follow the default unless chosen
+        control = self.variable_controls["layer"]
+        default = self._default_layer(self.parent.dataset.adata)
+        if control.value in (None, self._default) and default != control.value:
+            control.value = default
+        self._default = default
 
     def validate(self, params: dict) -> str | None:
         if not params.get("gene_input"):

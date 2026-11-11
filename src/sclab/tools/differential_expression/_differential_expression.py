@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 from anndata import AnnData
 
-from sclab.utils import looks_like_raw_counts
+from sclab.utils import layer_scaled, looks_like_raw_counts, unscaled_layer
 
 from ..._citations import record_citations
 from ...preprocess._scanpy_port import resolve_backend
@@ -49,6 +49,29 @@ COLUMNS = [
     "pct_cnd",
     "pct_ref",
 ]
+
+
+def scaling_warning(adata: AnnData, method: str, layer: str) -> str | None:
+    """Why a cell-level ``method`` on ``layer`` (``"X"``: ``adata.X``) gives
+    misleading results because the data are scaled (see
+    :func:`sclab.utils.layer_scaled`), or None."""
+    if method not in SCANPY_METHODS or not (scaled := layer_scaled(adata, layer)):
+        return None
+    what = "adata.X" if layer == "X" else f"layer {layer!r}"
+    lfc = "fold changes are not meaningful on scaled data."
+    if method == "logreg":
+        text = f"{what} is scaled: logreg results depend on the scaling, and {lfc}"
+    elif isinstance(scaled, str):
+        text = (
+            f"{what} was scaled per group of {scaled!r}: groups of cells were "
+            f"scaled differently, so scores and p-values are affected, and {lfc}"
+        )
+    else:
+        text = f"{what} is scaled: {lfc}"
+    alt = unscaled_layer(adata)
+    if not layer_scaled(adata, alt):
+        return f"{text} Use {'adata.X' if alt == 'X' else f'layer {alt!r}'} (unscaled)."
+    return f"{text} Rerun Preprocess to keep the unscaled data."
 
 
 def differential_expression(
@@ -106,7 +129,12 @@ def differential_expression(
         methods and ``"counts"`` (raw counts) for the pseudobulk methods. The
         scanpy methods raise a ``ValueError`` when the data look like raw
         counts (non-negative integers); the pseudobulk methods raise one when
-        they do not (pass ``check_counts=False`` to skip that check).
+        they do not (pass ``check_counts=False`` to skip that check). The
+        scanpy methods expect log-normalized, unscaled data: they warn when
+        ``layer`` is known to be scaled, e.g.
+        ``"X"`` after :func:`sclab.preprocess.preprocess` with ``scale=True``,
+        whose unscaled data are in the layer named like X without ``_scale``
+        (:func:`sclab.utils.unscaled_layer`).
     sample_key : str or None, optional
         Pseudobulk methods only. Column in ``adata.obs`` with the biological
         samples: cells are summed per sample within each group (and
@@ -234,6 +262,8 @@ def differential_expression(
         if sample_key is not None:
             raise ValueError("sample_key is only used by the pseudobulk methods")
         layer = "X" if layer is None else layer
+        if (caveat := scaling_warning(adata, method, layer)) is not None:
+            warnings.warn(caveat, UserWarning, stacklevel=2)
         backend = resolve_backend(backend)
         table = _scanpy_de(
             adata,

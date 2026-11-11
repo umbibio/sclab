@@ -1,4 +1,5 @@
 import inspect
+import warnings
 
 import anndata
 import numpy as np
@@ -305,3 +306,58 @@ def test_default_pseudo_replicas():
 
     assert default(pseudobulk_pylimma) == default(pseudobulk_edgepython) == 3
     assert default(pseudobulk_limma) == default(pseudobulk_edger) == 5  # deprecated
+
+
+def _preprocessed(adata: AnnData, **kwargs) -> AnnData:
+    import sclab.preprocess
+
+    adata.X = adata.layers["counts"].copy()
+    sclab.preprocess.preprocess(adata, compute_hvg=False, backend="native", **kwargs)
+    return adata
+
+
+def _de(adata, method, layer, **kwargs):
+    df = differential_expression(
+        adata, "grp", method=method, layer=layer, backend="native", **kwargs
+    )
+    return df.set_index(["contrast", "gene"]).sort_index()
+
+
+@pytest.mark.parametrize("method", ["wilcoxon", "t-test"])
+def test_global_scaling_leaves_scores_and_pvalues_unchanged(adata, method):
+    """Per-gene global scaling: the same scores and p-values as on the unscaled
+    layer; only the fold changes (and means) differ."""
+    _preprocessed(adata)
+    with pytest.warns(UserWarning, match="adata.X is scaled: fold changes are not"):
+        scaled = _de(adata, method, "X")
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        unscaled = _de(adata, method, "counts_normt_log1p")
+    assert scaled.index.equals(unscaled.index)
+    for column in ("score", "pval", "padj"):
+        np.testing.assert_allclose(scaled[column], unscaled[column], rtol=1e-4)
+    assert not np.allclose(scaled["logFC"], unscaled["logFC"])
+
+
+@pytest.mark.parametrize("method", ["wilcoxon", "t-test"])
+def test_per_group_scaling_changes_pvalues_and_warns(adata, method):
+    _preprocessed(adata, group_by="ct")
+    with pytest.warns(UserWarning, match="scaled per group of 'ct'") as record:
+        scaled = _de(adata, method, "X")
+    assert "Use layer 'counts_normt_log1p' (unscaled)." in str(record[0].message)
+    unscaled = _de(adata, method, "counts_normt_log1p")
+    assert not np.allclose(scaled["pval"], unscaled["pval"])
+
+
+def test_logreg_on_scaled_data_warns(adata):
+    _preprocessed(adata)
+    with pytest.warns(UserWarning, match="logreg results depend on the scaling"):
+        _de(adata, "logreg", "X")
+
+
+def test_no_scaling_warning_when_unknown_or_unscaled(adata):
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        _de(adata, "wilcoxon", "X")  # not preprocessed by sclab: unknown
+        _preprocessed(adata, scale=False)
+        _de(adata, "wilcoxon", "X")
