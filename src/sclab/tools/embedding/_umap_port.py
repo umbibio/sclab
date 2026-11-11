@@ -370,8 +370,8 @@ def optimize_layout_euclidean(
                 (n - epoch_of_next_negative_sample[active])
                 / epochs_per_negative_sample[active]
             )
-            jn = np.repeat(j, np.maximum(n_neg, 0).astype(np.int64))
-            diff, d2 = diffs(jn, rng.integers(n_vertices, size=jn.size))
+            jn = np.repeat(j, np.maximum(n_neg, 0).astype(np.intp))  # int32 on wasm32
+            diff, d2 = diffs(jn, rng.integers(n_vertices, size=jn.size, dtype=np.intp))
             coef = f32(2.0) * gamma * b / ((f32(0.001) + d2) * (a * d2**b + f32(1.0)))
             move(diff, coef, alpha, jn)
             epoch_of_next_negative_sample[active] += (
