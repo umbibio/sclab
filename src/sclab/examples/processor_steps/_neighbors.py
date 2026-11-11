@@ -75,9 +75,10 @@ class Neighbors(ProcessorStepBase):
         )
 
     def _backend(self, params: dict) -> str:
+        backend = params.get("backend", "auto")  # recorded: a replay
         if params.get("group_by_batch") and self.parent.batch_key:
-            return resolve_backend("auto", "bbknn")
-        return resolve_backend("auto")
+            return resolve_backend(backend, "bbknn")
+        return resolve_backend(backend)
 
     def unavailable(self, params: dict) -> str | None:
         batch = params.get("group_by_batch") and params.get("batch_key")
@@ -133,6 +134,7 @@ class Neighbors(ProcessorStepBase):
         metric: str = "euclidean",
         group_by_batch: bool = False,
         random_state: int = 0,
+        backend: str = "auto",
     ):
         yield from self.compute(
             neighbors,
@@ -142,6 +144,7 @@ class Neighbors(ProcessorStepBase):
             metric=metric,
             batch_key=self.parent.batch_key if group_by_batch else None,
             random_state=random_state,
+            backend=backend,
         )
 
         self.broker.publish("dset_anndata_neighbors_change")

@@ -48,7 +48,7 @@ class UMAP(ProcessorStepBase):
         return "Python · sclab (port of umap-learn simplicial_set_embedding)"
 
     def resolved_params(self, params: dict) -> dict:
-        return {**super().resolved_params(params), "backend": resolve_backend("auto")}
+        return {**super().resolved_params(params), "backend": resolve_backend(params.get("backend", "auto"))}
 
     def to_code(self, params: dict) -> str:
         return call(
@@ -65,6 +65,7 @@ class UMAP(ProcessorStepBase):
         n_components: int = 2,
         zero_center: bool = True,
         random_state: int = 0,
+        backend: str = "auto",
     ):
         dataset = self.parent.dataset
         key = yield from self.compute(
@@ -72,6 +73,7 @@ class UMAP(ProcessorStepBase):
             n_components=n_components,
             zero_center=zero_center,
             random_state=random_state,
+            backend=backend,
         )
 
         self.broker.publish("dset_data_dict_change", dataset.data_dict, key)

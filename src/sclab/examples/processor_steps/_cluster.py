@@ -49,7 +49,7 @@ class Cluster(ProcessorStepBase):
         return "Python · sclab (port of scanpy.tl.leiden, igraph)"
 
     def resolved_params(self, params: dict) -> dict:
-        return {**super().resolved_params(params), "backend": resolve_backend("auto")}
+        return {**super().resolved_params(params), "backend": resolve_backend(params.get("backend", "auto"))}
 
     def to_code(self, params: dict) -> str:
         return call(
@@ -60,12 +60,15 @@ class Cluster(ProcessorStepBase):
             **native_backend(params),
         )
 
-    def function(self, resolution: float = 1.0, random_state: int = 0):
+    def function(
+        self, resolution: float = 1.0, random_state: int = 0, backend: str = "auto"
+    ):
         dataset = self.parent.dataset
         yield from self.compute(
             leiden,
             resolution=resolution,
             random_state=random_state,
+            backend=backend,
         )
 
         self.broker.publish("dset_metadata_change", dataset.metadata, "leiden")

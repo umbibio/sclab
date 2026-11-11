@@ -102,7 +102,7 @@ class PCA(ProcessorStepBase):
             **super().resolved_params(params),
             "batch_key": self.parent.batch_key,
             "counts_layer": self.parent.dataset.counts_layer,
-            "backend": resolve_backend("auto"),
+            "backend": resolve_backend(params.get("backend", "auto")),
         }
 
     def to_code(self, params: dict) -> str:
@@ -126,6 +126,7 @@ class PCA(ProcessorStepBase):
         reference_batch: str | None = None,
         zero_center: bool = False,
         random_state: int = 0,
+        backend: str = "auto",
     ):
         yield from self.compute(
             pca,
@@ -136,6 +137,7 @@ class PCA(ProcessorStepBase):
             zero_center=zero_center,
             counts_layer=self.parent.dataset.counts_layer,
             random_state=random_state,
+            backend=backend,
         )
 
         self.plot_variance_ratio_button.disabled = False

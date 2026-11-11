@@ -450,7 +450,7 @@ class DifferentialExpression(ProcessorStepBase):
         resolved["layer"] = self._layer(resolved)
         resolved["key_added"] = self._key_added(resolved.get("name"))
         if resolved.get("method") in SCANPY_METHODS:
-            resolved["backend"] = resolve_backend("auto")
+            resolved["backend"] = resolve_backend(resolved.get("backend", "auto"))
         return resolved
 
     @staticmethod

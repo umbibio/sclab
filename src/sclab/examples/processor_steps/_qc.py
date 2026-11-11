@@ -79,7 +79,7 @@ class QC(ProcessorStepBase):
         resolved = super().resolved_params(params)
         if resolved.get("layer") is None:
             resolved["layer"] = self.parent.dataset.counts_layer
-        return {**resolved, "backend": resolve_backend("auto")}
+        return {**resolved, "backend": resolve_backend(params.get("backend", "auto"))}
 
     def to_code(self, params: dict) -> str:
         return call(
@@ -100,6 +100,7 @@ class QC(ProcessorStepBase):
         min_genes: int = 5,
         min_cells: int = 5,
         max_rank: int = 0,
+        backend: str = "auto",
     ):
         dataset = self.parent.dataset
         n_obs, n_vars = dataset.adata.shape
@@ -111,6 +112,7 @@ class QC(ProcessorStepBase):
             min_genes=min_genes,
             min_cells=min_cells,
             max_rank=max_rank,
+            backend=backend,
         )
 
         if dataset.adata.n_obs != n_obs:

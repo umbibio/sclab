@@ -159,7 +159,7 @@ class Preprocess(ProcessorStepBase):
         if resolved.get("layer") is None:
             resolved["layer"] = self.parent.dataset.counts_layer
         resolved["n_top_genes"] = _n_top_genes(resolved.get("n_top_genes"))
-        return {**resolved, "backend": resolve_backend("auto")}
+        return {**resolved, "backend": resolve_backend(params.get("backend", "auto"))}
 
     def to_code(self, params: dict) -> str:
         method = NORMALIZATION_METHODS[params["normalization_method"]]
@@ -190,6 +190,7 @@ class Preprocess(ProcessorStepBase):
         normalization_method: str = "No normalization",
         log1p: bool = True,
         scale: bool = True,
+        backend: str = "auto",
     ):
         dataset = self.parent.dataset
         adata = dataset.adata
@@ -209,6 +210,7 @@ class Preprocess(ProcessorStepBase):
                 normalization_method=NORMALIZATION_METHODS[normalization_method],
                 log1p=log1p,
                 scale=scale,
+                backend=backend,
             )
 
         self.broker.publish("dset_metadata_change", dataset.metadata)

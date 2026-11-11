@@ -5,6 +5,8 @@ and logs the traceback), so every test here asserts on ``run_button.button_style
 and on the resulting ``adata`` state instead of relying on "did not raise".
 """
 
+import importlib
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -1013,6 +1015,72 @@ class TestNativeBackendCaptions:
         caption = d.processor.steps[DE].tool({"method": "t-test"})
         native = "sclab (port of scanpy.tl.rank_genes_groups, t-test)" in caption
         assert native == (backend == "native")
+
+
+SCANPY_FUNCTIONS = [
+    ("scanpy.pp", "calculate_qc_metrics"),
+    ("scanpy.pp", "filter_cells"),
+    ("scanpy.pp", "filter_genes"),
+    ("scanpy.pp", "highly_variable_genes"),
+    ("scanpy.pp", "log1p"),
+    ("scanpy.pp", "scale"),
+    ("scanpy.pp", "pca"),
+    ("scanpy.pp", "neighbors"),
+    ("scanpy.tl", "leiden"),
+    ("scanpy.tl", "umap"),
+    ("scanpy.tl", "rank_genes_groups"),
+]
+REPLAYED = {
+    "QC": {},
+    "Preprocess": {"hvg_methods": ("seurat",)},
+    "PCA": {},
+    "Neighbors": {"use_rep": "X_pca"},
+    "Cluster": {},
+    "UMAP": {},
+    DE: de_params(method="t-test"),
+}
+
+
+class TestReplayUsesRecordedBackend:
+    """A history recorded with the native backend replays natively, scanpy installed."""
+
+    def test_native_history_replays_without_scanpy(self, tmp_path, monkeypatch):
+        d1 = SCLabDashboard(make_adata(150, 80))
+        for name, params in REPLAYED.items():
+            _, ok = run_step(d1, name, backend="native", **params)
+            assert ok, name
+        recorded = d1.processor.step_history
+        assert [e["params"]["backend"] for e in recorded] == ["native"] * len(REPLAYED)
+        d1.processor.save_step_history(tmp_path / "h.json")
+
+        def scanpy_ran(*args, **kwargs):
+            raise AssertionError("scanpy ran in a native replay")
+
+        for module, name in SCANPY_FUNCTIONS:
+            monkeypatch.setattr(importlib.import_module(module), name, scanpy_ran)
+
+        d2 = SCLabDashboard(make_adata(150, 80))
+        d2.processor.load_step_history(tmp_path / "h.json")
+        d2.processor.apply_step_history()
+
+        replayed = d2.processor.step_history
+        assert [e["status"] for e in replayed] == ["success"] * len(REPLAYED)
+        assert [e["params"]["backend"] for e in replayed] == ["native"] * len(REPLAYED)
+        assert (
+            d2.processor.step_history_hash == d1.processor.step_history_hash
+        )  # same entries: no "differs" warning either
+
+    def test_interactive_run_still_resolves_auto(self):
+        from sclab.preprocess._scanpy_port import resolve_backend
+
+        d = SCLabDashboard(make_adata(150, 80))
+        for name in ("QC", "Preprocess", "PCA"):
+            step, ok = run_step(d, name, **REPLAYED[name])
+            assert ok, name
+            assert d.processor.step_history[-1]["params"]["backend"] == resolve_backend(
+                "auto"
+            )
+            assert "backend" not in step._control_params()
 
 
 class TestDifferentialExpressionStep:

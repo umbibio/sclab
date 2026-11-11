@@ -19,7 +19,9 @@ runs included), each a JSON-serializable dict::
 function defaults and implicit inputs read at run time (e.g. ``batch_key``,
 ``counts_layer``). Values are normalized to JSON types (tuples and
 ``pd.Index`` become lists). Replay passes back only the params the step's
-``function`` accepts; the rest are informational.
+``function`` accepts (including the recorded ``backend`` of the steps that
+have one: a replay runs with it, not with ``"auto"``); the rest are
+informational.
 
 The history is mirrored to ``adata.uns["sclab"]["history"]`` as a single JSON
 string (h5ad cannot store nested mixed-type lists), with long lists (e.g. the
