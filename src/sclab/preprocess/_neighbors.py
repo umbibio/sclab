@@ -4,7 +4,7 @@ import numpy as np
 from anndata import AnnData
 
 from .._citations import record_citations
-from .._compat import require
+from ._bbknn import bbknn
 from ._scanpy_port import get_pp, resolve_backend
 
 
@@ -37,14 +37,21 @@ def neighbors(
     metric : str, optional
         Distance metric. Default is ``"euclidean"``.
     batch_key : str or None, optional
-        If given, build a batch-balanced graph with
-        :func:`scanpy.external.pp.bbknn` (exact neighbor search, no seed
-        needed; also needs scanpy), else use :func:`scanpy.pp.neighbors`.
-        Default is None.
+        If given, build a batch-balanced (BBKNN) graph: ``n_neighbors`` from
+        each batch for every cell, else a kNN graph with
+        :func:`scanpy.pp.neighbors`. Default is None.
     random_state : int, optional
         Seed for :func:`scanpy.pp.neighbors` (its approximate search, from
         4096 cells). Default is 0.
     backend : {"auto", "native", "scanpy"}, optional
+        With ``batch_key``: ``"scanpy"`` runs :func:`scanpy.external.pp.bbknn`
+        (needs bbknn; its pynndescent search, approximate, seed 0),
+        ``"native"`` sclab's port of bbknn (:func:`sclab.preprocess._bbknn.bbknn`:
+        exact kNN with scikit-learn, umap-learn's connectivities ported),
+        ``"auto"`` (default) bbknn if it and scanpy are installed. The port
+        matches bbknn's exact search (``computation="cKDTree"``): the same
+        neighbors and distances, connectivities within 1e-5 (umap-learn
+        >= 0.5.12, as below); bbknn's approximate search can miss a neighbor.
         Without ``batch_key``: ``"scanpy"`` runs :func:`scanpy.pp.neighbors`
         (method ``"umap"``), ``"native"`` sclab's port of it (exact kNN with
         scikit-learn, connectivities by a numpy port of umap-learn's
@@ -77,7 +84,8 @@ def neighbors(
 
     Polański et al. (2020). BBKNN: fast batch alignment of single cell
     transcriptomes. *Bioinformatics*, 36, 964–965.
-    https://doi.org/10.1093/bioinformatics/btz625
+    https://doi.org/10.1093/bioinformatics/btz625 (bbknn, ported for
+    ``backend="native"``)
     """
     min_dim, max_dim = dims
     min_dim = min_dim - 1
@@ -88,19 +96,28 @@ def neighbors(
     n_dims = max_dim - min_dim
 
     if batch_key:
-        require("bbknn")
-        require("scanpy")
-        import scanpy as sc
+        backend = resolve_backend(backend, "bbknn")
+        if backend == "scanpy":
+            import scanpy as sc
 
-        sc.external.pp.bbknn(
-            adata,
-            batch_key=batch_key,
-            use_rep=use_rep,
-            n_pcs=n_dims,
-            use_annoy=False,
-            metric=metric,
-            neighbors_within_batch=n_neighbors,
-        )
+            sc.external.pp.bbknn(
+                adata,
+                batch_key=batch_key,
+                use_rep=use_rep,
+                n_pcs=n_dims,
+                use_annoy=False,
+                metric=metric,
+                neighbors_within_batch=n_neighbors,
+            )
+        else:
+            bbknn(
+                adata,
+                batch_key=batch_key,
+                use_rep=use_rep,
+                n_pcs=n_dims,
+                metric=metric,
+                neighbors_within_batch=n_neighbors,
+            )
     else:
         backend = resolve_backend(backend)
         rep = adata.obsm[use_rep]
@@ -124,13 +141,15 @@ def neighbors(
             if upcast:
                 adata.obsm[use_rep] = rep
 
-    if batch_key:
-        keys = ("bbknn",)
+    if batch_key and backend == "native":
+        keys = ("bbknn", "umap", "umap-learn", "scikit-learn")
+    elif batch_key:
+        keys = ("scanpy", "bbknn")
     elif backend == "native":
-        keys = ("umap", "umap-learn", "scikit-learn")
+        keys = ("scanpy", "umap", "umap-learn", "scikit-learn")
     else:
-        keys = ("umap", "scikit-learn")
-    record_citations(adata, "scanpy", *keys)
+        keys = ("scanpy", "umap", "scikit-learn")
+    record_citations(adata, *keys)
 
 
 def _umap_rejects_float32() -> bool:

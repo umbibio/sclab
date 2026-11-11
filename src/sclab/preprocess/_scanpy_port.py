@@ -48,14 +48,17 @@ BACKENDS = ("auto", "native", "scanpy")
 _CHUNK = 2048  # rows per block in dense reductions: bounds the float64 copies
 
 
-def resolve_backend(backend: str) -> str:
-    """``"scanpy"`` or ``"native"``; ``"auto"`` is scanpy if it is installed."""
+def resolve_backend(backend: str, *features: str) -> str:
+    """``"scanpy"`` or ``"native"``; ``"auto"`` is scanpy if it is installed,
+    and the ``features`` it needs with it (e.g. ``"bbknn"``)."""
     if backend not in BACKENDS:
         raise ValueError(f"backend must be one of {BACKENDS}, got {backend!r}")
+    features = ("scanpy", *features)
     if backend == "scanpy":
-        require("scanpy")
+        for feature in features:
+            require(feature)
     if backend == "auto":
-        return "scanpy" if missing("scanpy") is None else "native"
+        return "scanpy" if all(missing(f) is None for f in features) else "native"
     return backend
 
 

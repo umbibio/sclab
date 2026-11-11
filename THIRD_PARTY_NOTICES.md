@@ -11,6 +11,7 @@ below. All of their licenses are compatible with GPL-3.0.
 | `src/sclab/preprocess/_scanpy_port.py` | scanpy, `src/scanpy/preprocessing/` (`_qc.py`, `_simple.py`, `_normalization.py`, `_scale.py`, `_highly_variable_genes.py`, `_pca/__init__.py`) and `src/scanpy/neighbors/` (`__init__.py`, `_common.py`: `neighbors` with exact kNN), ported to numpy/scipy/scikit-learn (no numba) | 1.12.5 | BSD-3-Clause |
 | `src/sclab/tools/cluster/_leiden.py` | scanpy, `src/scanpy/tools/_leiden.py` (igraph flavor), `_utils/__init__.py` (`get_igraph_from_adjacency`), `_utils/random.py` (`_RNGIgraph`, `set_igraph_random_state`), ported | 1.12.5 | BSD-3-Clause |
 | `src/sclab/preprocess/_fuzzy_simplicial_set.py` | [umap-learn](https://github.com/lmcinnes/umap), `umap/umap_.py` (`smooth_knn_dist`, `compute_membership_strengths`, `fuzzy_simplicial_set`), ported to numpy (no numba) | 0.5.12 | BSD-3-Clause |
+| `src/sclab/preprocess/_bbknn.py` | [bbknn](https://github.com/Teichlab/bbknn), `bbknn/__init__.py` (`bbknn`) and `bbknn/matrix.py` (`bbknn`, `get_graph`, `compute_connectivities_umap`, `get_sparse_matrix_from_indices_distances_umap`, `trimming`), ported to numpy/scikit-learn (exact kNN; no annoy, pynndescent, numba) | 1.6.0 | MIT |
 | `src/sclab/tools/embedding/_umap_port.py` | [umap-learn](https://github.com/lmcinnes/umap), `umap/umap_.py` (`find_ab_params`, `make_epochs_per_sample`, `simplicial_set_embedding`), `umap/spectral.py` (`spectral_layout`, `multi_component_layout`, `component_layout`), `umap/layouts.py` (`optimize_layout_euclidean`), ported to numpy/scipy (no numba; vectorized per epoch); and scanpy, `src/scanpy/tools/_umap.py` (`umap`), `tools/_utils.py` (`_choose_representation`) | umap-learn 0.5.12, scanpy 1.12.5 | BSD-3-Clause |
 | `src/sclab/tools/differential_expression/_rank_genes_groups.py` | scanpy, `src/scanpy/tools/_rank_genes_groups.py` (`rank_genes_groups`), ported to numpy/scipy/scikit-learn (no numba) | 1.12.5 | BSD-3-Clause |
 | `src/sclab/preprocess/_cca.py` (`_randomized_svd`) | [scikit-learn](https://github.com/scikit-learn/scikit-learn), `sklearn/utils/extmath.py` (`randomized_svd`, `randomized_range_finder`), ported to accept a `LinearOperator` | 1.8.0 | BSD-3-Clause |
@@ -142,6 +143,37 @@ CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
+
+## bbknn
+
+`src/sclab/preprocess/_bbknn.py` is distributed under the following license
+(the copyright line as bbknn's LICENSE file reads):
+
+```
+Copyright (c) 2018 The Python Packaging Authority
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+Polański K, Young MD, Miao Z, Meyer KB, Teichmann SA, Park J-E. BBKNN: fast
+batch alignment of single cell transcriptomes. Bioinformatics 36, 964-965
+(2020). https://doi.org/10.1093/bioinformatics/btz625
 
 ## harmonypy
 
