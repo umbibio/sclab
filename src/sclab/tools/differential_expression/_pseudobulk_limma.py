@@ -6,6 +6,7 @@ from anndata import AnnData
 
 from ..._citations import cites
 from ..._compat import require
+from ..._r import r_output
 from ..utils import aggregate_and_filter
 from ._pseudobulk_helpers import validate_counts_layer
 
@@ -148,12 +149,9 @@ def pseudobulk_limma(
     )
     _try_imports()
     import anndata2ri
-    import rpy2.robjects as robjects
     from rpy2.rinterface_lib.embedded import RRuntimeError
     from rpy2.robjects import pandas2ri
     from rpy2.robjects.conversion import localconverter
-
-    R = robjects.r
 
     if aggregate:
         validate_counts_layer(adata, layer, check_counts)
@@ -171,112 +169,114 @@ def pseudobulk_limma(
     else:
         aggr_adata = adata.copy()
 
-    with localconverter(anndata2ri.converter):
-        R.assign("aggr_adata", aggr_adata)
+    # verbosity > 0: R's own progress output shows in the notebook too
+    with r_output("pseudobulk_limma", verbose=verbosity > 0) as R:
+        with localconverter(anndata2ri.converter):
+            R.assign("aggr_adata", aggr_adata)
 
-    # defines the R function for fitting the model with limma
-    R(_fit_model_r_script)
+        # defines the R function for fitting the model with limma
+        R(_fit_model_r_script)
 
-    if condition_group is None:
-        condition_group_list = aggr_adata.obs[group_key].unique()
-    elif isinstance(condition_group, str):
-        condition_group_list = [condition_group]
-    else:
-        condition_group_list = condition_group
-
-    if cell_identity_key is not None:
-        cids = aggr_adata.obs[cell_identity_key].unique()
-    else:
-        cids = [""]
-
-    tt_dict = {}
-    for condition_group in condition_group_list:
-        if reference_group is not None and condition_group == reference_group:
-            continue
-
-        if verbosity > 0:
-            print(f"Fitting model for {condition_group}...")
-
-        if reference_group is not None:
-            gk = group_key
+        if condition_group is None:
+            condition_group_list = aggr_adata.obs[group_key].unique()
+        elif isinstance(condition_group, str):
+            condition_group_list = [condition_group]
         else:
-            gk = f"{group_key}_{condition_group}"
+            condition_group_list = condition_group
 
-        try:
-            R(f"""
-                outs <- fit_limma_model(aggr_adata, "{gk}", "{cell_identity_key}", verbosity = {verbosity})
-                fit <- outs$fit
-                v <- outs$v
-            """)
-
-        except RRuntimeError as e:
-            print("Error fitting model for", condition_group)
-            print("Error:", e)
-            print("Skipping...", flush=True)
-            continue
-
-        if reference_group is None:
-            new_contrasts_tuples = [
-                (
-                    condition_group,  # common prefix
-                    "",  # condition group
-                    "not",  # reference group
-                    cid,  # cell identity
-                )
-                for cid in cids
-            ]
-
+        if cell_identity_key is not None:
+            cids = aggr_adata.obs[cell_identity_key].unique()
         else:
-            new_contrasts_tuples = [
-                (
-                    "",  # common prefix
-                    condition_group,  # condition group
-                    reference_group,  # reference group
-                    cid,  # cell identity
-                )
-                for cid in cids
-            ]
+            cids = [""]
 
-        new_contrasts = [
-            f"group{cnd}{prefix}_{cid}".strip("_")
-            + "-"
-            + f"group{ref}{prefix}_{cid}".strip("_")
-            for prefix, cnd, ref, cid in new_contrasts_tuples
-        ]
-
-        for contrast, contrast_tuple in zip(new_contrasts, new_contrasts_tuples):
-            prefix, cnd, ref, cid = contrast_tuple
-
-            if ref == "not":
-                cnd, ref = "", "rest"
-
-            contrast_key = f"{prefix}{cnd}_vs_{ref}"
-            if cid:
-                contrast_key = f"{cell_identity_key}:{cid}|{contrast_key}"
+        tt_dict = {}
+        for condition_group in condition_group_list:
+            if reference_group is not None and condition_group == reference_group:
+                continue
 
             if verbosity > 0:
-                print(f"Computing contrast: {contrast_key}... ({contrast})")
+                print(f"Fitting model for {condition_group}...")
 
-            R(f"myContrast <- makeContrasts('{contrast}', levels = v$design)")
-            R("fit2 <- contrasts.fit(fit, myContrast)")
-            R("fit2 <- eBayes(fit2)")
-            R("tt <- topTable(fit2, n = Inf)")
-            tt: pd.DataFrame = pandas2ri.rpy2py(R("tt"))
-            tt.index.name = "gene_ids"
+            if reference_group is not None:
+                gk = group_key
+            else:
+                gk = f"{group_key}_{condition_group}"
 
-            genes = tt.index
-            cnd, ref = [c[5:] for c in contrast.split("-")]
-            tt["pct_expr_cnd"] = aggr_adata.var[f"pct_expr_{cnd}"].loc[genes]
-            tt["pct_expr_ref"] = aggr_adata.var[f"pct_expr_{ref}"].loc[genes]
-            tt["num_expr_cnd"] = aggr_adata.var[f"num_expr_{cnd}"].loc[genes]
-            tt["num_expr_ref"] = aggr_adata.var[f"num_expr_{ref}"].loc[genes]
-            tt["tot_expr_cnd"] = aggr_adata.var[f"tot_expr_{cnd}"].loc[genes]
-            tt["tot_expr_ref"] = aggr_adata.var[f"tot_expr_{ref}"].loc[genes]
-            tt["mean_cnd"] = tt["tot_expr_cnd"] / tt["num_expr_cnd"]
-            tt["mean_ref"] = tt["tot_expr_ref"] / tt["num_expr_ref"]
-            tt_dict[contrast_key] = tt
+            try:
+                R(f"""
+                    outs <- fit_limma_model(aggr_adata, "{gk}", "{cell_identity_key}", verbosity = {verbosity})
+                    fit <- outs$fit
+                    v <- outs$v
+                """)
 
-    return tt_dict
+            except RRuntimeError as e:
+                print("Error fitting model for", condition_group)
+                print("Error:", e)
+                print("Skipping...", flush=True)
+                continue
+
+            if reference_group is None:
+                new_contrasts_tuples = [
+                    (
+                        condition_group,  # common prefix
+                        "",  # condition group
+                        "not",  # reference group
+                        cid,  # cell identity
+                    )
+                    for cid in cids
+                ]
+
+            else:
+                new_contrasts_tuples = [
+                    (
+                        "",  # common prefix
+                        condition_group,  # condition group
+                        reference_group,  # reference group
+                        cid,  # cell identity
+                    )
+                    for cid in cids
+                ]
+
+            new_contrasts = [
+                f"group{cnd}{prefix}_{cid}".strip("_")
+                + "-"
+                + f"group{ref}{prefix}_{cid}".strip("_")
+                for prefix, cnd, ref, cid in new_contrasts_tuples
+            ]
+
+            for contrast, contrast_tuple in zip(new_contrasts, new_contrasts_tuples):
+                prefix, cnd, ref, cid = contrast_tuple
+
+                if ref == "not":
+                    cnd, ref = "", "rest"
+
+                contrast_key = f"{prefix}{cnd}_vs_{ref}"
+                if cid:
+                    contrast_key = f"{cell_identity_key}:{cid}|{contrast_key}"
+
+                if verbosity > 0:
+                    print(f"Computing contrast: {contrast_key}... ({contrast})")
+
+                R(f"myContrast <- makeContrasts('{contrast}', levels = v$design)")
+                R("fit2 <- contrasts.fit(fit, myContrast)")
+                R("fit2 <- eBayes(fit2)")
+                R("tt <- topTable(fit2, n = Inf)")
+                tt: pd.DataFrame = pandas2ri.rpy2py(R("tt"))
+                tt.index.name = "gene_ids"
+
+                genes = tt.index
+                cnd, ref = [c[5:] for c in contrast.split("-")]
+                tt["pct_expr_cnd"] = aggr_adata.var[f"pct_expr_{cnd}"].loc[genes]
+                tt["pct_expr_ref"] = aggr_adata.var[f"pct_expr_{ref}"].loc[genes]
+                tt["num_expr_cnd"] = aggr_adata.var[f"num_expr_{cnd}"].loc[genes]
+                tt["num_expr_ref"] = aggr_adata.var[f"num_expr_{ref}"].loc[genes]
+                tt["tot_expr_cnd"] = aggr_adata.var[f"tot_expr_{cnd}"].loc[genes]
+                tt["tot_expr_ref"] = aggr_adata.var[f"tot_expr_{ref}"].loc[genes]
+                tt["mean_cnd"] = tt["tot_expr_cnd"] / tt["num_expr_cnd"]
+                tt["mean_ref"] = tt["tot_expr_ref"] / tt["num_expr_ref"]
+                tt_dict[contrast_key] = tt
+
+        return tt_dict
 
 
 _fit_model_r_script = """
@@ -351,14 +351,11 @@ fit_limma_model <- function(adata, group_key, cell_identity_key = "None", verbos
 def _try_imports():
     require("R")  # rpy2, anndata2ri; the R packages are checked below
     try:
-        import rpy2.robjects as robjects
-        from rpy2.robjects.packages import PackageNotInstalledError, importr
-
-        robjects.r("options(warn=-1)")
         import anndata2ri  # noqa: F401
         from rpy2.rinterface_lib.embedded import RRuntimeError  # noqa: F401
         from rpy2.robjects import numpy2ri, pandas2ri  # noqa: F401
         from rpy2.robjects.conversion import localconverter  # noqa: F401
+        from rpy2.robjects.packages import PackageNotInstalledError, importr
 
         importr("edgeR")
         importr("limma")

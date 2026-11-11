@@ -8,6 +8,7 @@ from scipy.sparse import csc_matrix, csr_matrix, issparse
 
 from ..._citations import cites
 from ..._compat import require
+from ..._r import r_output
 
 
 ALRA_WARN_BYTES = 2e9
@@ -72,7 +73,9 @@ def _alra_on_ndarray(
 
     with localconverter(robjects.default_converter + numpy2ri.converter):
         r_X = R.matrix(data, nrow=data.shape[0], ncol=data.shape[1])
-        r_res = alra.alra(r_X, 0, 10, 0.001)
+        # ALRA's progress (cat) goes to the sclab._r logger at DEBUG
+        with r_output("ALRA") as run_r:
+            r_res = run_r.call(alra.alra, r_X, 0, 10, 0.001)
         # rank k, rank k thresholded, rank k thresholded scaled
         r_K, r_T, r_S = r_res[0], r_res[1], r_res[2]
         data_aprx = np.array(r_K, dtype=float32)

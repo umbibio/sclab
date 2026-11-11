@@ -8,6 +8,7 @@ from anndata import AnnData
 
 from sclab._citations import cites
 from sclab._compat import require, requirement
+from sclab._r import r_output
 from sclab.utils import check_raw_counts, layer_keys
 
 PYTHON_DEPENDENCIES = ["rpy2", "anndata2ri"]
@@ -240,20 +241,22 @@ def scdblfinder(
         R.assign("scDblFinderParams", sc_dbl_finder_params)
         R.assign("random_state", random_state)
 
-    R(
-        """
-        suppressPackageStartupMessages({
-            library(scater)
-            library(scDblFinder)
-            library(BiocParallel)
-        })
+    # verbose: scDblFinder's progress messages show in the notebook
+    with r_output("scDblFinder", verbose=verbose) as run_r:
+        run_r(
+            """
+            suppressPackageStartupMessages({
+                library(scater)
+                library(scDblFinder)
+                library(BiocParallel)
+            })
 
-        set.seed(random_state)
-        sce <- do.call(scDblFinder, c(list(sce), scDblFinderParams))
+            set.seed(random_state)
+            sce <- do.call(scDblFinder, c(list(sce), scDblFinderParams))
 
-        NULL
-        """
-    )
+            NULL
+            """
+        )
 
     with localconverter(anndata2ri.converter):
         if clusters_col:
@@ -378,14 +381,11 @@ def _warn_on_broken_xgboost() -> None:
 def _try_imports():
     require("scDblFinder")  # rpy2, anndata2ri; the R packages are checked below
     try:
-        import rpy2.robjects as robjects
-        from rpy2.robjects.packages import PackageNotInstalledError, importr
-
-        robjects.r("options(warn=-1)")
         import anndata2ri  # noqa: F401
         from rpy2.rinterface_lib.embedded import RRuntimeError  # noqa: F401
         from rpy2.robjects import numpy2ri, pandas2ri  # noqa: F401
         from rpy2.robjects.conversion import localconverter  # noqa: F401
+        from rpy2.robjects.packages import PackageNotInstalledError, importr
 
         importr("scater")
         importr("scDblFinder")

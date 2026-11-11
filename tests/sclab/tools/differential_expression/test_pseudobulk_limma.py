@@ -325,3 +325,27 @@ class TestWithR:
         tt = res["A_vs_rest"]
         assert np.isfinite(tt["P.Value"]).all()
         assert set(tt.sort_values("P.Value").index[:2]) == {"gene0", "gene1"}
+
+    def test_routed_r_output_keeps_results(self, monkeypatch, r_counts_adata, capfd):
+        import random
+        from contextlib import contextmanager
+
+        import rpy2.robjects as robjects
+
+        kw = dict(cell_identity_key="ctype", replicas_per_group=3, min_cells_per_group=10)
+        random.seed(0)
+        routed = pseudobulk_limma(r_counts_adata, "cond", **kw)
+        out, err = capfd.readouterr()
+        assert out == err == ""  # no R console output reaches the notebook
+
+        @contextmanager
+        def plain_r(task, verbose=False):  # R output as before the routing
+            yield robjects.r
+
+        monkeypatch.setattr(limma_mod, "r_output", plain_r)
+        random.seed(0)
+        plain = pseudobulk_limma(r_counts_adata, "cond", **kw)
+
+        assert routed.keys() == plain.keys()
+        for key in routed:
+            pd.testing.assert_frame_equal(routed[key], plain[key])

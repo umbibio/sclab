@@ -53,7 +53,12 @@ def install_fake_r(monkeypatch, module, tt_columns, fail_on=None) -> FakeR:
     def _null_converter(_):
         yield
 
+    @contextmanager
+    def _fake_r_output(task, verbose=False):
+        yield fake
+
     monkeypatch.setattr(module, "_try_imports", lambda: None)
+    monkeypatch.setattr(module, "r_output", _fake_r_output)
     monkeypatch.setattr(robjects, "r", fake)
     monkeypatch.setattr(conversion, "localconverter", _null_converter)
     monkeypatch.setattr(pandas2ri, "rpy2py", lambda _obj: fake.fake_table())
