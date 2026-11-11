@@ -230,3 +230,18 @@ class TestAlraWithR:
         assert err_imputed > 0.2
         assert err_imputed > err_raw
         assert (out >= 0).all()
+
+
+class TestSizeWarning:
+    def test_warns_above_threshold_with_estimated_size(self):
+        from sclab.tools.imputation._alra import _warn_if_large
+
+        with pytest.warns(UserWarning, match=r"1000 x 500.*estimated 0\.0 GB"):
+            _warn_if_large((1000, 500), threshold=1e6)
+
+    def test_silent_below_threshold(self, recwarn):
+        from sclab.tools.imputation._alra import _warn_if_large
+
+        _warn_if_large((1000, 500))
+
+        assert not recwarn.list

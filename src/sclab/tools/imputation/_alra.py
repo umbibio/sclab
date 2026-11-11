@@ -1,4 +1,5 @@
 import gc
+import warnings
 
 import numpy as np
 from numpy import float32
@@ -6,6 +7,27 @@ from numpy.typing import NDArray
 from scipy.sparse import csc_matrix, csr_matrix, issparse
 
 from ..._citations import cites
+
+
+ALRA_WARN_BYTES = 2e9
+# dense float32 copies alive at the peak: input, R copy, approximated,
+# thresholded and imputed matrices
+_ALRA_DENSE_COPIES = 5
+
+
+def _warn_if_large(shape: tuple[int, int], threshold: float | None = None) -> None:
+    """ALRA is inherently dense: warn when its memory estimate is large."""
+    threshold = ALRA_WARN_BYTES if threshold is None else threshold
+    n_bytes = shape[0] * shape[1] * np.dtype(float32).itemsize * _ALRA_DENSE_COPIES
+    if n_bytes > threshold:
+        warnings.warn(
+            f"ALRA works on dense matrices: a {shape[0]} x {shape[1]} input needs "
+            f"an estimated {n_bytes / 1e9:.1f} GB of memory "
+            f"({_ALRA_DENSE_COPIES} float32 copies); consider subsetting cells or "
+            "genes first",
+            UserWarning,
+            stacklevel=3,
+        )
 
 
 @cites("alra")
@@ -40,6 +62,8 @@ def _alra_on_ndarray(
 
     R = robjects.r
     alra = importr("ALRA")
+
+    _warn_if_large(data.shape)
 
     if issparse(data):
         data = np.ascontiguousarray(data.todense("C"), dtype=np.float32)
