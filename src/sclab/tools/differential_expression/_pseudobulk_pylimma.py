@@ -10,6 +10,7 @@ from ..._compat import requirement
 from ..utils import aggregate_and_filter
 from ._edgepython_numba_free import import_edgepython
 from ._pseudobulk_helpers import pseudobulk_contrasts, validate_counts_layer
+from ._pylimma_lm_series import fast_lm_series
 
 _TOP_TABLE_COLUMNS = {
     "log_fc": "logFC",
@@ -253,7 +254,8 @@ def _fit_voom_model(
 
     # fixed lowess span, as R limma's voom default; matches pseudobulk_limma
     v = pylimma.voom(counts, design.values, lib_size=lib_size, adaptive_span=False)
-    fit = pylimma.lm_fit(v, design.values)
+    with fast_lm_series():  # voom's per-gene weights: batched, not a QR per gene
+        fit = pylimma.lm_fit(v, design.values)
     ne = pylimma.non_estimable(design.values, list(design.columns))
     if ne is not None and verbosity > 0:
         print("Non-estimable:", ne)
