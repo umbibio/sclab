@@ -12,6 +12,7 @@ below. All of their licenses are compatible with GPL-3.0.
 | `src/sclab/tools/cluster/_leiden.py` | scanpy, `src/scanpy/tools/_leiden.py` (igraph flavor), `_utils/__init__.py` (`get_igraph_from_adjacency`), `_utils/random.py` (`_RNGIgraph`, `set_igraph_random_state`), ported | 1.12.5 | BSD-3-Clause |
 | `src/sclab/preprocess/_fuzzy_simplicial_set.py` | [umap-learn](https://github.com/lmcinnes/umap), `umap/umap_.py` (`smooth_knn_dist`, `compute_membership_strengths`, `fuzzy_simplicial_set`), ported to numpy (no numba) | 0.5.12 | BSD-3-Clause |
 | `src/sclab/tools/embedding/_umap_port.py` | [umap-learn](https://github.com/lmcinnes/umap), `umap/umap_.py` (`find_ab_params`, `make_epochs_per_sample`, `simplicial_set_embedding`), `umap/spectral.py` (`spectral_layout`, `multi_component_layout`, `component_layout`), `umap/layouts.py` (`optimize_layout_euclidean`), ported to numpy/scipy (no numba; vectorized per epoch); and scanpy, `src/scanpy/tools/_umap.py` (`umap`), `tools/_utils.py` (`_choose_representation`) | umap-learn 0.5.12, scanpy 1.12.5 | BSD-3-Clause |
+| `src/sclab/tools/differential_expression/_rank_genes_groups.py` | scanpy, `src/scanpy/tools/_rank_genes_groups.py` (`rank_genes_groups`), ported to numpy/scipy/scikit-learn (no numba) | 1.12.5 | BSD-3-Clause |
 | `src/sclab/preprocess/_harmony.py` | [harmonypy](https://github.com/slowkow/harmonypy), `harmonypy/harmony.py`, modified (reference batches) | based on 0.0.10 | GPL-3.0-or-later |
 | `src/sclab/tools/differential_expression/_edgepython_kernels.py` | [edgePython](https://github.com/pachterlab/edgePython), `edgepython/glm_kernels.py`, `ql_weights.py`, `dispersion_lowlevel.py`, `weighted_lowess.py` (numba ports of edgeR's and limma's C code), vectorised with NumPy | 0.5.1 | GPL-3.0-or-later |
 | `src/sclab/tools/differential_expression/_edger_preprocessing.py` | edgePython, `edgepython/filtering.py` (`filter_by_expr`) and `normalization.py` (TMM `calc_norm_factors`), reduced | 0.5.1 | GPL-3.0-or-later |
@@ -21,9 +22,10 @@ below. All of their licenses are compatible with GPL-3.0.
 ## scanpy
 
 The files under `src/sclab/scanpy/`, `src/sclab/preprocess/_harmony_integrate.py`,
-`src/sclab/preprocess/_scanpy_port.py`, `src/sclab/tools/cluster/_leiden.py`
-and `src/sclab/tools/embedding/_umap_port.py` are distributed under the
-following license:
+`src/sclab/preprocess/_scanpy_port.py`, `src/sclab/tools/cluster/_leiden.py`,
+`src/sclab/tools/embedding/_umap_port.py` and
+`src/sclab/tools/differential_expression/_rank_genes_groups.py` are distributed
+under the following license:
 
 ```
 BSD 3-Clause License
