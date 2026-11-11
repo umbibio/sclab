@@ -124,17 +124,20 @@ def differential_expression(
         given, every contrast is run separately within each identity, on the
         cells of that identity only. Default is None.
     layer : str or None, optional
-        Expression values to test; ``"X"`` means ``adata.X``. None picks the
-        method's default: ``"X"`` (log-normalized expression) for the scanpy
-        methods and ``"counts"`` (raw counts) for the pseudobulk methods. The
-        scanpy methods raise a ``ValueError`` when the data look like raw
-        counts (non-negative integers); the pseudobulk methods raise one when
-        they do not (pass ``check_counts=False`` to skip that check). The
-        scanpy methods expect log-normalized, unscaled data: they warn when
-        ``layer`` is known to be scaled, e.g.
-        ``"X"`` after :func:`sclab.preprocess.preprocess` with ``scale=True``,
-        whose unscaled data are in the layer named like X without ``_scale``
-        (:func:`sclab.utils.unscaled_layer`).
+        Expression values to test; ``"X"`` means ``adata.X``. An explicit
+        value is always used as given. None picks the method's default: for
+        the scanpy methods the log-normalized, unscaled data
+        (:func:`sclab.utils.unscaled_layer`: ``adata.X``, unless X is known to
+        be scaled and :func:`sclab.preprocess.preprocess` kept the unscaled
+        data in a layer, which is then used), for the pseudobulk methods
+        ``"counts"`` (raw counts). The layer used is recorded in
+        ``adata.uns[key_added]["params"]["layer"]``. The scanpy methods raise
+        a ``ValueError`` when the data look like raw counts (non-negative
+        integers); the pseudobulk methods raise one when they do not (pass
+        ``check_counts=False`` to skip that check). The scanpy methods expect
+        log-normalized, unscaled data: they warn when the layer used is known
+        to be scaled, e.g. ``adata.X`` after preprocessing with
+        ``scale=True`` when the unscaled layer is missing.
     sample_key : str or None, optional
         Pseudobulk methods only. Column in ``adata.obs`` with the biological
         samples: cells are summed per sample within each group (and
@@ -261,7 +264,7 @@ def differential_expression(
     if method in SCANPY_METHODS:
         if sample_key is not None:
             raise ValueError("sample_key is only used by the pseudobulk methods")
-        layer = "X" if layer is None else layer
+        layer = unscaled_layer(adata) if layer is None else layer
         if (caveat := scaling_warning(adata, method, layer)) is not None:
             warnings.warn(caveat, UserWarning, stacklevel=2)
         backend = resolve_backend(backend)

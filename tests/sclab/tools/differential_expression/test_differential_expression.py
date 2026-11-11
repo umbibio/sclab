@@ -361,3 +361,56 @@ def test_no_scaling_warning_when_unknown_or_unscaled(adata):
         _de(adata, "wilcoxon", "X")  # not preprocessed by sclab: unknown
         _preprocessed(adata, scale=False)
         _de(adata, "wilcoxon", "X")
+
+
+def _unscaled_name(adata):
+    from sclab.utils import unscaled_layer
+
+    return unscaled_layer(adata)
+
+
+@pytest.mark.parametrize("method", ["wilcoxon", "t-test", "logreg"])
+def test_default_layer_is_the_unscaled_layer_on_scaled_data(adata, method):
+    _preprocessed(adata)
+    assert _unscaled_name(adata) == "counts_normt_log1p"
+    with warnings.catch_warnings():
+        warnings.filterwarnings("error", r".*scaled", UserWarning)
+        default = _de(adata, method, None)
+    params = adata.uns["differential_expression"]["params"]
+    assert params["layer"] == "counts_normt_log1p"
+    explicit = _de(adata, method, "counts_normt_log1p")
+    pd.testing.assert_frame_equal(default, explicit)
+
+
+def test_default_layer_is_X_on_unscaled_data(adata):
+    _preprocessed(adata, scale=False)
+    with warnings.catch_warnings():
+        warnings.filterwarnings("error", r".*scaled", UserWarning)
+        default = _de(adata, "wilcoxon", None)
+    assert adata.uns["differential_expression"]["params"]["layer"] == "X"
+    pd.testing.assert_frame_equal(default, _de(adata, "wilcoxon", "X"))
+
+
+def test_explicit_X_on_scaled_data_warns_and_uses_X(adata):
+    _preprocessed(adata)
+    with pytest.warns(UserWarning, match="adata.X is scaled"):
+        scaled = _de(adata, "wilcoxon", "X")
+    assert adata.uns["differential_expression"]["params"]["layer"] == "X"
+    assert not np.allclose(scaled["logFC"], _de(adata, "wilcoxon", None)["logFC"])
+
+
+def test_default_falls_back_to_scaled_X_with_a_warning(adata):
+    _preprocessed(adata)
+    del adata.layers["counts_normt_log1p"]
+    with pytest.warns(UserWarning, match="adata.X is scaled"):
+        default = _de(adata, "wilcoxon", None)
+    assert adata.uns["differential_expression"]["params"]["layer"] == "X"
+    with pytest.warns(UserWarning, match="adata.X is scaled"):
+        pd.testing.assert_frame_equal(default, _de(adata, "wilcoxon", "X"))
+
+
+@needs_pylimma
+def test_pseudobulk_default_layer_unchanged_on_scaled_data(adata):
+    _preprocessed(adata)
+    differential_expression(adata, "grp", method="pseudobulk_limma")
+    assert adata.uns["differential_expression"]["params"]["layer"] == "counts"
