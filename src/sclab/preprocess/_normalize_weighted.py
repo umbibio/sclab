@@ -2,7 +2,7 @@ import warnings
 
 import numpy as np
 from anndata import AnnData
-from scipy.sparse import csr_matrix, issparse
+from scipy.sparse import csr_matrix, issparse, vstack
 
 from .._citations import cites
 
@@ -48,11 +48,32 @@ def normalize_weighted(
         normalize_fn = _normalize_weighted_dense
 
     if batch_key is not None:
-        for _, idx in adata.obs.groupby(batch_key, observed=True).groups.items():
-            mask = adata.obs.index.isin(idx)
-            adata.X[mask, :] = normalize_fn(X[mask, :], target_scale)
+        groups = adata.obs.groupby(batch_key, observed=True).groups.values()
+        masks = [adata.obs.index.isin(idx) for idx in groups]
+        adata.X = apply_by_rows(X, masks, lambda x: normalize_fn(x, target_scale))
     else:
         adata.X = normalize_fn(X, target_scale)
+
+
+def apply_by_rows(X, masks, fn):
+    """``X`` with the rows of each (disjoint) boolean mask replaced by
+    ``fn(X[mask])``; other rows are kept. Same result as assigning
+    ``X[mask, :] = fn(X[mask])`` in place, also its dtype (shortcut: an
+    integer ``X`` truncates float results, as that assignment did).
+
+    A sparse ``X`` is rebuilt by stacking the blocks: the in-place assignment
+    allocates row and column index arrays of mask rows x genes (int64 each).
+    """
+    if not issparse(X):
+        for mask in masks:
+            X[mask] = fn(X[mask])
+        return X
+    rows = [np.flatnonzero(mask) for mask in masks]
+    rest = np.flatnonzero(~np.logical_or.reduce([np.zeros(X.shape[0], bool), *masks]))
+    blocks = [csr_matrix(fn(X[r])) for r in rows] + [X[rest]]
+    order = np.argsort(np.concatenate([*rows, rest]))
+    out = vstack(blocks, format="csr")[order]
+    return out.astype(X.dtype, copy=False).asformat(X.format)
 
 
 def _normalize_weighted_sparse(X: csr_matrix, target_scale: float | None) -> csr_matrix:

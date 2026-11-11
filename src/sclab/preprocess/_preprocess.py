@@ -133,7 +133,7 @@ def preprocess(
                 "would clash; rename the groups"
             )
 
-    from ._normalize_weighted import normalize_weighted
+    from ._normalize_weighted import apply_by_rows, normalize_weighted
 
     with tqdm(total=100, bar_format="{percentage:3.0f}%|{bar}|") as pbar:
         if counts_layer not in adata.layers:
@@ -229,12 +229,12 @@ def preprocess(
             new_layer += "_scale"
             if group_by is not None:
                 group_col = adata.obs[group_by].astype("str").fillna("_unassigned")
-                for _, idx in group_col.groupby(
-                    group_col, observed=True
-                ).groups.items():
-                    mask = adata.obs.index.isin(idx)
-                    scaled = pp.scale(adata[mask].X, zero_center=False)
-                    adata.X[mask, :] = scaled
+                groups = group_col.groupby(group_col, observed=True).groups.values()
+                adata.X = apply_by_rows(
+                    adata.X,
+                    [adata.obs.index.isin(idx) for idx in groups],
+                    lambda x: pp.scale(x, zero_center=False),
+                )
             else:
                 pp.scale(adata, zero_center=False)
 
