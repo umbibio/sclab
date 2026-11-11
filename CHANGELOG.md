@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- Neighbors and Cluster (steps, `sclab.preprocess.neighbors()` and new `sclab.tools.cluster.leiden()`) run without scanpy: `backend="auto" | "native" | "scanpy"`, `"auto"` = scanpy when installed (results unchanged). The port uses exact kNN (scikit-learn) and umap-learn's fuzzy simplicial set: distances identical to scanpy's exact path, connectivities within ~4e-6 (umap-learn ≥ 0.5.12); Leiden labels identical to scanpy's igraph flavor for the same graph and seed. Above 4096 cells scanpy uses approximate neighbors, the port stays exact. Group By Batch still needs bbknn
+- UMAP (step and `sclab.tools.embedding.umap()`) runs without scanpy or umap-learn: a NumPy port of umap-learn's `simplicial_set_embedding` (same spectral initialization, epoch schedule and gradients; each epoch's updates applied as one vectorized step and numpy random numbers, so layouts are deterministic per seed but not identical to umap-learn's; trustworthiness and cluster separation match scanpy's). `"auto"` = scanpy when installed
+- Cell-level DE (`sclab.tools.de()` wilcoxon, t-test, logreg and the dashboard step) runs without scanpy: a port of `scanpy.tl.rank_genes_groups` that keeps X sparse; results bit-identical to scanpy 1.12.5. `"auto"` = scanpy when installed. DE records the Welch / Wilcoxon / Mann-Whitney and Benjamini-Hochberg citations
+- `pseudobulk_pylimma()` fits all genes at once (batched voom-weighted least squares replacing pylimma's per-gene loop, pylimma 0.2.0 and 0.3.0 only, scoped to sclab's call): ~1.5 s instead of ~20 s for 20k genes × 24 samples, results within ~1e-11 of pylimma. Genes with missing values, zero weights or near-singular fits still go through pylimma's own loop
+- `regress_out` on a categorical key works without scanpy
+- `preprocess(n_top_genes=...)` and an "N top genes" field in the Preprocess step (empty = method default, as before)
+- scrublet doublet detection works without annoy, umap-learn or numba (e.g. in Pyodide with `micropip.install('scrublet', deps=False)`): exact neighbors are used when annoy is missing. With annoy installed nothing changes
 - QC, Preprocess and PCA (steps and `sclab.preprocess.qc()` / `preprocess()` / `pca()`) run without scanpy: `backend="auto" | "native" | "scanpy"`, where `"auto"` uses scanpy when installed (results unchanged) and otherwise sclab's port of the scanpy 1.12 functions (identical results; seurat_v3 HVG with a batch key within ~1e-3 of scanpy 1.12.5). PCA stays exact (scikit-learn ARPACK on the sparse matrix, float32, scanpy's sign convention). Generated code names `backend="native"` when the port ran; the step's tool line says which ran
 - `sclab.preprocess.highly_variable_genes(adata, methods=..., combine="union" | "intersection")`: several HVG flavors (seurat, cell_ranger, seurat_v3, seurat_v3_paper) combined, with one `highly_variable_<method>` column each. Preprocess step has "HVG methods" and "HVG combine" controls (default seurat ∪ seurat_v3_paper, as before). seurat_v3 flavors need `scikit-misc`
 - `pseudobulk_edgepython()` runs without numba (e.g. in Pyodide): sclab swaps NumPy versions of the edgepython kernels it uses into edgepython 0.5.1 (results within ~1e-8 of numba; ~10–15× slower than compiled numba, ~40 s for 20k genes × 24 samples). With numba installed nothing changes; an unsupported edgepython version without numba raises `ImportError`
@@ -57,6 +64,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `check_counts` parameter on `pseudobulk_pylimma()`, `pseudobulk_limma()` and `pseudobulk_edger()` (default `True`) to reject non-count input
 
 ### Changed
+- Cluster step's generated code calls `sclab.tools.cluster.leiden(...)` instead of `sc.tl.leiden(...)` (same clusters)
+- `preprocess(group_by=..., compute_hvg=True)` raises `ValueError` when a group is named like one of the HVG methods (its `highly_variable_<group>` column was silently overwritten)
+- Native `scale(zero_center=True)` explains that zero-centering densifies sparse data and points to `zero_center=False`
+- Under Pyodide, the Integration flavor scanorama is listed but disabled with the reason
+- Scaling per group and weighted normalization per batch rebuild sparse X instead of assigning rows (assigning built index arrays of ~4 GB per 10k-cell group at 30k genes); results unchanged
 - Randomized steps are seeded by default: `cca_integrate()` / `cca_integrate_pair()` (`random_state=0`, also passed to the partial ARPACK SVD), `aggregate_and_filter()`, `pseudobulk_pylimma()`, `pseudobulk_edgepython()` and the R `pseudobulk_edger()` / `pseudobulk_limma()` (new `random_state`, default 0). The Differential Expression step follows the Settings "Random seed". doubletdetection's default PhenoGraph clustering cannot be seeded (documented)
 - sclab's citation uses its Zenodo DOI (10.5281/zenodo.23739925)
 - **Breaking:** requires Python ≥ 3.12 (was 3.10–3.13); 3.14 supported. 3.15 not yet: h5py has no 3.15 wheels
@@ -106,6 +118,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ALRA uses a scoped rpy2 converter instead of the deprecated global `numpy2ri.activate()`
 
 ### Fixed
+- Neighbors with scanpy and umap-learn ≥ 0.6: scanpy failed for some metric / dataset-size combinations (umap-learn 0.6 rejects scanpy's non-contiguous float32 kNN distances); sclab now hands scanpy a float64 copy of the representation, only when umap-learn ≥ 0.6 is installed. Results with umap-learn < 0.6 are unchanged
 - scrublet scores are reproducible: annoy built its index on all CPUs, which is not deterministic; sclab now builds it on one thread
 - `scdblfinder()`: `dbr_sd` is passed to R as `dbr.sd`, `known_doublets_col` accepts a column name and keeps the column, `clusters_col=True` runs scDblFinder's own clustering, and known-doublet runs no longer return empty (NaN) class labels
 - Pseudobulk DE with a cell identity key computed the "rest" cell percentages over all other identities instead of within the identity
