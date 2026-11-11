@@ -1,3 +1,4 @@
+import numpy as np
 import pytest
 from anndata import AnnData
 
@@ -38,3 +39,28 @@ def test_mormw(adata: AnnData):
     sclab.preprocess.preprocess(adata, normalization_method="weighted")
 
     assert "counts_normw_log1p_scale" in adata.layers
+
+
+@pytest.mark.parametrize("dtype", ["int32", "int64"])
+def test_scale_per_group_integer_counts(adata: AnnData, dtype):
+    adata.layers["counts"] = adata.X.astype(dtype)  # integer counts, no other step
+    sclab.preprocess.preprocess(
+        adata,
+        group_by="quadrant",
+        compute_hvg=False,
+        normalization_method="none",
+        log1p=False,
+        scale=True,
+    )
+
+    scaled = adata.layers["counts_scale"]
+    scaled = scaled.toarray() if hasattr(scaled, "toarray") else scaled
+    assert scaled.dtype.kind == "f"
+    counts = adata.layers["counts"]
+    counts = counts.toarray() if hasattr(counts, "toarray") else counts
+    for idx in adata.obs.groupby("quadrant", observed=True).indices.values():
+        block, raw = scaled[idx], counts[idx].astype(float)
+        sd = raw.std(axis=0, ddof=1)
+        keep = sd > 0
+        # scale(zero_center=False) divides by the per-group std: not truncated
+        np.testing.assert_allclose(block[:, keep], raw[:, keep] / sd[keep], rtol=1e-4)

@@ -230,8 +230,11 @@ def preprocess(
             if group_by is not None:
                 group_col = adata.obs[group_by].astype("str").fillna("_unassigned")
                 groups = group_col.groupby(group_col, observed=True).groups.values()
+                X = adata.X
+                if X.dtype.kind in "biu":  # scaled values would be truncated
+                    X = X.astype(np.float64 if X.dtype.itemsize >= 8 else np.float32)
                 adata.X = apply_by_rows(
-                    adata.X,
+                    X,
                     [adata.obs.index.isin(idx) for idx in groups],
                     lambda x: pp.scale(x, zero_center=False),
                 )
