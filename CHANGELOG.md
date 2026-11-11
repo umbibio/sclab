@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- User guide page "Reproducing an analysis": the History tab's generated script, and saving, loading and replaying a step history (`save_step_history()`, `load_step_history()`, `apply_step_history()`)
 - Neighbors with Group By Batch (step and `sclab.preprocess.neighbors(batch_key=...)`) runs without bbknn, numba or scanpy: a port of bbknn 1.6.0 with exact per-batch kNN and trimming. `backend="auto"` still calls bbknn through scanpy when both are installed, so existing results don't change. The port matches bbknn's exact `cKDTree` search: identical neighbors, connectivities within 1e-5. It differs from bbknn's approximate default (pynndescent).
 - JupyterLite demo (`jupyterlite/`): build config pinning Pyodide 314.0.7, a demo notebook with a synthetic dataset and the dashboard, and `build.sh` (`--wheel` bundles a locally built sclab until 0.5 is on PyPI)
 - ALRA warns when its dense memory estimate exceeds 2 GB
@@ -127,6 +128,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ALRA uses a scoped rpy2 converter instead of the deprecated global `numpy2ri.activate()`
 
 ### Fixed
+- History replay (`processor.apply_step_history()`) runs each step with the backend it was recorded with: a history recorded with sclab's native ports (e.g. in the browser) no longer replays with scanpy where scanpy is installed. Interactive runs still use `"auto"`.
 - Per-group scaling in Preprocess truncated integer X (normalization "none", no log1p, an integer counts layer); integer input is now converted to float first. Float input is unchanged.
 - Functions that need a missing optional package (`doubletdetection()`, `scdblfinder()`, ALRA, the R pseudobulk methods, the jscatter plot backend) say which package and how to install it (pip or micropip) instead of raising a bare `ModuleNotFoundError`
 - Weighted normalization per batch truncated integer counts to whole numbers; integer input is now converted to float first (float64 for 64-bit integers, float32 otherwise). Float input is unchanged.
