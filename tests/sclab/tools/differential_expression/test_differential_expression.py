@@ -241,7 +241,8 @@ def test_leaves_adata_untouched_apart_from_key_added(adata):
     differential_expression(adata, "grp", key_added="de")
 
     assert list(adata.uns) == ["de", "sclab"]  # and the citations:
-    assert adata.uns["sclab"] == {"citations": ["sclab", "anndata", "scanpy"]}
+    keys = ["sclab", "anndata", "scanpy", "wilcoxon1945", "mann1947", "benjamini1995"]
+    assert adata.uns["sclab"] == {"citations": keys}
     pd.testing.assert_frame_equal(adata.obs, obs)
 
 

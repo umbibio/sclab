@@ -123,6 +123,28 @@ CASES = [
 ]
 
 
+def _exact(sc) -> bool:
+    """scanpy >= 1.12.5, the version ported: bit-identical results. Older
+    versions compute the t-test variances differently (~1e-8 apart), so near
+    ties may swap and results are compared per gene."""
+    from importlib.metadata import version
+
+    from packaging.version import Version
+
+    return Version(version("scanpy")) >= Version("1.12.5")
+
+
+def _assert_tables_close(a: pd.DataFrame, b: pd.DataFrame, key: list[str]):
+    key = [k for k in key if k in a]  # rank_genes_groups_df: "group" if several
+    a, b = a.sort_values(key, ignore_index=True), b.sort_values(key, ignore_index=True)
+    assert list(a.columns) == list(b.columns)
+    for c in a.columns:
+        if pd.api.types.is_float_dtype(a[c]):
+            np.testing.assert_allclose(a[c], b[c], rtol=1e-5, atol=1e-7, err_msg=c)
+        else:
+            np.testing.assert_array_equal(a[c], b[c], err_msg=c)
+
+
 @pytest.mark.parametrize("negative", [False, True])
 @pytest.mark.parametrize("sparse", [True, False])
 @pytest.mark.parametrize(
@@ -139,18 +161,24 @@ def test_matches_scanpy(kwargs, sparse, negative):
     assert a["params"] == b["params"]
     for field in a.keys() - {"params"}:
         assert a[field].dtype == b[field].dtype, field
+    df_a, df_b = (sc.get.rank_genes_groups_df(x, None) for x in (ours, theirs))
+    if not _exact(sc):
+        _assert_tables_close(df_a, df_b, ["group", "names"])
+        return
+    for field in a.keys() - {"params"}:
         for group in a[field].dtype.names:  # bit-identical, also the gene order
             np.testing.assert_array_equal(a[field][group], b[field][group])
-    pd.testing.assert_frame_equal(
-        sc.get.rank_genes_groups_df(ours, "B"), sc.get.rank_genes_groups_df(theirs, "B")
-    )
+    pd.testing.assert_frame_equal(df_a, df_b)
 
 
 @pytest.mark.parametrize("method", ["wilcoxon", "t-test", "logreg"])
 def test_de_table_matches_scanpy_backend(method):
-    pytest.importorskip("scanpy")
+    sc = pytest.importorskip("scanpy")
     adata = make_lognorm()
     kw = dict(method=method, cell_identity_key=None, reference_group="A")
     ours = sclab.tools.de(adata.copy(), "g", backend="native", **kw)
     theirs = sclab.tools.de(adata.copy(), "g", backend="scanpy", **kw)
-    pd.testing.assert_frame_equal(ours, theirs, check_exact=True)
+    if _exact(sc):
+        pd.testing.assert_frame_equal(ours, theirs, check_exact=True)
+    else:
+        _assert_tables_close(ours, theirs, ["contrast", "gene"])
