@@ -135,8 +135,8 @@ class ProcessorStepBase(EventClient):
     run_button : Button
         The button that triggers :meth:`run`.
     status : ipywidgets.HTML
-        Below the Run button: why the step cannot run (see :meth:`validate`)
-        and the last error, if any (cleared by a successful run or a change
+        Below the Run button: why the step cannot run (see :meth:`validate`),
+        else a caveat about the run (see :meth:`warning`), and the last error, if any (cleared by a successful run or a change
         of the step's controls).
     tool_label : ipywidgets.HTML
         Below the Run button: a muted line naming the tool the step runs
@@ -185,6 +185,7 @@ class ProcessorStepBase(EventClient):
         self.tool_label = HTMLWidget(layout={"display": "none"})
         self._running = False
         self._reason: str | None = None
+        self._warning: str | None = None
         self._error: tuple[str, dict] | None = None  # (html, control params)
         self.run_button = Button(
             description=self.run_button_description, button_style="primary"
@@ -241,6 +242,15 @@ class ProcessorStepBase(EventClient):
         """
         return None
 
+    def warning(self, params: dict) -> str | None:
+        """A caveat about a run with ``params`` that does not block it, or None.
+
+        Shown below the Run button (prefixed "Warning:") while :meth:`validate`
+        gives no reason; re-checked with it, so it must be cheap. The default
+        is None.
+        """
+        return None
+
     def unavailable(self, params: dict) -> str | None:
         """Why a run with ``params`` cannot happen here for lack of a package.
 
@@ -289,6 +299,7 @@ class ProcessorStepBase(EventClient):
             return
         params = self._control_params()
         self._reason = self.validate(params)
+        self._warning = None if self._reason is not None else self.warning(params)
         tool = self.tool(params)
         self.tool_label.value = (
             f"<span style='color:#888;font-size:0.8em'>{escape(tool)}</span>"
@@ -304,6 +315,11 @@ class ProcessorStepBase(EventClient):
         if self._reason is not None:
             parts.append(
                 f"<span style='color:#b26a00'>{escape(self._reason, quote=False)}</span>"
+            )
+        if self._warning is not None:
+            parts.append(
+                "<span style='color:#b26a00'>Warning: "
+                f"{escape(self._warning, quote=False)}</span>"
             )
         if self._error is not None:
             parts.append(self._error[0])
