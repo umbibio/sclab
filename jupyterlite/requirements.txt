@@ -1,0 +1,8 @@
+# Build environment for the JupyterLite demo site (not sclab dependencies).
+jupyterlite-core[contents]==0.8.7
+# its default is Pyodide 314.0.6; jupyter-lite.json pins 314.0.7 (tests/pyodide)
+jupyterlite-pyodide-kernel==0.8.7
+# frontend (lab) extensions found in this environment are copied into the site:
+jupyterlab_widgets>=3  # ipywidgets 8 manager: the whole dashboard
+anywidget  # plotly>=6 FigureWidget and sclab's own widgets
+plotly  # jupyterlab-plotly: renders static plotly figures (fig.show())
