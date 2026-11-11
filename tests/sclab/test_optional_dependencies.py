@@ -239,10 +239,29 @@ def test_scanorama_offered_only_when_installed(monkeypatch):
     monkeypatch.setitem(sys.modules, "scanorama", None)
     assert flavors(SCLabDashboard(make_adata())) == ("cca", "harmony")
 
-    monkeypatch.setattr(_compat, "missing", lambda feature: None)
-    assert flavors(SCLabDashboard(make_adata()))[-1] == "scanorama"
+    with monkeypatch.context() as m:
+        m.setattr(_compat, "missing", lambda feature: None)
+        assert flavors(SCLabDashboard(make_adata()))[-1] == "scanorama"
+
+
+def test_scanorama_disabled_under_wasm(monkeypatch):
+    monkeypatch.setitem(sys.modules, "scanorama", None)  # no wasm build
     monkeypatch.setattr(_compat, "IS_WASM", True)
-    assert "scanorama" not in flavors(SCLabDashboard(make_adata()))
+    adata = make_adata()
+    adata.obsm["X_pca"] = np.zeros((adata.n_obs, 5))
+    step = SCLabDashboard(adata, batch_key="grp").processor.steps["Integration"]
+    c = step.variable_controls
+    assert c["flavor"].options[-1] == "scanorama"
+    c["use_rep"].value = "X_pca"
+    c["flavor"].value = "harmony"
+    assert step._reason is None
+    c["flavor"].value = "scanorama"
+    reason = "Needs scanorama, scanpy: not available under Pyodide"
+    assert step._reason.startswith(reason), step._reason
+    assert step.run_button.disabled
+    params = dict(use_rep="X_pca", group_by="grp", flavor="scanorama")
+    with pytest.raises(ImportError, match=reason):
+        step.function(**params, reference_batch=None, max_iters=10)
 
 
 def test_optional_dependencies_table(capsys, monkeypatch):
@@ -260,6 +279,8 @@ def test_optional_dependencies_table(capsys, monkeypatch):
     assert install["jscatter"] == "await micropip.install(['jupyter-scatter'])"
     assert install["R"].startswith("not available under Pyodide")
     assert "micropip.install('edgepython', deps=False)" in install["edgepython"]
+    assert "micropip.install('scrublet', deps=False)" in install["scrublet"]
+    assert install["scanorama"].startswith("not available under Pyodide")
     assert capsys.readouterr().out == ""
 
 

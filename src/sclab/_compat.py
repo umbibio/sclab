@@ -88,10 +88,17 @@ def install_command(feature: str) -> str:
     f = FEATURES[feature]
     if IS_WASM and f.extra == "r":
         return "not available under Pyodide (no R)"
+    if IS_WASM and feature == "scanorama":
+        return "not available under Pyodide (scanorama needs annoy, scanpy numba)"
     if IS_WASM and feature == "edgepython":  # without numba (no wasm build)
         return (
             "await micropip.install(['statsmodels', 'matplotlib']); "
             "await micropip.install('edgepython', deps=False)"
+        )
+    if IS_WASM and feature == "scrublet":  # without annoy, umap-learn, numba
+        return (
+            "await micropip.install(['scikit-learn', 'scikit-image', 'matplotlib']); "
+            "await micropip.install('scrublet', deps=False)"
         )
     if IS_WASM:
         return f"await micropip.install({list(f.pip)!r})"

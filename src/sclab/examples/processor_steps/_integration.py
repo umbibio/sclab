@@ -24,7 +24,8 @@ class Integration(ProcessorStepBase):
     - ``"harmony"`` — Harmony via :func:`~sclab.preprocess.harmony_integrate`.
     - ``"scanorama"`` — Scanorama via
       :func:`scanpy.external.pp.scanorama_integrate`; offered only when
-      ``scanorama`` and ``scanpy`` are installed, and not under Pyodide.
+      ``scanorama`` and ``scanpy`` are installed. Under Pyodide it is shown
+      disabled, with the reason (no annoy or numba there).
     """
 
     parent: Processor
@@ -33,7 +34,7 @@ class Integration(ProcessorStepBase):
 
     def __init__(self, parent: Processor) -> None:
         flavors = ["cca", "harmony"]
-        if not _compat.IS_WASM and _compat.missing("scanorama") is None:
+        if _compat.IS_WASM or _compat.missing("scanorama") is None:
             flavors.append("scanorama")
         cat_options = {
             "": None,
@@ -105,6 +106,8 @@ class Integration(ProcessorStepBase):
     def validate(self, params: dict) -> str | None:
         obs = self.parent.dataset.adata.obs
         group_by, flavor = params.get("group_by"), params.get("flavor")
+        if flavor == "scanorama" and (reason := _compat.missing("scanorama")):
+            return reason  # under Pyodide
         if group_by is None:
             return "Choose a 'GroupBy' column with at least 2 batches"
         if group_by not in obs:
@@ -194,6 +197,7 @@ class Integration(ProcessorStepBase):
                     harmony_integrate(adata, **kwargs)
 
                 case "scanorama":
+                    _compat.require("scanorama")
                     from scanpy.external.pp import scanorama_integrate
 
                     scanorama_integrate(adata, **kwargs)
