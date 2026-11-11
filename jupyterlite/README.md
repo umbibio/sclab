@@ -82,10 +82,9 @@ console.
 - sclab uses its native ports of the scanpy and umap-learn functions (QC,
   Preprocess, PCA, Neighbors, Cluster, UMAP, wilcoxon/t-test/logreg DE),
   pylimma and edgepython for pseudobulk DE, and scrublet with exact
-  neighbors. Not available: scanpy itself, Neighbors with *Group By Batch*
-  (bbknn; the dashboard ticks it whenever a batch key is set, so the demo
-  unticks it), the scanorama integration, doubletdetection, and the R
-  methods.
+  neighbors, and a port of bbknn for Neighbors with *Group By Batch*. Not
+  available: scanpy itself, the scanorama integration, doubletdetection, and
+  the R methods.
 - Size: about 10,000 to 20,000 cells is comfortable; WebAssembly memory is
   limited to 4 GB. The demo notebook's QC, Preprocess, PCA, Neighbors,
   Cluster and UMAP steps take about 16 s at 3,000 cells, 48 s at 10,000 and
