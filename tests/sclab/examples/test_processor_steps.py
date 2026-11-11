@@ -982,6 +982,16 @@ class TestNativeBackendCaptions:
             else "Python · scanpy.tl.leiden (igraph)"
         )
 
+    @pytest.mark.parametrize("backend", ["scanpy", "native"])
+    def test_de_says_which_backend_runs(self, monkeypatch, backend):
+        from sclab.examples.processor_steps import _differential_expression as mod
+
+        monkeypatch.setattr(mod, "resolve_backend", lambda _: backend)
+        d = SCLabDashboard(make_adata(120, 60))
+        caption = d.processor.steps[DE].tool({"method": "t-test"})
+        native = "sclab (port of scanpy.tl.rank_genes_groups, t-test)" in caption
+        assert native == (backend == "native")
+
 
 class TestDifferentialExpressionStep:
     def test_tool_caption_follows_method(self):

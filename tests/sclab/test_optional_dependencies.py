@@ -84,7 +84,7 @@ def test_dashboard_builds_without_optional_packages(without_optional):
     de = steps["Differential Expression"]
     c = de.variable_controls
     c["groupby"].value = "grp"
-    assert de._reason == "wilcoxon needs scanpy: pip install 'sclab[scanpy]'"
+    assert "scanpy" not in de._reason  # sclab's port; but adata.X holds counts
     c["method"].value = "pseudobulk_limma"
     if pylimma_is_available():
         assert de._reason is None
@@ -190,6 +190,32 @@ def test_pseudobulk_de_runs_without_scanpy(without_optional):
     res = d.dataset.adata.uns["differential_expression"]
     assert res["params"]["method"] == "pseudobulk_limma"
     assert set(res["table"]["contrast"]) <= {"B_vs_A", "C_vs_A"}
+    assert sys.modules["scanpy"] is None  # not imported meanwhile
+
+
+def test_cell_level_de_runs_without_scanpy(without_optional):
+    adata = make_adata()
+    adata.X = np.log1p(adata.X)
+    d = SCLabDashboard(adata, counts_layer="counts")
+    run_step(
+        d,
+        "Differential Expression",
+        method="wilcoxon",
+        groupby="grp",
+        groups=(),
+        reference="A",
+        cell_identity=None,
+        sample_key=None,
+        replicas_per_group=3,
+        override_layer=False,
+        layer=None,
+        name="",
+    )
+    res = d.dataset.adata.uns["differential_expression"]
+    assert res["params"]["backend"].startswith("sclab port of scanpy")
+    assert set(res["table"]["contrast"]) == {"B_vs_A", "C_vs_A"}
+    assert d.processor.step_history[-1]["params"]["backend"] == "native"
+    assert 'backend="native"' in d.generate_code()
     assert sys.modules["scanpy"] is None  # not imported meanwhile
 
 

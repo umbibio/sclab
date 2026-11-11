@@ -1,7 +1,6 @@
 import re
 import tempfile
 from html import escape
-from importlib.util import find_spec
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +25,7 @@ from sclab.dataset import SCLabDataset
 from sclab.dataset.processor import Processor
 from sclab.dataset.processor._codegen import ADATA, call
 from sclab.dataset.processor.step import ProcessorStepBase
+from sclab.preprocess._scanpy_port import native_backend, resolve_backend
 from sclab.tools.differential_expression import (
     edgepython_is_available,
     pylimma_is_available,
@@ -50,8 +50,6 @@ XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 def _unavailable(method: str) -> str | None:
     """Why ``method`` cannot run here (a missing optional package), or None."""
-    if method in SCANPY_METHODS and find_spec("scanpy") is None:
-        return f"{method} needs {requirement('scanpy')}"
     if method == "pseudobulk_limma" and not pylimma_is_available():
         return f"pseudobulk_limma needs {requirement('pylimma')}"
     if method == "pseudobulk_edger" and not edgepython_is_available():
@@ -272,14 +270,16 @@ class DifferentialExpression(ProcessorStepBase):
 
     Compares each condition group with a reference group (or the rest of
     the cells), optionally within each cell identity. Methods: the cell-level
-    tests of scanpy (``wilcoxon``, ``t-test``, ``logreg``) on ``adata.X``,
+    tests of :func:`scanpy.tl.rank_genes_groups` (``wilcoxon``, ``t-test``,
+    ``logreg``) on ``adata.X``,
     and the pseudobulk tests (``pseudobulk_limma``, ``pseudobulk_edger``,
     with the ``de`` extra) on the dataset's counts layer; tick "Override
     layer" to pick another layer. Results are stored in ``adata.uns`` and
     shown in a :class:`DifferentialExpressionResults` panel.
 
-    The cell-level tests need ``scanpy``; without it, only the pseudobulk
-    methods can run.
+    The cell-level tests use scanpy if it is installed, else sclab's native
+    port of :func:`scanpy.tl.rank_genes_groups` (``backend="auto"``; the same
+    results); the history records which ran.
     """
 
     parent: Processor
@@ -422,7 +422,9 @@ class DifferentialExpression(ProcessorStepBase):
     def tool(self, params: dict) -> str:
         method = params.get("method")
         if method in SCANPY_METHODS:
-            return f"Python · scanpy.tl.rank_genes_groups ({method})"
+            if resolve_backend("auto") == "scanpy":
+                return f"Python · scanpy.tl.rank_genes_groups ({method})"
+            return f"Python · sclab (port of scanpy.tl.rank_genes_groups, {method})"
         return {
             "pseudobulk_limma": "Python · pylimma (limma-voom)",
             "pseudobulk_edger": "Python · edgepython (edgeR quasi-likelihood F-test)",
@@ -444,6 +446,8 @@ class DifferentialExpression(ProcessorStepBase):
         resolved = super().resolved_params(params)
         resolved["layer"] = self._layer(resolved)
         resolved["key_added"] = self._key_added(resolved.get("name"))
+        if resolved.get("method") in SCANPY_METHODS:
+            resolved["backend"] = resolve_backend("auto")
         return resolved
 
     @staticmethod
@@ -464,6 +468,7 @@ class DifferentialExpression(ProcessorStepBase):
             if "edger_preprocessing" in params:
                 kwargs["edger_preprocessing"] = params["edger_preprocessing"]
         kwargs["random_state"] = params.get("random_state", 0)  # absent: older history
+        kwargs.update(native_backend(params))
         kwargs["key_added"] = params["key_added"]
         return kwargs
 
