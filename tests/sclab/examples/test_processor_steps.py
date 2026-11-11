@@ -938,6 +938,17 @@ class TestNativeBackendCaptions:
             caption = step.tool({})
             assert ("sclab (port of scanpy.pp" in caption) == (backend == "native")
 
+    @pytest.mark.parametrize("backend", ["scanpy", "native"])
+    def test_umap_says_which_backend_runs(self, monkeypatch, backend):
+        from sclab.examples.processor_steps import _umap
+
+        monkeypatch.setattr(_umap, "resolve_backend", lambda _: backend)
+        step = SCLabDashboard(make_adata(120, 60)).processor.steps["UMAP"]
+        caption = step.tool({})
+        assert ("scanpy.tl.umap" in caption) == (backend == "scanpy")
+        assert ("sclab (port of umap-learn" in caption) == (backend == "native")
+        assert step.resolved_params({})["backend"] == backend
+
 
 class TestDifferentialExpressionStep:
     def test_tool_caption_follows_method(self):

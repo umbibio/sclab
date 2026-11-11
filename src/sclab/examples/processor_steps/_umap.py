@@ -1,12 +1,12 @@
 from ipywidgets import Checkbox, IntText
 
-from sclab._compat import missing
 from sclab.dataset.processor import Processor
 from sclab.dataset.processor._codegen import ADATA, call
 from sclab.dataset.processor.step import ProcessorStepBase
+from sclab.preprocess._scanpy_port import native_backend, resolve_backend
+from sclab.tools.embedding import umap
 
 from ._neighbors import missing_neighbors
-from sclab.tools.embedding import umap
 
 
 class UMAP(ProcessorStepBase):
@@ -17,7 +17,9 @@ class UMAP(ProcessorStepBase):
     (e.g. ``"X_2Dumap"``). Optionally zero-centers the embedding. The
     plotter is updated to display the new embedding.
 
-    Requires ``scanpy`` to be installed.
+    Uses scanpy if it is installed, else sclab's native port of
+    :func:`scanpy.tl.umap` (``backend="auto"``; a numpy port of umap-learn's
+    layout); the history records which ran.
     """
 
     parent: Processor
@@ -38,10 +40,15 @@ class UMAP(ProcessorStepBase):
         )
 
     def validate(self, params: dict) -> str | None:
-        return missing("scanpy") or missing_neighbors(self.parent.dataset.adata)
+        return missing_neighbors(self.parent.dataset.adata)
 
     def tool(self, params: dict) -> str:
-        return "Python · scanpy.tl.umap"
+        if resolve_backend("auto") == "scanpy":
+            return "Python · scanpy.tl.umap"
+        return "Python · sclab (port of umap-learn simplicial_set_embedding)"
+
+    def resolved_params(self, params: dict) -> dict:
+        return {**super().resolved_params(params), "backend": resolve_backend("auto")}
 
     def to_code(self, params: dict) -> str:
         return call(
@@ -50,6 +57,7 @@ class UMAP(ProcessorStepBase):
             n_components=params["n_components"],
             zero_center=params["zero_center"],
             random_state=params["random_state"],
+            **native_backend(params),
         )
 
     def function(

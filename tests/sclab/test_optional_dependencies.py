@@ -31,7 +31,7 @@ OPTIONAL = [
     "edgepython",
     "scanorama",
 ]
-SCANPY_STEPS = ["Neighbors", "UMAP", "Cluster"]
+SCANPY_STEPS = ["Neighbors", "Cluster"]
 
 
 def test_import_sclab_without_optional_packages():
@@ -70,6 +70,7 @@ def test_dashboard_builds_without_optional_packages(without_optional):
         steps["Neighbors"].run()
     assert steps["QC"]._reason is steps["Preprocess"]._reason is None
     assert steps["PCA"]._reason.endswith("Run the Preprocess step first")
+    assert steps["UMAP"]._reason == "Run the Neighbors step first"  # sclab's port
 
     # its constructor needs a backend: a placeholder saying what to install
     dd = steps["Doublet Detection"]
@@ -107,6 +108,23 @@ def test_qc_preprocess_pca_run_without_scanpy(without_optional):
     code = d.generate_code()
     assert code.count('backend="native"') == 3 and "import scanpy" not in code
     assert sys.modules["scanpy"] is None  # not imported meanwhile
+
+
+def test_umap_runs_without_scanpy(without_optional):
+    from sklearn.neighbors import kneighbors_graph
+
+    d = SCLabDashboard(make_adata(), counts_layer="counts")
+    adata = d.dataset.adata
+    graph = kneighbors_graph(adata.obsm["Y_array8"], 10)  # a stand-in for Neighbors
+    adata.obsp["connectivities"] = graph.maximum(graph.T).tocsr()
+    adata.uns["neighbors"] = {"params": {"method": "umap", "use_rep": "Y_array8"}}
+    run_step(d, "UMAP", n_components=2)
+    assert adata.obsm["X_2Dumap"].shape == (adata.n_obs, 2)
+    assert d.processor.step_history[-1]["params"]["backend"] == "native"
+    code = d.generate_code()
+    assert "sclab.tools.embedding.umap(" in code
+    assert 'backend="native"' in code and "import scanpy" not in code
+    assert sys.modules["scanpy"] is None
 
 
 def test_seurat_v3_hvg_needs_skmisc(monkeypatch):
