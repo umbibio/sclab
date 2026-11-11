@@ -43,6 +43,9 @@ await micropip.install("pylimma")  # the 'de' extra
 await micropip.install(["statsmodels", "matplotlib"])
 await micropip.install("edgepython", deps=False)
 await micropip.install("scikit-misc")  # HVG flavors seurat_v3, seurat_v3_paper
+# scrublet without annoy, umap-learn, numba (no wasm builds): exact neighbors
+await micropip.install(["scikit-image", "matplotlib"])
+await micropip.install("scrublet", deps=False)
 `);
   console.log(`[OK] installed sclab and its dependencies (${Date.now() - t0} ms)`);
   await py.runPythonAsync(readFileSync(join(here, "driver.py"), "utf8"));

@@ -1,8 +1,9 @@
 """Run by smoke.mjs inside Pyodide, after sclab and its dependencies are installed.
 
 Builds the dashboard without scanpy and runs the steps that work natively
-(QC through Neighbors, Cluster and UMAP), and pseudobulk limma and edgeR
-(edgepython without numba).
+(QC through Neighbors, Cluster and UMAP), pseudobulk limma and edgeR
+(edgepython without numba), and scrublet (installed without its annoy,
+umap-learn and numba dependencies).
 Any failed assertion fails the smoke test.
 """
 
@@ -48,10 +49,10 @@ d = SCLabDashboard(adata, counts_layer="counts", batch_key="batch")
 steps = d.processor.steps
 assert steps["UMAP"]._reason == "Run the Neighbors step first"  # sclab's port
 assert steps["QC"]._reason is steps["Preprocess"]._reason is None  # sclab's port
-assert type(steps["Doublet Detection"]).__name__ == "_UnavailableStep"
+assert "Doublet Detection" in steps
 assert d.background_checkbox.disabled and not d.background_checkbox.value
 flavors = steps["Integration"].variable_controls["flavor"].options
-assert "scanorama" not in flavors, flavors
+assert flavors[-1] == "scanorama", flavors  # shown, but cannot run
 ok("dashboard built", f"({len(steps)} steps)")
 
 
@@ -128,6 +129,29 @@ c["gene_input"].value = c["gene_input"].options[0]
 run("Gene Expression")
 assert d.plotter.state["source"] == "gene"
 ok("Gene Expression")
+
+steps["Integration"].variable_controls["flavor"].value = "scanorama"
+assert "not available under Pyodide" in steps["Integration"]._reason
+ok("Integration scanorama disabled", f"({steps['Integration']._reason})")
+
+# scrublet installed with deps=False: no annoy, umap-learn or numba; exact neighbors
+assert not any(find_spec(m) for m in ("annoy", "umap", "numba"))
+# more genes than above: scrublet keeps the top 15% variable genes for 30 PCs
+X2 = sp.csr_matrix(rng.negative_binomial(2, 0.5, (n_obs, 1000)).astype(np.float32))
+d2 = SCLabDashboard(ad.AnnData(X2, layers={"counts": X2.copy()}), counts_layer="counts")
+doublets = d2.processor.steps["Doublet Detection"]
+assert doublets.variable_controls["flavor"].options == ("scrublet",)
+scores = []
+for _ in range(2):
+    t0 = time.perf_counter()
+    doublets.run(flavor="scrublet")
+    assert d2.broker.exceptions_log == [], d2.broker.exceptions_log
+    assert doublets.run_button.button_style == "success", doublets.status.value
+    scores.append(d2.dataset.adata.obs["scrublet_score"].to_numpy())
+    elapsed = f"({time.perf_counter() - t0:.2f} s)"
+assert (scores[0] == scores[1]).all() and ((0 <= scores[0]) & (scores[0] <= 1)).all()
+assert sp.issparse(d2.dataset.adata.layers["counts"])
+ok("Doublet Detection scrublet (exact neighbors, reproducible)", elapsed)
 
 de_kw = dict(reference_group="A", layer="counts", replicas_per_group=3, random_state=0)
 assert find_spec("edgepython") is not None and find_spec("numba") is None
