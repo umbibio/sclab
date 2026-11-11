@@ -1,3 +1,5 @@
+import json
+
 import anndata
 import numpy as np
 import pytest
@@ -5,7 +7,7 @@ from anndata import AnnData
 from scipy.sparse import issparse
 
 import sclab.preprocess
-from sclab.utils import layer_keys, x_name
+from sclab.utils import layer_keys, unscaled_layer, x_name, x_scaled
 
 from ..test_utils import simple_loop_adata
 
@@ -133,3 +135,65 @@ def test_x_name_survives_h5ad_round_trip(adata: AnnData, tmp_path):
     read = anndata.read_h5ad(path)
     assert x_name(read) == "counts_normt_log1p_scale"
     assert list(read.uns["sclab"]["citations"]) == list(adata.uns["sclab"]["citations"])
+
+
+@pytest.mark.parametrize(
+    "kwargs, scaled, unscaled",
+    [
+        ({}, True, "counts_normt_log1p"),
+        ({"group_by": "quadrant"}, "quadrant", "counts_normt_log1p"),
+        ({"scale": False}, False, "X"),
+    ],
+)
+def test_scaling_recorded_and_survives_h5ad_round_trip(
+    adata: AnnData, tmp_path, kwargs, scaled, unscaled
+):
+    sclab.preprocess.preprocess(adata, **kwargs)
+    assert x_scaled(adata) == scaled
+    assert unscaled_layer(adata) == unscaled
+    path = tmp_path / "a.h5ad"
+    adata.write_h5ad(path)
+    read = anndata.read_h5ad(path)
+    assert x_scaled(read) == scaled and type(x_scaled(read)) is type(scaled)
+    assert unscaled_layer(read) == unscaled
+
+
+def _old_style(adata: AnnData, history: list | None) -> AnnData:
+    """``adata`` as older sclab left it: no X record, no unscaled layer."""
+    adata.uns["sclab"] = {} if history is None else {"history": json.dumps(history)}
+    del adata.layers["counts_normt_log1p"]
+    return adata
+
+
+@pytest.mark.parametrize(
+    "history, scaled",
+    [
+        (None, None),
+        ([], None),
+        (  # pre-0.5 entry, then a failed run that is ignored
+            [
+                {"step_description": "Preprocess", "params": {"scale": True}},
+                {"step": "Preprocess", "params": {"scale": False}, "status": "failed"},
+            ],
+            True,
+        ),
+        (
+            [
+                {"step": "QC", "params": {}, "status": "success"},
+                {
+                    "step": "Preprocess",
+                    "params": {"scale": True, "group_by": "quadrant"},
+                    "status": "success",
+                },
+            ],
+            "quadrant",
+        ),
+        ([{"step": "Preprocess", "params": {"scale": False}}], False),
+        ([{"step": "Preprocess", "params": {}}], None),
+    ],
+)
+def test_scaling_inferred_from_history_of_older_datasets(adata, history, scaled):
+    sclab.preprocess.preprocess(adata)
+    old = _old_style(adata, history)
+    assert x_scaled(old) == scaled
+    assert unscaled_layer(old) == "X"  # no unscaled layer to use

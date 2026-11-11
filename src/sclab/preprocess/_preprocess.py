@@ -36,7 +36,10 @@ def preprocess(
     optional covariate regression, and per-group scaling. The result
     replaces ``adata.X`` (float32), and its name, the counts layer plus a
     suffix per applied step (e.g. ``counts_normt_log1p_scale``), is recorded
-    in ``adata.uns["sclab"]["X"]``. No copy of it is kept in a layer.
+    in ``adata.uns["sclab"]["X"]``, and how it was scaled in
+    ``adata.uns["sclab"]["X_scaled"]`` (False, True for global scaling, or
+    ``group_by``; see :func:`sclab.utils.x_scaled`). No copy of it is kept
+    in a layer.
 
     Parameters
     ----------
@@ -258,7 +261,7 @@ def preprocess(
         pbar.update(10)
 
         adata.X = adata.X.astype(np.float32)
-        set_x_name(adata, new_layer)
+        set_x_name(adata, new_layer, scaled=scale and (group_by or True))
 
     hvg_keys = hvg_citations(hvg_methods) if compute_hvg else ()
     record_citations(adata, "scanpy", *hvg_keys)
