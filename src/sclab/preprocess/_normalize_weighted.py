@@ -27,8 +27,9 @@ def normalize_weighted(
     Parameters
     ----------
     adata : AnnData
-        Annotated data matrix. ``adata.X`` must be a sparse count matrix.
-        Modified in-place.
+        Annotated data matrix with a count matrix in ``adata.X``. Modified
+        in-place. Integer counts become float64 (64-bit integers) or float32
+        (smaller integers); float dtypes are kept.
     target_scale : float or None, optional
         Target library size after normalization. If None, this is set to
         1e4 by default. Default is None.
@@ -42,6 +43,8 @@ def normalize_weighted(
         Updates ``adata.X`` in-place with the normalized count matrix.
     """
     X = adata.X
+    if X.dtype.kind in "biu":  # normalised values would be truncated to integers
+        X = X.astype(np.float64 if X.dtype.itemsize >= 8 else np.float32)
     if issparse(X):
         normalize_fn = _normalize_weighted_sparse
     else:
@@ -58,8 +61,8 @@ def normalize_weighted(
 def apply_by_rows(X, masks, fn):
     """``X`` with the rows of each (disjoint) boolean mask replaced by
     ``fn(X[mask])``; other rows are kept. Same result as assigning
-    ``X[mask, :] = fn(X[mask])`` in place, also its dtype (shortcut: an
-    integer ``X`` truncates float results, as that assignment did).
+    ``X[mask, :] = fn(X[mask])`` in place, also its dtype (so an integer ``X``
+    truncates float results; callers pass float ``X``).
 
     A sparse ``X`` is rebuilt by stacking the blocks: the in-place assignment
     allocates row and column index arrays of mask rows x genes (int64 each).

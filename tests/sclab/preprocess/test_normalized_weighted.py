@@ -50,3 +50,28 @@ def test_apply_by_rows_equals_in_place_assignment(fmt):
     assert type(got) is type(X) and got.dtype == X.dtype
     dense = (lambda a: a) if fmt == "dense" else (lambda a: a.toarray())
     np.testing.assert_array_equal(dense(got), dense(expected))
+
+
+@pytest.mark.parametrize("fmt", ["sparse", "dense"])
+@pytest.mark.parametrize("batch_key", [None, "quadrant"])
+@pytest.mark.parametrize("int_dtype", ["int64", "int32"])
+def test_integer_counts_are_not_truncated(fmt, batch_key, int_dtype):
+    import numpy as np
+
+    float_dtype = np.float64 if int_dtype == "int64" else np.float32
+    ref = simple_loop_adata()
+    X = ref.X.astype(int_dtype)
+    X = X.toarray() if fmt == "dense" else X
+    as_int = ref.copy()
+    as_int.X = X.copy()
+    as_float = ref.copy()
+    as_float.X = X.astype(float_dtype)
+
+    sclab.preprocess.normalize_weighted(as_int, batch_key=batch_key)
+    sclab.preprocess.normalize_weighted(as_float, batch_key=batch_key)
+
+    assert as_int.X.dtype == float_dtype
+    got = as_int.X.toarray() if fmt == "sparse" else as_int.X
+    want = as_float.X.toarray() if fmt == "sparse" else as_float.X
+    assert (got % 1 != 0).any()
+    np.testing.assert_array_equal(got, want)
