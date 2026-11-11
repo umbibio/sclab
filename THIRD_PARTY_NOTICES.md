@@ -15,6 +15,7 @@ below. All of their licenses are compatible with GPL-3.0.
 | `src/sclab/preprocess/_harmony.py` | [harmonypy](https://github.com/slowkow/harmonypy), `harmonypy/harmony.py`, modified (reference batches) | based on 0.0.10 | GPL-3.0-or-later |
 | `src/sclab/tools/differential_expression/_edgepython_kernels.py` | [edgePython](https://github.com/pachterlab/edgePython), `edgepython/glm_kernels.py`, `ql_weights.py`, `dispersion_lowlevel.py`, `weighted_lowess.py` (numba ports of edgeR's and limma's C code), vectorised with NumPy | 0.5.1 | GPL-3.0-or-later |
 | `src/sclab/tools/differential_expression/_edger_preprocessing.py` | edgePython, `edgepython/filtering.py` (`filter_by_expr`) and `normalization.py` (TMM `calc_norm_factors`), reduced | 0.5.1 | GPL-3.0-or-later |
+| `src/sclab/tools/differential_expression/_pylimma_lm_series.py` | [pylimma](https://github.com/john-mulvey/pylimma), `pylimma/lmfit.py` (`_lm_series_slow`, a port of R limma's `lm.series`), vectorised over genes with NumPy | 0.2.0, 0.3.0 | GPL-3.0-or-later |
 | `src/sclab/tools/doublet_detection/_fastcluster.py` | [scDblFinder](https://github.com/plger/scDblFinder) (R/Bioconductor), `R/clustering.R` (`fastcluster`, `.prepSCE`, `.getDR`), ported to Python | 1.20.2 | GPL-3 |
 
 ## scanpy
@@ -155,3 +156,21 @@ Chen Y, Chen L, Lun ATL, Baldoni PL, Smyth GK. edgeR v4: powerful differential
 analysis of sequencing data with expanded functionality and improved support
 for small counts and larger datasets. Nucleic Acids Res 53, gkaf018 (2025).
 https://doi.org/10.1093/nar/gkaf018
+
+## pylimma
+
+Copyright (C) 2026 John Mulvey. GPL-3.0-or-later. A Python port of the
+Bioconductor package limma (Gordon Smyth et al.; GPL >= 2), here its
+`lm.series` (`lmfit.R`).
+
+Mulvey J. pylimma: a faithful, AnnData-native Python port of R limma for
+differential expression analysis. bioRxiv (2026).
+https://doi.org/10.64898/2026.07.06.736732
+
+Ritchie ME, Phipson B, Wu D, Hu Y, Law CW, Shi W, Smyth GK. limma powers
+differential expression analyses for RNA-sequencing and microarray studies.
+Nucleic Acids Res 43, e47 (2015). https://doi.org/10.1093/nar/gkv007
+
+Law CW, Chen Y, Shi W, Smyth GK. voom: precision weights unlock linear model
+analysis tools for RNA-seq read counts. Genome Biol 15, R29 (2014).
+https://doi.org/10.1186/gb-2014-15-2-r29
