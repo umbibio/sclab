@@ -31,7 +31,7 @@ OPTIONAL = [
     "edgepython",
     "scanorama",
 ]
-SCANPY_STEPS = ["Neighbors", "Cluster"]
+SCANPY_STEPS: list[str] = []  # Neighbors, Cluster, UMAP: sclab ports
 
 
 def test_import_sclab_without_optional_packages():
@@ -66,9 +66,9 @@ def test_dashboard_builds_without_optional_packages(without_optional):
         assert steps[name].run_button.disabled, name
         assert steps[name]._reason == "Needs scanpy: pip install 'sclab[scanpy]'"
         assert "sclab[scanpy]" in steps[name].status.value
-    with pytest.raises(ValueError, match="Needs scanpy"):
-        steps["Neighbors"].run()
     assert steps["QC"]._reason is steps["Preprocess"]._reason is None
+    assert steps["Neighbors"]._reason.startswith("Choose a 'Use rep.'")
+    assert steps["Cluster"]._reason == "Run the Neighbors step first"
     assert steps["PCA"]._reason.endswith("Run the Preprocess step first")
     assert steps["UMAP"]._reason == "Run the Neighbors step first"  # sclab's port
 
@@ -125,6 +125,27 @@ def test_umap_runs_without_scanpy(without_optional):
     assert "sclab.tools.embedding.umap(" in code
     assert 'backend="native"' in code and "import scanpy" not in code
     assert sys.modules["scanpy"] is None
+
+
+def test_neighbors_cluster_run_without_scanpy(without_optional):
+    d = SCLabDashboard(make_adata(), counts_layer="counts")
+    run_step(d, "QC", min_counts=0, min_genes=0, min_cells=0)
+    run_step(d, "Preprocess", hvg_methods=("cell_ranger",))
+    run_step(d, "PCA", n_comps=10, mask_var="highly_variable")
+    run_step(d, "Neighbors", use_rep="X_pca", dims=(1, 10), n_neighbors=15)
+    run_step(d, "Cluster", resolution=0.5)
+    adata = d.dataset.adata
+    assert adata.uns["neighbors"]["params"]["n_neighbors"] == 15
+    assert adata.obsp["connectivities"].nnz > 0
+    assert adata.obs["leiden"].nunique() > 1
+    history = d.processor.step_history
+    assert [e["params"]["backend"] for e in history] == ["native"] * 5
+    code = d.generate_code()
+    assert (
+        "sclab.preprocess.neighbors(" in code and "sclab.tools.cluster.leiden(" in code
+    )
+    assert code.count('backend="native"') == 5 and "import scanpy" not in code
+    assert sys.modules["scanpy"] is None  # not imported meanwhile
 
 
 def test_seurat_v3_hvg_needs_skmisc(monkeypatch):

@@ -1,10 +1,10 @@
 from ipywidgets import FloatSlider
 
-from sclab._citations import record_citations
-from sclab._compat import missing
 from sclab.dataset.processor import Processor
 from sclab.dataset.processor._codegen import ADATA, call
 from sclab.dataset.processor.step import ProcessorStepBase
+from sclab.preprocess._scanpy_port import native_backend, resolve_backend
+from sclab.tools.cluster import leiden
 
 from ._neighbors import missing_neighbors
 
@@ -12,19 +12,20 @@ from ._neighbors import missing_neighbors
 class Cluster(ProcessorStepBase):
     """Leiden graph-based clustering step.
 
-    Partitions cells into clusters using the Leiden algorithm on the
-    precomputed neighbor graph. The resulting cluster labels are stored in
-    ``adata.obs["leiden"]`` and published to the plotter as a metadata
-    change.
+    Runs :func:`sclab.tools.cluster.leiden`: partitions cells into clusters
+    using the Leiden algorithm (igraph) on the precomputed neighbor graph.
+    The resulting cluster labels are stored in ``adata.obs["leiden"]`` and
+    published to the plotter as a metadata change.
 
-    Requires ``scanpy`` (≥1.9 with igraph flavor support) to be installed.
+    Uses scanpy if it is installed, else sclab's native port of
+    :func:`scanpy.tl.leiden` (``backend="auto"``; the same igraph call and
+    seeding, so the same labels); the history records which ran.
     """
 
     parent: Processor
     name: str = "cluster"
     description: str = "Cluster"
     background = True
-    leiden_kwargs = dict(flavor="igraph", n_iterations=2, directed=False)
 
     def __init__(self, parent: Processor) -> None:
         variable_controls = dict(
@@ -40,30 +41,31 @@ class Cluster(ProcessorStepBase):
         )
 
     def validate(self, params: dict) -> str | None:
-        return missing("scanpy") or missing_neighbors(self.parent.dataset.adata)
+        return missing_neighbors(self.parent.dataset.adata)
 
     def tool(self, params: dict) -> str:
-        return "Python · scanpy.tl.leiden (igraph)"
+        if resolve_backend("auto") == "scanpy":
+            return "Python · scanpy.tl.leiden (igraph)"
+        return "Python · sclab (port of scanpy.tl.leiden, igraph)"
+
+    def resolved_params(self, params: dict) -> dict:
+        return {**super().resolved_params(params), "backend": resolve_backend("auto")}
 
     def to_code(self, params: dict) -> str:
         return call(
-            "sc.tl.leiden",
+            "sclab.tools.cluster.leiden",
             ADATA,
             resolution=params["resolution"],
-            **self.leiden_kwargs,
             random_state=params["random_state"],
+            **native_backend(params),
         )
 
     def function(self, resolution: float = 1.0, random_state: int = 0):
-        import scanpy as sc
-
         dataset = self.parent.dataset
         yield from self.compute(
-            sc.tl.leiden,
+            leiden,
             resolution=resolution,
-            **self.leiden_kwargs,
             random_state=random_state,
         )
-        record_citations(dataset.adata, "scanpy", "leiden", "igraph")
 
         self.broker.publish("dset_metadata_change", dataset.metadata, "leiden")

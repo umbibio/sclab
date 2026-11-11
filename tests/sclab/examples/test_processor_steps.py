@@ -949,6 +949,28 @@ class TestNativeBackendCaptions:
         assert ("sclab (port of umap-learn" in caption) == (backend == "native")
         assert step.resolved_params({})["backend"] == backend
 
+    @pytest.mark.parametrize("backend", ["scanpy", "native"])
+    def test_neighbors_cluster_say_which_backend_runs(self, monkeypatch, backend):
+        from sclab.examples.processor_steps import _cluster, _neighbors
+
+        for mod in (_neighbors, _cluster):
+            monkeypatch.setattr(mod, "resolve_backend", lambda _: backend)
+        d = SCLabDashboard(make_adata(120, 60))
+        steps = d.processor.steps
+        native = backend == "native"
+        neighbors = steps["Neighbors"].tool({})
+        assert neighbors == (
+            "Python · sclab (port of scanpy.pp.neighbors / "
+            "umap-learn fuzzy_simplicial_set)"
+            if native
+            else "Python · scanpy.pp.neighbors"
+        )
+        assert steps["Cluster"].tool({}) == (
+            "Python · sclab (port of scanpy.tl.leiden, igraph)"
+            if native
+            else "Python · scanpy.tl.leiden (igraph)"
+        )
+
 
 class TestDifferentialExpressionStep:
     def test_tool_caption_follows_method(self):

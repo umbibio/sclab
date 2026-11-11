@@ -5,6 +5,7 @@ from sclab.dataset.processor import Processor
 from sclab.dataset.processor._codegen import ADATA, call
 from sclab.dataset.processor.step import ProcessorStepBase
 from sclab.preprocess import neighbors
+from sclab.preprocess._scanpy_port import native_backend, resolve_backend
 
 
 def missing_neighbors(adata) -> str | None:
@@ -21,9 +22,11 @@ class Neighbors(ProcessorStepBase):
     graph using a selected embedding (``use_rep``) and a specified range of
     dimensions. Supports standard k-NN (via :func:`scanpy.pp.neighbors`) and
     batch-aware BBKNN graph construction when ``group_by_batch`` is enabled
-    and the dashboard has a ``batch_key``.
+    and the dashboard has a ``batch_key`` (needs ``bbknn`` and ``scanpy``).
 
-    Requires ``scanpy`` to be installed.
+    The standard k-NN graph uses scanpy if it is installed, else sclab's
+    native port of :func:`scanpy.pp.neighbors` (``backend="auto"``; exact
+    k-NN, umap-learn's connectivities); the history records which ran.
     """
 
     parent: Processor
@@ -71,10 +74,8 @@ class Neighbors(ProcessorStepBase):
         )
 
     def validate(self, params: dict) -> str | None:
-        if reason := missing("scanpy"):
-            return reason
         if params.get("group_by_batch") and self.parent.batch_key:
-            if reason := missing("bbknn"):
+            if reason := missing("bbknn") or missing("scanpy"):
                 return f"Group By Batch: {reason}"
         adata = self.parent.dataset.adata
         if params.get("use_rep") not in adata.obsm:
@@ -84,10 +85,19 @@ class Neighbors(ProcessorStepBase):
     def tool(self, params: dict) -> str:
         if params.get("group_by_batch") and self.parent.batch_key:
             return "Python · bbknn (scanpy.external.pp.bbknn)"
-        return "Python · scanpy.pp.neighbors"
+        if resolve_backend("auto") == "scanpy":
+            return "Python · scanpy.pp.neighbors"
+        return (
+            "Python · sclab (port of scanpy.pp.neighbors / "
+            "umap-learn fuzzy_simplicial_set)"
+        )
 
     def resolved_params(self, params: dict) -> dict:
-        return {**super().resolved_params(params), "batch_key": self.parent.batch_key}
+        return {
+            **super().resolved_params(params),
+            "batch_key": self.parent.batch_key,
+            "backend": resolve_backend("auto"),
+        }
 
     def to_code(self, params: dict) -> str:
         return call(
@@ -99,6 +109,7 @@ class Neighbors(ProcessorStepBase):
             metric=params["metric"],
             batch_key=params["batch_key"] if params["group_by_batch"] else None,
             random_state=params["random_state"],
+            **native_backend(params),
         )
 
     def function(
