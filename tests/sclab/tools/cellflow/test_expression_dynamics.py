@@ -152,6 +152,19 @@ def test_sparse_input_matches_dense(adata):
     pd.testing.assert_frame_equal(adata.var, sparse.var)
 
 
+def test_sparse_input_with_gene_mask_matches_dense(adata):
+    adata.var["sel"] = [True, False, True, True, False]
+    sparse = adata.copy()
+    sparse.X = csr_matrix(sparse.X)
+
+    expression_dynamics(adata, "pt", t_range=(0, 1), gene_mask="sel")
+    expression_dynamics(sparse, "pt", t_range=(0, 1), gene_mask="sel")
+
+    pd.testing.assert_frame_equal(adata.obs, sparse.obs)
+    pd.testing.assert_frame_equal(adata.var, sparse.var)
+    assert adata.var.loc[~adata.var["sel"], "sel_peak_activation_t"].isna().all()
+
+
 def test_float64_input_supported(adata):
     adata.X = adata.X.astype(np.float64)
 

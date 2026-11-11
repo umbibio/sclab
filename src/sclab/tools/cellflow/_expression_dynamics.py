@@ -104,11 +104,11 @@ def expression_dynamics(
     else:
         X = adata.layers[layer]
 
+    if gene_mask is not None:  # mask first: densify only the selected genes
+        X = X[:, adata.var[gene_mask].to_numpy()]
+
     if issparse(X):
         X = np.ascontiguousarray(X.todense("C"), dtype=np.float32)
-
-    if gene_mask is not None:
-        X = X[:, adata.var[gene_mask]]
 
     t = adata.obs[time_key].values
     F = NDBSpline(t_range=t_range, periodic=periodic).fit(t, X, progress=progress)
