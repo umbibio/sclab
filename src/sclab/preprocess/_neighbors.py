@@ -51,8 +51,10 @@ def neighbors(
         ``fuzzy_simplicial_set``), ``"auto"`` (default) scanpy if it is
         installed. Below 4096 cells scanpy's kNN search is exact too: the
         distances are the same and the connectivities equal within 1e-5
-        (float32 rounding); from 4096 cells scanpy searches approximately
-        (pynndescent) and the graphs differ slightly.
+        (float32 rounding; umap-learn >= 0.5.12, whose ``smooth_knn_dist``
+        the port follows: older versions give some cells an infinite sigma);
+        from 4096 cells scanpy searches approximately (pynndescent) and the
+        graphs differ slightly.
 
     References
     ----------

@@ -4,8 +4,14 @@ Native vs scanpy, where scanpy's kNN search is exact (fewer than 4096 cells):
 the distances are identical; the connectivities differ by at most ~4e-6
 (float32): umap-learn's binary search for sigma stops within 1e-5 of its
 target, and the 1-ulp differences between numpy's and numba's float32 ``exp``
-move that stop in ~2% of the cells.
+move that stop in ~2% of the cells. The port follows umap-learn 0.5.12:
+earlier versions compiled ``smooth_knn_dist`` with ``fastmath=True``, which
+drops its ``hi == inf`` test and gives some cells an infinite sigma (all
+their memberships 1), so the connectivities are compared only from 0.5.12.
 """
+
+from importlib.metadata import version
+
 
 import numpy as np
 import pytest
@@ -18,6 +24,7 @@ from sclab.preprocess._utils import get_neighbors_adjacency_matrix
 sc = pytest.importorskip("scanpy")
 
 CONN_ATOL = 1e-5
+UMAP_VERSION = tuple(int(v) for v in version("umap-learn").split(".")[:3])
 
 
 def make_rep(n_obs=300, n_dims=12, seed=0) -> AnnData:
@@ -38,9 +45,14 @@ def assert_same_graph(a: AnnData, b: AnnData):
     assert type(ca) is type(cb) and ca.dtype == cb.dtype == np.float32
     np.testing.assert_array_equal(ca.indptr, cb.indptr)
     np.testing.assert_array_equal(ca.indices, cb.indices)
-    np.testing.assert_allclose(ca.data, cb.data, rtol=0, atol=CONN_ATOL)
+    if UMAP_VERSION >= (0, 5, 12):
+        np.testing.assert_allclose(ca.data, cb.data, rtol=0, atol=CONN_ATOL)
 
 
+@pytest.mark.skipif(
+    _neighbors._umap_rejects_float32(),
+    reason="umap-learn >= 0.6: scanpy runs on a float64 copy (see the float64 test)",
+)
 @pytest.mark.parametrize(
     "kwargs",
     [
@@ -77,6 +89,7 @@ def test_auto_is_scanpy():
         assert (a.obsp[key] != b.obsp[key]).nnz == 0
 
 
+@pytest.mark.skipif(UMAP_VERSION < (0, 5, 12), reason="umap-learn fastmath bug")
 @pytest.mark.parametrize("n_neighbors", [None, 5, 30])
 def test_adjacency_recomputed_without_scanpy(monkeypatch, n_neighbors):
     import sclab.preprocess._scanpy_port as port
